@@ -1,0 +1,15 @@
+{
+  "host": "127.0.0.1",
+  "port": 8096,
+  "request_timeout_seconds": 120.0,
+  "workers": [
+    {
+      "name": "gpu0",
+      "url": "http://127.0.0.1:8097"
+    },
+    {
+      "name": "gpu1",
+      "url": "http://127.0.0.1:8098"
+    }
+  ]
+}

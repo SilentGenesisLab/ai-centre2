@@ -1,0 +1,25 @@
+[Unit]
+Description=AI Centre 2 managed faster-whisper backend on physical GPU 1
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=1
+Environment=FW_MODEL=large-v3
+Environment=FW_COMPUTE_TYPE=float16
+Environment=FW_BATCH_SIZE=8
+Environment=FW_DEVICE=cuda
+Environment=FW_DEVICE_INDEX=0
+ExecStart=/home/donxu/ai-centre/.venv-asr/bin/uvicorn managed_backends.faster_whisper_api:app --host 127.0.0.1 --port 9001
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+TimeoutStopSec=60
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target
+

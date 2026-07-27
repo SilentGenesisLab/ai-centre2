@@ -1,0 +1,22 @@
+{
+  "host": "127.0.0.1",
+  "port": 8097,
+  "engine": "paddleocr",
+  "model_version": "PP-OCRv6-medium+th-PP-OCRv5-mobile",
+  "device": "gpu:0",
+  "text_detection_model_name": "PP-OCRv6_medium_det",
+  "text_detection_model_dir": "/home/donxu/ai-centre/OCR/runtime/paddlex/official_models/PP-OCRv6_medium_det",
+  "text_recognition_model_name": "PP-OCRv6_medium_rec",
+  "text_recognition_model_dir": "/home/donxu/ai-centre/OCR/runtime/paddlex/official_models/PP-OCRv6_medium_rec",
+  "thai_text_recognition_model_name": "th_PP-OCRv5_mobile_rec",
+  "thai_text_recognition_model_dir": "/home/donxu/ai-centre/OCR/runtime/paddlex/official_models/th_PP-OCRv5_mobile_rec",
+  "use_doc_orientation_classify": false,
+  "use_doc_unwarping": false,
+  "use_textline_orientation": false,
+  "max_images_per_request": 128,
+  "max_regions_per_image": 8,
+  "preload_languages": [
+    "es",
+    "th"
+  ]
+}

@@ -1,0 +1,25 @@
+[Unit]
+Description=AI Centre OCR Worker on GPU %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre/OCR
+Environment=PYTHONPATH=/home/donxu/ai-centre/OCR/src
+Environment=OCR_CONFIG=/home/donxu/ai-centre/OCR/config/linux/worker-%i.json
+Environment=PADDLE_PDX_CACHE_HOME=/home/donxu/ai-centre/OCR/runtime/paddlex
+Environment=CUDA_VISIBLE_DEVICES=%i
+Environment=PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+ExecStart=/home/donxu/ai-centre/OCR/.venv/bin/python -m ocr_service.cli
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+Nice=5
+
+[Install]
+WantedBy=default.target

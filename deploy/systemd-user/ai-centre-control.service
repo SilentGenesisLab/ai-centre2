@@ -1,0 +1,22 @@
+[Unit]
+Description=AI Centre 2 audio and GPU control plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/python -m control_plane.cli
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target
+

@@ -1,0 +1,15 @@
+[Unit]
+Description=AI Centre Face Mosaic API
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+ExecStart=/home/donxu/ai-centre/.venv/bin/uvicorn face_worker.api:app --host 0.0.0.0 --port 8310
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+

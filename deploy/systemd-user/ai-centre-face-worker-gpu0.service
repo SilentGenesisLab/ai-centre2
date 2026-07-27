@@ -1,0 +1,18 @@
+[Unit]
+Description=AI Centre Face Mosaic Celery Worker GPU 0
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=CUDA_VISIBLE_DEVICES=0
+ExecStart=/home/donxu/ai-centre/.venv/bin/celery -A face_worker.celery_app:celery_app worker -Q face_mosaic -n face-gpu0@%%h --concurrency=1 --loglevel=INFO
+Restart=always
+RestartSec=3
+TimeoutStopSec=1800
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target
+

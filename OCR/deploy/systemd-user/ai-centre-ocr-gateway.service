@@ -1,0 +1,20 @@
+[Unit]
+Description=AI Centre OCR Gateway
+After=network-online.target ai-centre-ocr-worker@0.service ai-centre-ocr-worker@1.service
+Wants=network-online.target ai-centre-ocr-worker@0.service ai-centre-ocr-worker@1.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre/OCR
+Environment=PYTHONPATH=/home/donxu/ai-centre/OCR/src
+Environment=OCR_GATEWAY_CONFIG=/home/donxu/ai-centre/OCR/config/linux/gateway.json
+ExecStart=/home/donxu/ai-centre/OCR/.venv/bin/python -m ocr_service.gateway_cli
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target

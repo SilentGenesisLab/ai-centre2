@@ -1,0 +1,19 @@
+[Unit]
+Description=AI Centre 2 managed VoxCPM2 vLLM-Omni backend on physical GPU 1
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=1
+ExecStart=/home/donxu/ai-centre/.venv-tts/bin/vllm serve openbmb/VoxCPM2 --omni --host 127.0.0.1 --port 8191 --stage-overrides={"0":{"gpu_memory_utilization":0.40,"max_num_seqs":8,"max_num_batched_tokens":8192}}
+Restart=always
+RestartSec=5
+TimeoutStartSec=600
+TimeoutStopSec=120
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target
+
