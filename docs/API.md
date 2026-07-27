@@ -11,7 +11,13 @@
 
 ## 1. 连接信息
 
-控制服务默认只监听服务器本机：
+公网调用使用：
+
+```text
+http://aicentre2.sligenai.cn:8320
+```
+
+服务器本机也可以使用：
 
 ```text
 http://127.0.0.1:8320
@@ -20,8 +26,8 @@ http://127.0.0.1:8320
 这意味着：
 
 - 在服务器内部调用时，直接使用以上地址。
-- 在 Windows 本地调用时，先建立 SSH 隧道。
-- 不应直接把 8320 端口暴露到公网。
+- 外部系统直接使用域名地址，不需要 SSH 隧道。
+- 当前公网入口是 HTTP，Bearer Token 和音视频流量尚未经过 TLS 加密。
 
 ### 1.1 Windows 建立 SSH 隧道
 
@@ -39,11 +45,11 @@ http://127.0.0.1:8320
 
 ### 1.2 在线接口结构
 
-建立 SSH 隧道后可以打开：
+公网可以直接打开：
 
-- Swagger UI：<http://127.0.0.1:8320/docs>
-- OpenAPI JSON：<http://127.0.0.1:8320/openapi.json>
-- 健康检查：<http://127.0.0.1:8320/health>
+- Swagger UI：<http://aicentre2.sligenai.cn:8320/docs>
+- OpenAPI JSON：<http://aicentre2.sligenai.cn:8320/openapi.json>
+- 健康检查：<http://aicentre2.sligenai.cn:8320/health>
 
 ## 2. 鉴权
 

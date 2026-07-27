@@ -13,7 +13,20 @@ from .gpu_control import GpuController
 from .upstreams import AudioUpstreams
 
 
-app = FastAPI(title="AI Centre 2 Control Plane", version="2.0.0")
+app = FastAPI(
+    title="AI Centre 2 Control Plane",
+    version="2.0.0",
+    servers=[
+        {
+            "url": "http://aicentre2.sligenai.cn:8320",
+            "description": "Public domain",
+        },
+        {
+            "url": "http://127.0.0.1:8320",
+            "description": "Server-local access",
+        },
+    ],
+)
 
 
 class TTSRequest(BaseModel):
@@ -137,4 +150,3 @@ async def enable_gpu(gpu_id: int) -> dict[str, Any]:
         return await asyncio.to_thread(get_gpu_controller().enable, gpu_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-

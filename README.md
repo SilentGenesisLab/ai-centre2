@@ -22,6 +22,17 @@ excluded from Git.
 GPU services run as separate OS processes. A GPU can be drained and disabled by
 stopping only the allowlisted user services assigned to it.
 
+## Public access
+
+- Base URL: `http://aicentre2.sligenai.cn:8320`
+- Swagger: `http://aicentre2.sligenai.cn:8320/docs`
+- OpenAPI: `http://aicentre2.sligenai.cn:8320/openapi.json`
+- Health: `http://aicentre2.sligenai.cn:8320/health`
+
+Port `8320` is currently exposed through router NAT. HTTP is available for
+integration, but HTTPS is still pending because public ports 80 and 443 terminate
+on the router instead of this server.
+
 ## Control-plane endpoints
 
 - `GET /health`

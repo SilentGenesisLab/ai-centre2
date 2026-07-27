@@ -5,14 +5,17 @@
 | 项目 | 当前值 |
 |---|---|
 | 公网 IP | `121.15.184.231` |
+| 公网域名 | `aicentre2.sligenai.cn` |
 | AI 服务器内网 IP | `192.168.31.23` |
 | 控制服务内部地址 | `http://127.0.0.1:8320` |
 | 服务监听地址 | `0.0.0.0:8320` |
-| 公网地址 | `http://121.15.184.231:8320` |
+| 公网地址 | `http://aicentre2.sligenai.cn:8320` |
 | 公网 8320 状态 | **已开通并通过健康、鉴权和真实 TTS 验收** |
 
 `http://121.15.184.231/` 当前打开的是小米路由器管理页面，不是 AI Centre 2。
 不要把公网 IP 的 80 端口当作 API 地址。
+
+域名的 80/443 目前同样终止在路由器，因此现阶段必须携带 `:8320`。
 
 ## 2. 当前公网映射
 
@@ -50,22 +53,22 @@ AI Centre 2 已监听 `0.0.0.0:8320`。2026-07-27 已完成以下公网验收：
 当前公网 Base URL：
 
 ```text
-http://121.15.184.231:8320
+http://aicentre2.sligenai.cn:8320
 ```
 
 接口地址：
 
 | 功能 | 方法 | 公网 URL |
 |---|---|---|
-| 健康检查 | `GET` | `http://121.15.184.231:8320/health` |
-| Swagger | `GET` | `http://121.15.184.231:8320/docs` |
-| OpenAPI | `GET` | `http://121.15.184.231:8320/openapi.json` |
-| ASR | `POST` | `http://121.15.184.231:8320/v1/asr/transcriptions` |
-| TTS | `POST` | `http://121.15.184.231:8320/v1/tts/speech` |
-| GPU 状态 | `GET` | `http://121.15.184.231:8320/v1/admin/gpus` |
-| 临时排空 GPU | `POST` | `http://121.15.184.231:8320/v1/admin/gpus/{gpu_id}/drain` |
-| 停用 GPU worker | `POST` | `http://121.15.184.231:8320/v1/admin/gpus/{gpu_id}/disable` |
-| 恢复 GPU worker | `POST` | `http://121.15.184.231:8320/v1/admin/gpus/{gpu_id}/enable` |
+| 健康检查 | `GET` | `http://aicentre2.sligenai.cn:8320/health` |
+| Swagger | `GET` | `http://aicentre2.sligenai.cn:8320/docs` |
+| OpenAPI | `GET` | `http://aicentre2.sligenai.cn:8320/openapi.json` |
+| ASR | `POST` | `http://aicentre2.sligenai.cn:8320/v1/asr/transcriptions` |
+| TTS | `POST` | `http://aicentre2.sligenai.cn:8320/v1/tts/speech` |
+| GPU 状态 | `GET` | `http://aicentre2.sligenai.cn:8320/v1/admin/gpus` |
+| 临时排空 GPU | `POST` | `http://aicentre2.sligenai.cn:8320/v1/admin/gpus/{gpu_id}/drain` |
+| 停用 GPU worker | `POST` | `http://aicentre2.sligenai.cn:8320/v1/admin/gpus/{gpu_id}/disable` |
+| 恢复 GPU worker | `POST` | `http://aicentre2.sligenai.cn:8320/v1/admin/gpus/{gpu_id}/enable` |
 
 除 `/health`、`/docs` 和 `/openapi.json` 外，均需要：
 
@@ -78,13 +81,13 @@ Authorization: Bearer <SERVICE_TOKEN>
 ### 4.1 健康检查
 
 ```bash
-curl "http://121.15.184.231:8320/health"
+curl "http://aicentre2.sligenai.cn:8320/health"
 ```
 
 ### 4.2 ASR
 
 ```bash
-curl -X POST "http://121.15.184.231:8320/v1/asr/transcriptions" \
+curl -X POST "http://aicentre2.sligenai.cn:8320/v1/asr/transcriptions" \
   -H "Authorization: Bearer ${SERVICE_TOKEN}" \
   -F "file=@/data/input.mp4" \
   -F "language=es" \
@@ -96,7 +99,7 @@ Windows PowerShell：
 ```powershell
 $token = "替换为SERVICE_TOKEN"
 
-curl.exe -X POST "http://121.15.184.231:8320/v1/asr/transcriptions" `
+curl.exe -X POST "http://aicentre2.sligenai.cn:8320/v1/asr/transcriptions" `
   -H "Authorization: Bearer $token" `
   -F "file=@I:\AI-video\input.wav" `
   -F "language=es" `
@@ -106,7 +109,7 @@ curl.exe -X POST "http://121.15.184.231:8320/v1/asr/transcriptions" `
 ### 4.3 普通 TTS
 
 ```bash
-curl -X POST "http://121.15.184.231:8320/v1/tts/speech" \
+curl -X POST "http://aicentre2.sligenai.cn:8320/v1/tts/speech" \
   -H "Authorization: Bearer ${SERVICE_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -120,7 +123,7 @@ curl -X POST "http://121.15.184.231:8320/v1/tts/speech" \
 ### 4.4 音色克隆 TTS
 
 ```bash
-curl -X POST "http://121.15.184.231:8320/v1/tts/speech" \
+curl -X POST "http://aicentre2.sligenai.cn:8320/v1/tts/speech" \
   -H "Authorization: Bearer ${SERVICE_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
@@ -142,7 +145,7 @@ from pathlib import Path
 
 import requests
 
-base_url = "http://121.15.184.231:8320"
+base_url = "http://aicentre2.sligenai.cn:8320"
 token = "替换为SERVICE_TOKEN"
 
 with Path("input.wav").open("rb") as audio:
@@ -163,7 +166,7 @@ print(response.json())
 生产调用不建议直接长期使用：
 
 ```text
-http://121.15.184.231:8320
+http://aicentre2.sligenai.cn:8320
 ```
 
 原因是 HTTP 不加密，Bearer Token 和上传的音视频可能被网络中间节点读取。
@@ -171,7 +174,7 @@ http://121.15.184.231:8320
 推荐最终入口：
 
 ```text
-https://api.<你的域名>/ai-centre2
+https://aicentre2.sligenai.cn
 ```
 
 至少应满足：
@@ -190,7 +193,7 @@ https://api.<你的域名>/ai-centre2
 
 ```bash
 curl --connect-timeout 5 \
-  "http://121.15.184.231:8320/health"
+  "http://aicentre2.sligenai.cn:8320/health"
 ```
 
 验收标准：
