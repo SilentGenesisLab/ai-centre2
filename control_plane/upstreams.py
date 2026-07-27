@@ -47,9 +47,19 @@ class AudioUpstreams:
         self,
         payload: dict[str, Any],
     ) -> tuple[bytes, str, dict[str, str]]:
+        has_reference = bool(
+            payload.get("reference_wav_path") or payload.get("prompt_wav_path")
+        )
+        endpoint = "clone_path" if has_reference else "tts"
+        if not has_reference:
+            payload = {
+                key: payload[key]
+                for key in ("text", "cfg_value", "inference_timesteps")
+                if key in payload
+            }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
-                f"{self.tts_base_url}/clone_path",
+                f"{self.tts_base_url}/{endpoint}",
                 json=payload,
             )
         response.raise_for_status()
@@ -76,4 +86,3 @@ class AudioUpstreams:
                 "url": base_url,
                 "error": f"{type(exc).__name__}: {exc}",
             }
-
