@@ -35,3 +35,4 @@ stopping only the allowlisted user services assigned to it.
 See `docs/AUDIO_GPU_OPERATIONS.md` for deployment and GPU reservation details.
 
 Complete request/response examples are documented in `docs/API.md`.
+Public IP, NAT and internet-facing usage are documented in `docs/PUBLIC_API.md`.
