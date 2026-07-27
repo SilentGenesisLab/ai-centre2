@@ -8,6 +8,7 @@ Production control plane and GPU services for the AI video translation pipeline.
 - `OCR`: PP-OCRv6 and Thai PP-OCRv5 gateway/workers.
 - `control_plane`: ASR/TTS job gateway and per-GPU lifecycle control.
 - `managed_backends`: optional GPU1-only model servers.
+- `gateway`: Caddy HTTPS reverse proxy for one-public-IP deployments.
 - `deploy`: user-systemd units and managed backend templates.
 
 Runtime environments, model weights, generated media and secrets are deliberately
@@ -44,6 +45,7 @@ on the router instead of this server.
 - `POST /v1/admin/gpus/{gpu_id}/enable`
 
 See `docs/AUDIO_GPU_OPERATIONS.md` for deployment and GPU reservation details.
+See `docs/HTTPS_GATEWAY.md` for the shared-public-IP Caddy deployment.
 
 Complete request/response examples are documented in `docs/API.md`.
 Public IP, NAT and internet-facing usage are documented in `docs/PUBLIC_API.md`.

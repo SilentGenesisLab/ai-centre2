@@ -1,0 +1,22 @@
+[Unit]
+Description=AI Centre 2 Caddy HTTPS gateway
+After=network-online.target ai-centre-control.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+WorkingDirectory=/home/donxu/ai-centre
+Environment=HOME=/home/donxu
+Environment=XDG_DATA_HOME=/home/donxu/ai-centre/runtime/caddy/data
+Environment=XDG_CONFIG_HOME=/home/donxu/ai-centre/runtime/caddy/config
+ExecStart=/home/donxu/.local/bin/caddy run --environ --config /home/donxu/ai-centre/gateway/Caddyfile --adapter caddyfile
+ExecReload=/home/donxu/.local/bin/caddy reload --config /home/donxu/ai-centre/gateway/Caddyfile --adapter caddyfile --force
+TimeoutStopSec=10
+LimitNOFILE=1048576
+PrivateTmp=true
+ProtectSystem=full
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

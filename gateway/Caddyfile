@@ -1,0 +1,25 @@
+{
+	admin 127.0.0.1:2019
+	http_port 18080
+	https_port 18443
+}
+
+aicentre2.sligenai.cn {
+	@admin path /v1/admin/*
+	respond @admin 404
+
+	reverse_proxy 127.0.0.1:8320 {
+		transport http {
+			dial_timeout 10s
+			response_header_timeout 900s
+		}
+	}
+
+	log {
+		output file /home/donxu/ai-centre/runtime/caddy/logs/access.log {
+			roll_size 100MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+	}
+}
