@@ -33,3 +33,5 @@ stopping only the allowlisted user services assigned to it.
 - `POST /v1/admin/gpus/{gpu_id}/enable`
 
 See `docs/AUDIO_GPU_OPERATIONS.md` for deployment and GPU reservation details.
+
+Complete request/response examples are documented in `docs/API.md`.
