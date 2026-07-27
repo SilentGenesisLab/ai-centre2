@@ -1,0 +1,3 @@
+# PaddlePaddle GPU wheels are published on the official CUDA-specific index.
+# deploy/install_linux.sh installs this package before resolving this file.
+paddlepaddle-gpu==3.3.0
