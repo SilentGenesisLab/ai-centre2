@@ -6,8 +6,8 @@
 /home/donxu/ai-centre
 ```
 
-公网 IP、NAT 映射及公网调用示例见 [PUBLIC_API.md](PUBLIC_API.md)。当前公网
-`8320` 尚未开通，请勿在完成映射前把公网示例地址视为可用服务。
+公网 IP、NAT 映射及公网调用示例见 [PUBLIC_API.md](PUBLIC_API.md)。公网
+`8320` 已于 2026-07-27 开通并完成健康、鉴权和真实 TTS 验收。
 
 ## 1. 连接信息
 
