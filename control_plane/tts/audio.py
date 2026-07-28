@@ -52,8 +52,20 @@ def normalize_to_wav(
     normalized = process.stdout
     try:
         with wave.open(io.BytesIO(normalized), "rb") as wav_file:
+            # FFmpeg cannot seek back to finalize the RIFF data size when WAV is
+            # written to stdout. Some builds therefore leave a 0xffffffff
+            # placeholder in the header, which wave.getnframes() interprets as
+            # hours of audio. Reading the available PCM payload gives the real
+            # duration for both finalized files and streamed WAV responses.
+            pcm = wav_file.readframes(wav_file.getnframes())
+            bytes_per_frame = wav_file.getsampwidth() * wav_file.getnchannels()
+            if bytes_per_frame <= 0 or wav_file.getframerate() <= 0:
+                raise AudioNormalizationError("normalized WAV has invalid parameters")
             duration_ms = round(
-                wav_file.getnframes() * 1000 / wav_file.getframerate()
+                len(pcm)
+                * 1000
+                / bytes_per_frame
+                / wav_file.getframerate()
             )
     except (EOFError, wave.Error) as exc:
         raise AudioNormalizationError("normalized output is not a valid WAV") from exc
