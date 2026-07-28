@@ -21,7 +21,7 @@ class Settings(BaseSettings):
         "/home/donxu/ai-centre/runtime/control/tts-voices.json"
     )
     tts_output_dir: Path = Path("/home/donxu/ai-centre/runtime/control/tts-output")
-    tts_ffmpeg_bin: str = "ffmpeg"
+    tts_ffmpeg_bin: str = "auto"
     tts_job_workers: int = 8
     tts_result_expires_seconds: int = 604800
     tts_auto_provider_order: str = "voxcpm2,doubao,elevenlabs"

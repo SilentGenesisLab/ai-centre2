@@ -4,6 +4,8 @@ import io
 import subprocess
 import wave
 
+import imageio_ffmpeg
+
 
 class AudioNormalizationError(RuntimeError):
     pass
@@ -17,9 +19,14 @@ def normalize_to_wav(
 ) -> tuple[bytes, int]:
     if not audio:
         raise AudioNormalizationError("provider returned empty audio")
+    executable = (
+        imageio_ffmpeg.get_ffmpeg_exe()
+        if ffmpeg_bin == "auto"
+        else ffmpeg_bin
+    )
     process = subprocess.run(
         [
-            ffmpeg_bin,
+            executable,
             "-hide_banner",
             "-loglevel",
             "error",
@@ -51,4 +58,3 @@ def normalize_to_wav(
     except (EOFError, wave.Error) as exc:
         raise AudioNormalizationError("normalized output is not a valid WAV") from exc
     return normalized, duration_ms
-
