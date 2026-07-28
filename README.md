@@ -39,6 +39,13 @@ on the router instead of this server.
 - `GET /health`
 - `POST /v1/asr/transcriptions`
 - `POST /v1/tts/speech`
+- `POST /v2/tts/speech`
+- `POST /v2/tts/jobs`
+- `GET /v2/tts/jobs/{job_id}`
+- `GET /v2/tts/jobs/{job_id}/audio`
+- `GET /v2/tts/providers`
+- `GET /v2/tts/voices`
+- `PUT /v2/tts/voices/{voice_profile_id}`
 - `GET /v1/admin/gpus`
 - `POST /v1/admin/gpus/{gpu_id}/drain`
 - `POST /v1/admin/gpus/{gpu_id}/disable`
@@ -46,6 +53,8 @@ on the router instead of this server.
 
 See `docs/AUDIO_GPU_OPERATIONS.md` for deployment and GPU reservation details.
 See `docs/HTTPS_GATEWAY.md` for the shared-public-IP Caddy deployment.
+See `docs/TTS_PROVIDER_API.md` for the unified VoxCPM2, Doubao and ElevenLabs
+contract, voice registry, async jobs and deployment settings.
 
 Complete request/response examples are documented in `docs/API.md`.
 Public IP, NAT and internet-facing usage are documented in `docs/PUBLIC_API.md`.
