@@ -4,6 +4,10 @@ import base64
 import unittest
 from unittest.mock import patch
 
+import httpx
+
+from control_plane.tts.base import TransientTTSProviderError
+from control_plane.tts.providers.common import raise_for_provider_status
 from control_plane.tts.providers.doubao import DoubaoProvider
 from control_plane.tts.providers.elevenlabs import ElevenLabsProvider
 from control_plane.tts.schemas import TTSSpeechRequest
@@ -121,6 +125,26 @@ class TTSProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.provider_request_id, "request-1")
 
 
+class ProviderErrorTests(unittest.TestCase):
+    def test_server_error_does_not_expose_upstream_traceback(self) -> None:
+        response = httpx.Response(
+            500,
+            json={
+                "detail": "Traceback from /home/private/model.py",
+                "message": "internal CUDA failure",
+            },
+            headers={"x-request-id": "provider-request-1"},
+        )
+
+        with self.assertRaises(TransientTTSProviderError) as raised:
+            raise_for_provider_status(response, "voxcpm2")
+
+        message = str(raised.exception)
+        self.assertIn("provider-request-1", message)
+        self.assertNotIn("Traceback", message)
+        self.assertNotIn("/home/private", message)
+        self.assertNotIn("internal CUDA failure", message)
+
+
 if __name__ == "__main__":
     unittest.main()
-
