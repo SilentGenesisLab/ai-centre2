@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/donxu/ai-centre
+Environment=TTS_JOB_WORKERS=8
 EnvironmentFile=/home/donxu/ai-centre/.env
 Environment=PYTHONPATH=/home/donxu/ai-centre
 Environment=CUDA_VISIBLE_DEVICES=
