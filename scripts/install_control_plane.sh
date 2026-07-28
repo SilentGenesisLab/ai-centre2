@@ -25,5 +25,7 @@ install -m 0644 \
   "$USER_UNIT_DIR/ai-centre-tts-worker.service"
 
 systemctl --user daemon-reload
-systemctl --user enable --now ai-centre-control.service
-systemctl --user enable --now ai-centre-tts-worker.service
+systemctl --user enable ai-centre-control.service
+systemctl --user enable ai-centre-tts-worker.service
+systemctl --user restart ai-centre-control.service
+systemctl --user restart ai-centre-tts-worker.service
