@@ -20,7 +20,10 @@ mkdir -p runtime/control "$USER_UNIT_DIR"
 install -m 0644 \
   deploy/systemd-user/ai-centre-control.service \
   "$USER_UNIT_DIR/ai-centre-control.service"
+install -m 0644 \
+  deploy/systemd-user/ai-centre-tts-worker.service \
+  "$USER_UNIT_DIR/ai-centre-tts-worker.service"
 
 systemctl --user daemon-reload
 systemctl --user enable --now ai-centre-control.service
-
+systemctl --user enable --now ai-centre-tts-worker.service

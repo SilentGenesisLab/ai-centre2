@@ -1,0 +1,21 @@
+[Unit]
+Description=AI Centre 2 unified TTS Celery worker
+After=network-online.target ai-centre-control.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker --loglevel=INFO --pool=threads --concurrency $TTS_JOB_WORKERS --hostname=tts@%H
+Restart=always
+RestartSec=3
+TimeoutStopSec=90
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=1024
+
+[Install]
+WantedBy=default.target
