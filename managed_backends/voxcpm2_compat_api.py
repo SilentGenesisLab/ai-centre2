@@ -19,6 +19,10 @@ ALLOWED_MEDIA_ROOT = Path(
     )
 )
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("VOXCPM2_REQUEST_TIMEOUT_SECONDS", "900"))
+VOICE_CLONING_ENABLED = os.getenv(
+    "VOXCPM2_ENABLE_VOICE_CLONING",
+    "false",
+).lower() in {"1", "true", "yes"}
 
 
 class LegacyTTSRequest(BaseModel):
@@ -65,6 +69,19 @@ def validate_sampling(request: LegacyTTSRequest) -> None:
         )
 
 
+def validate_voice_cloning(request: LegacyTTSRequest) -> None:
+    if (
+        request.reference_wav_path or request.prompt_wav_path
+    ) and not VOICE_CLONING_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "voice cloning is temporarily disabled because the pinned "
+                "VoxCPM2 vLLM-Omni backend cannot safely process reference audio"
+            ),
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.client = httpx.AsyncClient(
@@ -105,6 +122,7 @@ async def health(request: Request) -> Response:
 
 
 async def _synthesize(request: LegacyTTSRequest, raw_request: Request) -> Response:
+    validate_voice_cloning(request)
     try:
         validate_sampling(request)
         payload = build_openai_payload(request)

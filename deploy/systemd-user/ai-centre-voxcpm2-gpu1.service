@@ -9,9 +9,10 @@ WorkingDirectory=/home/donxu/ai-centre/runtime/vendor/vllm-omni
 Environment=CUDA_VISIBLE_DEVICES=1
 Environment=HF_HOME=/home/donxu/ai-centre/models/.cache/huggingface
 Environment=VLLM_CACHE_ROOT=/home/donxu/ai-centre/runtime/vllm
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
 Environment=SPEAKER_SAMPLES_DIR=/home/donxu/ai-centre/runtime/control/tts-speakers
-ExecStart=/home/donxu/ai-centre/.venv-tts/bin/vllm-omni serve /home/donxu/ai-centre/models/VoxCPM2 --host 127.0.0.1 --port 8192 --allowed-local-media-path /home/donxu/ai-centre/runtime/references --gpu-memory-utilization 0.35 --max-num-seqs 4 --max-num-batched-tokens 8192
-Restart=on-failure
+ExecStart=/home/donxu/ai-centre/.venv-tts/bin/vllm-omni serve /home/donxu/ai-centre/models/VoxCPM2 --omni --host 127.0.0.1 --port 8192 --allowed-local-media-path /home/donxu/ai-centre/runtime/references --gpu-memory-utilization 0.35 --max-num-seqs 4 --max-num-batched-tokens 8192
+Restart=always
 RestartSec=10
 TimeoutStartSec=900
 TimeoutStopSec=180

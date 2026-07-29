@@ -81,6 +81,15 @@ snapshot_download(
     local_dir=f"{os.environ['PROJECT_ROOT']}/models/VoxCPM2",
 )
 PY
+if ! grep -q '"model_type"[[:space:]]*:[[:space:]]*"voxcpm2"' \
+  models/VoxCPM2/config.json; then
+  sed -i '2i\    "model_type": "voxcpm2",' models/VoxCPM2/config.json
+fi
+if ! grep -q '"architectures"[[:space:]]*:' models/VoxCPM2/config.json; then
+  sed -i \
+    '3i\    "architectures": ["VoxCPM2TalkerForConditionalGeneration"],' \
+    models/VoxCPM2/config.json
+fi
 
 install -m 0644 \
   deploy/systemd-user/ai-centre-asr-gpu0.service \

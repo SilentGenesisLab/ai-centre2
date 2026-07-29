@@ -4,10 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fastapi import HTTPException
+
 from managed_backends.voxcpm2_compat_api import (
     LegacyTTSRequest,
     build_openai_payload,
     validate_sampling,
+    validate_voice_cloning,
 )
 
 
@@ -61,6 +64,17 @@ class VoxCPM2CompatibilityTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "cfg_value=2.0"):
             validate_sampling(request)
+
+    def test_voice_cloning_is_fail_closed(self) -> None:
+        request = LegacyTTSRequest(
+            text="Hola",
+            reference_wav_path="/tmp/speaker.wav",
+        )
+
+        with self.assertRaises(HTTPException) as raised:
+            validate_voice_cloning(request)
+
+        self.assertEqual(raised.exception.status_code, 503)
 
 
 if __name__ == "__main__":

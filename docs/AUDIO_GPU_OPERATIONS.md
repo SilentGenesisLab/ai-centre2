@@ -95,16 +95,24 @@ journalctl --user -u ai-centre-tts-backend.service -n 100 --no-pager
 After the real ASR and TTS verification succeeds:
 
 ```bash
-sed -i \
-  's#^ASR_BACKEND_URL=.*#ASR_BACKEND_URL=http://127.0.0.1:9001#' \
-  /home/donxu/ai-centre/.env
-sed -i \
-  's#^TTS_BACKEND_URL=.*#TTS_BACKEND_URL=http://127.0.0.1:8193#' \
-  /home/donxu/ai-centre/.env
+cd /home/donxu/ai-centre
+cp -p .env "runtime/control/.env.before-managed-audio-$(date +%Y%m%dT%H%M%S)"
+
+grep -q '^ASR_BACKEND_URL=' .env \
+  && sed -i 's#^ASR_BACKEND_URL=.*#ASR_BACKEND_URL=http://127.0.0.1:9001#' .env \
+  || printf '%s\n' 'ASR_BACKEND_URL=http://127.0.0.1:9001' >>.env
+grep -q '^TTS_BACKEND_URL=' .env \
+  && sed -i 's#^TTS_BACKEND_URL=.*#TTS_BACKEND_URL=http://127.0.0.1:8193#' .env \
+  || printf '%s\n' 'TTS_BACKEND_URL=http://127.0.0.1:8193' >>.env
 
 systemctl --user restart ai-centre-control.service
 systemctl --user restart ai-centre-tts-worker.service
 ```
+
+Voice cloning is fail-closed at the compatibility gateway because reference
+audio can terminate the pinned VoxCPM2 vLLM-Omni engine. Keep
+`VOXCPM2_ENABLE_VOICE_CLONING=false` until the upstream engine passes a
+reference-audio regression test. Plain TTS remains available.
 
 Rollback only requires restoring the previous backend URL in `.env` and
 restarting the two control services.
