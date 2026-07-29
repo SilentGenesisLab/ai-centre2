@@ -1,0 +1,16 @@
+[Unit]
+Description=AI Centre Redis
+After=network.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/mkdir -p /home/donxu/ai-centre/runtime/redis
+ExecStart=/home/donxu/ai-centre/.runtime/redis/bin/redis-server --bind 127.0.0.1 --port 6379 --protected-mode yes --daemonize no --dir /home/donxu/ai-centre/runtime/redis --appendonly yes --save 60 1000
+ExecStop=/home/donxu/ai-centre/.runtime/redis/bin/redis-cli -h 127.0.0.1 -p 6379 shutdown
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+LimitNOFILE=65536
+
+[Install]
+WantedBy=default.target
