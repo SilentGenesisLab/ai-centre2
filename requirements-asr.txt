@@ -1,5 +1,7 @@
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
 python-multipart==0.0.20
+requests==2.32.5
 faster-whisper==1.2.0
-
+nvidia-cublas-cu12==12.8.4.1
+nvidia-cudnn-cu12==9.10.2.21

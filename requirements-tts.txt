@@ -1,0 +1,5 @@
+voxcpm==2.0.0
+cuda-python==13.3.1
+soundfile==0.14.0
+httpx==0.28.1
+ninja==1.13.0

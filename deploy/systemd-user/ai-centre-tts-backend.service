@@ -1,0 +1,22 @@
+[Unit]
+Description=AI Centre VoxCPM2 legacy compatibility gateway
+After=network-online.target ai-centre-voxcpm2-gpu1.service
+Wants=network-online.target ai-centre-voxcpm2-gpu1.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=VOXCPM2_OPENAI_URL=http://127.0.0.1:8192
+Environment=VOXCPM2_ALLOWED_MEDIA_ROOT=/home/donxu/ai-centre/runtime/references
+Environment=VOXCPM2_REQUEST_TIMEOUT_SECONDS=900
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/uvicorn managed_backends.voxcpm2_compat_api:app --host 127.0.0.1 --port 8193
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target

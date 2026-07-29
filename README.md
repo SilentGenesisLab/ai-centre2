@@ -7,7 +7,9 @@ Production control plane and GPU services for the AI video translation pipeline.
 - `face_worker`: existing asynchronous face mosaic service.
 - `OCR`: PP-OCRv6 and Thai PP-OCRv5 gateway/workers.
 - `control_plane`: ASR/TTS job gateway and per-GPU lifecycle control.
-- `managed_backends`: optional GPU1-only model servers.
+- `managed_backends`: production audio backends running as `donxu`
+  user-systemd services: Faster-Whisper on port `9001`, vLLM-Omni VoxCPM2 on
+  port `8192`, and the legacy TTS compatibility gateway on port `8193`.
 - `gateway`: Caddy HTTPS reverse proxy for one-public-IP deployments.
 - `deploy`: user-systemd units and managed backend templates.
 
