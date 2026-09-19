@@ -1,0 +1,23 @@
+[Unit]
+Description=AI Centre emotion2vec CPU verifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=
+Environment=OMP_NUM_THREADS=2
+Environment=MKL_NUM_THREADS=2
+Environment=EMOTION_VERIFY_MODEL_PATH=/home/donxu/ai-centre/models/.cache/modelscope/models/iic--emotion2vec_plus_large/snapshots/master
+ExecStart=/home/donxu/ai-centre/.venv-tts-v026/bin/uvicorn managed_backends.emotion_verify_api:app --host 127.0.0.1 --port 8196
+Restart=always
+RestartSec=5
+TimeoutStartSec=600
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target

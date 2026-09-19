@@ -19,8 +19,10 @@ class Settings(BaseSettings):
     kernel_upload_url: str
     kernel_api_token: str
     download_timeout_sec: float = 300
+    max_download_bytes: int = 512 * 1024 * 1024
     upload_timeout_sec: float = 300
     callback_timeout_sec: float = 20
+    face_wait_timeout_seconds: float = 1800
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -30,4 +32,3 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.work_dir.mkdir(parents=True, exist_ok=True)
     return settings
-

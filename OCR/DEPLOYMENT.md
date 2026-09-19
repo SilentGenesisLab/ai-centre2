@@ -28,7 +28,9 @@ PP-OCRv5 Thai rec       PP-OCRv5 Thai rec
 - Python: `3.11`
 - One persistent worker per GPU; the gateway performs least-inflight
   round-robin selection and retries another worker on transport or 5xx errors.
-- Models are preloaded. `/health` is healthy only when both workers are ready.
+- Models are loaded by persistent workers. `/health.status` is `ok` when at
+  least one worker can serve requests; `capacity_status` is `full`, `degraded`,
+  or `unavailable` and preserves the pool-capacity signal.
 
 ## API
 
@@ -79,3 +81,7 @@ journalctl --user -u 'ai-centre-ocr-worker@*' -f
 Configuration lives in `config/linux`. Service definitions live in
 `deploy/systemd-user`. The public video gateway should proxy this internal
 service only after applying its normal authentication policy.
+
+The integrated AI Centre installer starts only GPU1 by default so GPU0 remains
+reserved for MuseTalk. Set `OCR_WORKER_IDS="0 1"` when installing the OCR stack
+on a host where both GPUs are available to OCR.

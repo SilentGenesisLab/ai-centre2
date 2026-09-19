@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 
@@ -32,6 +32,7 @@ class LegacyTTSRequest(BaseModel):
     prompt_text: str | None = None
     cfg_value: float = Field(default=2.0, ge=1.0, le=3.0)
     inference_timesteps: int = Field(default=10, ge=1, le=50)
+    seed: int | None = Field(default=None, ge=0)
 
 
 def _reference_uri(raw_path: str, allowed_root: Path) -> str:
@@ -55,9 +56,12 @@ def build_openai_payload(
     }
     reference_path = request.reference_wav_path or request.prompt_wav_path
     if reference_path:
+        payload["task_type"] = "Base"
         payload["ref_audio"] = _reference_uri(reference_path, allowed_root)
         if request.prompt_text:
             payload["ref_text"] = request.prompt_text
+    if request.seed is not None:
+        payload["seed"] = request.seed
     return payload
 
 
@@ -154,6 +158,64 @@ async def _synthesize(request: LegacyTTSRequest, raw_request: Request) -> Respon
     )
 
 
+async def _stream_synthesize(
+    request: LegacyTTSRequest,
+    raw_request: Request,
+) -> StreamingResponse:
+    validate_voice_cloning(request)
+    try:
+        validate_sampling(request)
+        payload = {
+            **build_openai_payload(request),
+            "response_format": "pcm",
+            "stream": True,
+            "stream_format": "audio",
+        }
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    upstream_request = raw_request.app.state.client.build_request(
+        "POST",
+        f"{UPSTREAM_URL}/v1/audio/speech",
+        json=payload,
+    )
+    try:
+        upstream = await raw_request.app.state.client.send(
+            upstream_request,
+            stream=True,
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"VoxCPM2 upstream unavailable: {type(exc).__name__}",
+        ) from exc
+    if not upstream.is_success:
+        await upstream.aread()
+        await upstream.aclose()
+        raise HTTPException(
+            status_code=502 if upstream.status_code >= 500 else 422,
+            detail=f"VoxCPM2 upstream returned HTTP {upstream.status_code}",
+        )
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                if chunk:
+                    yield chunk
+        finally:
+            await upstream.aclose()
+
+    return StreamingResponse(
+        body(),
+        media_type="audio/pcm",
+        headers={
+            "X-TTS-Backend": "vllm-omni",
+            "X-Audio-Sample-Rate": "48000",
+            "X-Audio-Channels": "1",
+            "X-Audio-Sample-Format": "s16le",
+        },
+    )
+
+
 @app.post("/tts")
 async def tts(request: LegacyTTSRequest, raw_request: Request) -> Response:
     return await _synthesize(request, raw_request)
@@ -164,3 +226,18 @@ async def clone_path(request: LegacyTTSRequest, raw_request: Request) -> Respons
     if not (request.reference_wav_path or request.prompt_wav_path):
         raise HTTPException(status_code=422, detail="reference audio path is required")
     return await _synthesize(request, raw_request)
+
+
+@app.post("/stream_path")
+async def stream_path(
+    request: LegacyTTSRequest,
+    raw_request: Request,
+) -> StreamingResponse:
+    if not (request.reference_wav_path or request.prompt_wav_path):
+        raise HTTPException(status_code=422, detail="reference audio path is required")
+    return await _stream_synthesize(request, raw_request)
+
+
+@app.post("/stream")
+async def stream(request: LegacyTTSRequest, raw_request: Request) -> StreamingResponse:
+    return await _stream_synthesize(request, raw_request)

@@ -13,6 +13,9 @@ class FakeResponse:
     def raise_for_status(self) -> None:
         return None
 
+    def json(self) -> dict[str, str]:
+        return {"text": "ok"}
+
 
 class FakeClient:
     last_url = ""
@@ -33,7 +36,24 @@ class FakeClient:
         return FakeResponse()
 
 
+class FakeAsrClient(FakeClient):
+    last_data: dict[str, str] = {}
+
+    async def post(self, url: str, data, files) -> FakeResponse:
+        FakeAsrClient.last_url = url
+        FakeAsrClient.last_data = data
+        return FakeResponse()
+
+
 class AudioUpstreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_asr_auto_language_is_not_forwarded(self) -> None:
+        upstreams = AudioUpstreams("http://asr", "http://tts", 30)
+        with patch("control_plane.upstreams.httpx.AsyncClient", FakeAsrClient):
+            await upstreams.transcribe("speech.wav", b"audio", "auto", 5)
+
+        self.assertEqual(FakeAsrClient.last_url, "http://asr/asr")
+        self.assertEqual(FakeAsrClient.last_data, {"beam_size": "5"})
+
     async def test_plain_tts_uses_tts_endpoint(self) -> None:
         upstreams = AudioUpstreams("http://asr", "http://tts", 30)
         with patch("control_plane.upstreams.httpx.AsyncClient", FakeClient):
@@ -67,4 +87,3 @@ class AudioUpstreamTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

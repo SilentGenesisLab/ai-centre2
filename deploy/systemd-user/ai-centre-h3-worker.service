@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Centre MiniMax H3 scheduler worker
+After=network-online.target redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker --loglevel=INFO --queues=minimax_h3 --concurrency=8 --hostname=h3@%%h
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=default.target

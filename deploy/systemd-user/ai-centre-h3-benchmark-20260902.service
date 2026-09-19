@@ -1,0 +1,20 @@
+[Unit]
+Description=AI Centre MiniMax H3 full matrix benchmark 2026-09-02
+After=network-online.target ai-centre-control.service ai-centre-h3-worker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/donxu/ai-centre
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/python scripts/benchmark_h3_full_matrix.py --base-url http://127.0.0.1:8320 --run-id h3-full-20260902 --run-dir /home/donxu/ai-centre/runtime/validation/h3-full-benchmark-20260902 --deadline-hours 96
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=30
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=AI Centre Bandit v2 Audio Separation Worker
+After=network-online.target ai-centre-redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=1
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker -Q audio_separation -n separation@%%h --pool=solo --concurrency=1 --prefetch-multiplier=1 --loglevel=INFO
+Restart=always
+RestartSec=5
+TimeoutStartSec=900
+TimeoutStopSec=7200
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=1024
+
+[Install]
+WantedBy=default.target

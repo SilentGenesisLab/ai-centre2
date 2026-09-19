@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Centre MiniMax H3 benchmark report post-processing 2026-09-02
+After=network-online.target ai-centre-h3-benchmark-20260902.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash scripts/run_h3_full_postprocess.sh
+Restart=on-failure
+RestartSec=60
+Nice=15
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target

@@ -44,6 +44,12 @@ class VoxCPM2CompatibilityTests(unittest.TestCase):
 
         self.assertEqual(payload["ref_audio"], reference.resolve().as_uri())
         self.assertEqual(payload["ref_text"], "Texto original")
+        self.assertEqual(payload["task_type"], "Base")
+
+    def test_seed_is_forwarded_for_distinct_strict_attempts(self) -> None:
+        payload = build_openai_payload(LegacyTTSRequest(text="Hola", seed=44))
+
+        self.assertEqual(payload["seed"], 44)
 
     def test_clone_rejects_reference_outside_allowed_root(self) -> None:
         with tempfile.TemporaryDirectory() as allowed:

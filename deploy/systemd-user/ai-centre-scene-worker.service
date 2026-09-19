@@ -1,0 +1,21 @@
+[Unit]
+Description=AI Centre SceneDetect Celery Worker
+After=network-online.target ai-centre-redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker -Q scene_detect -n scene@%%h --concurrency=1 --loglevel=INFO
+Restart=always
+RestartSec=3
+TimeoutStopSec=7200
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target

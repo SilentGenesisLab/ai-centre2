@@ -1,0 +1,14 @@
+[Unit]
+Description=AI Centre generic video generation worker
+After=network-online.target redis.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker -Q video_generation -n video-generation@%%h --concurrency=4 --loglevel=INFO
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

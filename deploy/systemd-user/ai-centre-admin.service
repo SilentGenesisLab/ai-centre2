@@ -1,0 +1,30 @@
+[Unit]
+Description=AI Centre 2 Next.js production administration console
+After=network-online.target ai-centre-control.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre/runtime/admin/current
+EnvironmentFile=/home/donxu/ai-centre/.env
+EnvironmentFile=/home/donxu/ai-centre/runtime/admin/admin.env
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=8340
+ExecStart=/home/donxu/.local/node/bin/node /home/donxu/ai-centre/runtime/admin/current/server.js
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+TimeoutStopSec=30
+KillMode=control-group
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/donxu/ai-centre/runtime/admin
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target

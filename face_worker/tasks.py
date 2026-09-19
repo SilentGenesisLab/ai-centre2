@@ -10,6 +10,8 @@ from uuid import uuid4
 import httpx
 import imageio_ffmpeg
 
+from control_plane.media_fetch import VIDEO_MEDIA, download_public_media
+
 from .celery_app import celery_app
 from .config import get_settings
 from .face_mosaic import FaceMosaicProcessor
@@ -36,18 +38,17 @@ def _get_processor() -> FaceMosaicProcessor:
     return _processor
 
 
-def _download(source_uri: str, target: Path) -> None:
+def _download(source_uri: str, directory: Path) -> Path:
     settings = get_settings()
-    with httpx.stream(
-        "GET",
+    result = download_public_media(
         source_uri,
-        follow_redirects=True,
-        timeout=httpx.Timeout(settings.download_timeout_sec, connect=30),
-    ) as response:
-        response.raise_for_status()
-        with target.open("wb") as output:
-            for chunk in response.iter_bytes(1024 * 1024):
-                output.write(chunk)
+        directory,
+        "source",
+        VIDEO_MEDIA,
+        settings.max_download_bytes,
+        settings.download_timeout_sec,
+    )
+    return result.path
 
 
 def _upload(target: Path, payload: dict[str, Any]) -> str:
@@ -92,13 +93,12 @@ def process_face_mosaic(self, payload: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
     work_dir = settings.work_dir / job_id
-    source = work_dir / "source.mp4"
     target = work_dir / "face_mosaic.mp4"
     work_dir.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
     try:
         self.update_state(state="PROGRESS", meta={"phase": "download", "progress": 5})
-        _download(str(payload["source_uri"]), source)
+        source = _download(str(payload["source_uri"]), work_dir)
         self.update_state(state="PROGRESS", meta={"phase": "detect_and_render", "progress": 15})
         analysis = _get_processor().process_video_file(source, target)
         output = target if analysis.get("applied") else source
@@ -131,4 +131,3 @@ def process_face_mosaic(self, payload: dict[str, Any]) -> dict[str, Any]:
         raise
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
-

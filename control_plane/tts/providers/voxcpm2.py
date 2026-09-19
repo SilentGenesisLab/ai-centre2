@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from ..base import RawSynthesisResult, TTSProvider
-from ..schemas import TTSSpeechRequest
+from ..schemas import TTSCloneSpeechRequest, TTSSpeechRequest
 from .common import raise_for_provider_status, translate_network_error
 
 
@@ -36,8 +36,15 @@ class VoxCPM2Provider(TTSProvider):
             "cfg_value": binding.get("cfg_value", 2.0),
             "inference_timesteps": binding.get("inference_timesteps", 10),
         }
+        if request.seed is not None:
+            payload["seed"] = request.seed
         endpoint = "tts"
-        if binding.get("reference_wav_path") or binding.get("prompt_wav_path"):
+        if isinstance(request, TTSCloneSpeechRequest):
+            endpoint = "clone_path"
+            payload["reference_wav_path"] = str(request.reference_audio_path)
+            if request.prompt_text:
+                payload["prompt_text"] = request.prompt_text
+        elif binding.get("reference_wav_path") or binding.get("prompt_wav_path"):
             endpoint = "clone_path"
             payload.update(
                 {
@@ -70,4 +77,3 @@ class VoxCPM2Provider(TTSProvider):
                 if key.lower() in {"x-elapsed-seconds", "x-audio-duration"}
             },
         )
-

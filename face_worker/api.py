@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from celery.result import AsyncResult
+from celery.exceptions import TimeoutError as CeleryTimeoutError
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,14 @@ def _job_payload(job: AsyncResult) -> dict[str, Any]:
     return {"job_id": job.id, "status": mapping.get(state, state.lower())}
 
 
+def _enqueue(request: FaceMosaicJobRequest) -> AsyncResult:
+    return process_face_mosaic.apply_async(
+        args=[request.model_dump()],
+        queue="face_mosaic",
+        priority=9,
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     inspection = celery_app.control.inspect(timeout=1)
@@ -58,12 +67,45 @@ def health() -> dict[str, Any]:
 
 @app.post("/v1/face-mosaic/jobs", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_service_token)])
 def create_job(request: FaceMosaicJobRequest) -> dict[str, Any]:
-    job = process_face_mosaic.apply_async(args=[request.model_dump()], queue="face_mosaic")
+    job = _enqueue(request)
     return {
         "job_id": job.id,
         "status": "queued",
         "status_url": f"/v1/face-mosaic/jobs/{job.id}",
     }
+
+
+@app.post("/v1/face-mosaic/jobs/wait", dependencies=[Depends(require_service_token)])
+def create_job_and_wait(request: FaceMosaicJobRequest) -> dict[str, Any]:
+    job = _enqueue(request)
+    try:
+        result = job.get(timeout=get_settings().face_wait_timeout_seconds)
+    except CeleryTimeoutError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail={
+                "message": "face processing is still running",
+                "job_id": job.id,
+                "status_url": f"/v1/face-mosaic/jobs/{job.id}",
+            },
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"face processing failed: {type(exc).__name__}",
+        ) from exc
+    if not isinstance(result, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="face worker returned an invalid result",
+        )
+    video_url = result.get("video_url")
+    if not isinstance(video_url, str) or not video_url.startswith("https://"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="face worker did not return an HTTPS OSS result URL",
+        )
+    return result
 
 
 @app.get("/v1/face-mosaic/jobs/{job_id}", dependencies=[Depends(require_service_token)])
@@ -75,4 +117,3 @@ def get_job(job_id: UUID) -> dict[str, Any]:
 def cancel_job(job_id: UUID) -> dict[str, Any]:
     celery_app.control.revoke(str(job_id), terminate=False)
     return {"job_id": str(job_id), "status": "cancel_requested"}
-

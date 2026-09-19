@@ -15,6 +15,9 @@
   "use_textline_orientation": false,
   "max_images_per_request": 128,
   "max_regions_per_image": 8,
+  "memory_trim_interval_batches": 100,
+  "worker_max_rss_mb": 24576,
+  "worker_max_batches": 50000,
   "preload_languages": [
     "es",
     "th"

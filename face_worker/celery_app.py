@@ -14,6 +14,8 @@ celery_app = Celery(
 )
 celery_app.conf.update(
     task_default_queue="face_mosaic",
+    task_default_priority=9,
+    task_queue_max_priority=10,
     task_track_started=True,
     task_acks_late=True,
     task_reject_on_worker_lost=True,
@@ -22,5 +24,5 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     task_time_limit=1800,
     task_soft_time_limit=1740,
+    broker_transport_options={"queue_order_strategy": "priority"},
 )
-

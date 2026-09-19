@@ -10,7 +10,8 @@ from control_plane.tts.base import TransientTTSProviderError
 from control_plane.tts.providers.common import raise_for_provider_status
 from control_plane.tts.providers.doubao import DoubaoProvider
 from control_plane.tts.providers.elevenlabs import ElevenLabsProvider
-from control_plane.tts.schemas import TTSSpeechRequest
+from control_plane.tts.providers.voxcpm2 import VoxCPM2Provider
+from control_plane.tts.schemas import TTSCloneSpeechRequest, TTSSpeechRequest
 
 
 class FakeResponse:
@@ -123,6 +124,31 @@ class TTSProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             "key",
         )
         self.assertEqual(result.provider_request_id, "request-1")
+
+    async def test_voxcpm2_clone_uses_uploaded_reference_path(self) -> None:
+        FakeClient.response = FakeResponse(content=b"wav-audio")
+        provider = VoxCPM2Provider("http://tts.example", 30, True)
+
+        with patch(
+            "control_plane.tts.providers.voxcpm2.httpx.AsyncClient",
+            FakeClient,
+        ):
+            await provider.synthesize(
+                TTSCloneSpeechRequest(
+                    text="你好",
+                    language="zh",
+                    reference_audio_path="/runtime/references/upload.wav",
+                    prompt_text="参考文本",
+                ),
+                {},
+            )
+
+        self.assertEqual(FakeClient.last_url, "http://tts.example/clone_path")
+        self.assertEqual(
+            FakeClient.last_kwargs["json"]["reference_wav_path"],
+            "/runtime/references/upload.wav",
+        )
+        self.assertEqual(FakeClient.last_kwargs["json"]["prompt_text"], "参考文本")
 
 
 class ProviderErrorTests(unittest.TestCase):

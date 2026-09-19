@@ -1,7 +1,7 @@
 [Unit]
 Description=AI Centre OCR Gateway
-After=network-online.target ai-centre-ocr-worker@0.service ai-centre-ocr-worker@1.service
-Wants=network-online.target ai-centre-ocr-worker@0.service ai-centre-ocr-worker@1.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

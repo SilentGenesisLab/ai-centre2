@@ -13,10 +13,12 @@ MANAGED_SERVICES: dict[int, tuple[str, ...]] = {
     0: (
         "ai-centre-face-worker-gpu0.service",
         "ai-centre-ocr-worker@0.service",
+        "ai-centre-musetalk.service",
     ),
     1: (
         "ai-centre-face-worker-gpu1.service",
         "ai-centre-ocr-worker@1.service",
+        "ai-centre-audio-separation-worker.service",
     ),
 }
 
@@ -160,4 +162,3 @@ class GpuController:
         finally:
             if os.path.exists(temporary_name):
                 os.unlink(temporary_name)
-

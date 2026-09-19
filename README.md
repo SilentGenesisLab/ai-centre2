@@ -9,7 +9,8 @@ Production control plane and GPU services for the AI video translation pipeline.
 - `control_plane`: ASR/TTS job gateway and per-GPU lifecycle control.
 - `managed_backends`: production audio backends running as `donxu`
   user-systemd services: Faster-Whisper on port `9001`, vLLM-Omni VoxCPM2 on
-  port `8192`, and the legacy TTS compatibility gateway on port `8193`.
+  port `8192`, the legacy TTS compatibility gateway on port `8193`, and
+  MuseTalk + GFPGAN lip-sync processing on port `9011`.
 - `gateway`: Caddy HTTPS reverse proxy for one-public-IP deployments.
 - `deploy`: user-systemd units and managed backend templates.
 
@@ -27,6 +28,8 @@ stopping only the allowlisted user services assigned to it.
 
 ## Public access
 
+- Administration console: `https://aicentre2.sligenai.cn:8443/admin`
+
 - Base URL: `http://aicentre2.sligenai.cn:8320`
 - Swagger: `http://aicentre2.sligenai.cn:8320/docs`
 - OpenAPI: `http://aicentre2.sligenai.cn:8320/openapi.json`
@@ -41,6 +44,20 @@ on the router instead of this server.
 - `GET /health`
 - `POST /v1/asr/transcriptions`
 - `POST /v1/tts/speech`
+- `POST /v1/lipsync/jobs`
+- `GET /v1/lipsync/jobs`
+- `GET /v1/lipsync/jobs/{job_id}`
+- `GET /v1/lipsync/jobs/{job_id}/video`
+- `GET /v1/lipsync/jobs/{job_id}/logs`
+- `POST /v1/lipsync/jobs/{job_id}/cancel`
+- `POST /v1/watermark-removal/jobs`
+- `POST /v1/watermark-removal/jobs/wait`
+- `GET /v1/watermark-removal/jobs/{job_id}`
+- `POST /v1/watermark-removal/jobs/{job_id}/cancel`
+- `POST /v1/video-upscale/jobs`（FlashVSR V2 / FlashVSR / SeedVR2智能故障切换）
+- `POST /v1/video-upscale/jobs/wait`
+- `GET /v1/video-upscale/jobs/{job_id}`
+- `POST /v1/video-upscale/jobs/{job_id}/cancel`
 - `POST /v2/tts/speech`
 - `POST /v2/tts/jobs`
 - `GET /v2/tts/jobs/{job_id}`
@@ -57,6 +74,7 @@ See `docs/AUDIO_GPU_OPERATIONS.md` for deployment and GPU reservation details.
 See `docs/HTTPS_GATEWAY.md` for the shared-public-IP Caddy deployment.
 See `docs/TTS_PROVIDER_API.md` for the unified VoxCPM2, Doubao and ElevenLabs
 contract, voice registry, async jobs and deployment settings.
+See `docs/MUSETALK_PRODUCTION.md` for MuseTalk + GFPGAN API and operations.
 
 Complete request/response examples are documented in `docs/API.md`.
 Public IP, NAT and internet-facing usage are documented in `docs/PUBLIC_API.md`.

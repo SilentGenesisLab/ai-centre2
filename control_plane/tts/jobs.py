@@ -73,6 +73,7 @@ class TTSJobClient:
             "PENDING": "queued",
             "RECEIVED": "queued",
             "STARTED": "running",
+            "PROGRESS": "running",
             "RETRY": "retrying",
             "SUCCESS": "succeeded",
             "FAILURE": "failed",
@@ -80,6 +81,12 @@ class TTSJobClient:
         }.get(state, state.lower())
         if state == "SUCCESS":
             return TTSJobStatus(job_id=job_id, status=status, result=result.result)
+        if state == "PROGRESS":
+            return TTSJobStatus(
+                job_id=job_id,
+                status=status,
+                result=dict(result.info) if isinstance(result.info, dict) else None,
+            )
         if state == "FAILURE":
             return TTSJobStatus(
                 job_id=job_id,

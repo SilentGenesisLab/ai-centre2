@@ -12,17 +12,22 @@ class AudioUpstreams:
         asr_base_url: str,
         tts_base_url: str,
         timeout_seconds: float,
+        musetalk_base_url: str | None = None,
     ) -> None:
         self.asr_base_url = asr_base_url.rstrip("/")
         self.tts_base_url = tts_base_url.rstrip("/")
+        self.musetalk_base_url = musetalk_base_url.rstrip("/") if musetalk_base_url else None
         self.timeout = httpx.Timeout(timeout_seconds, connect=15)
 
     async def health(self) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=httpx.Timeout(5, connect=2)) as client:
-            return {
+            health = {
                 "asr": await self._health(client, self.asr_base_url),
                 "tts": await self._health(client, self.tts_base_url),
             }
+            if self.musetalk_base_url:
+                health["musetalk"] = await self._health(client, self.musetalk_base_url)
+            return health
 
     async def transcribe(
         self,
@@ -32,8 +37,9 @@ class AudioUpstreams:
         beam_size: int,
     ) -> dict[str, Any]:
         data: dict[str, str] = {"beam_size": str(beam_size)}
-        if language:
-            data["language"] = language
+        normalized_language = (language or "").strip()
+        if normalized_language and normalized_language.lower() != "auto":
+            data["language"] = normalized_language
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.asr_base_url}/asr",

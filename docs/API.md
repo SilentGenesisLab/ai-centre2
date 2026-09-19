@@ -131,7 +131,9 @@ curl http://127.0.0.1:8320/health
 - `ok`：ASR 和 TTS 上游均可访问。
 - `degraded`：至少一个音频上游不可用。
 
-GPU0 的 OCR/人脸 worker 被主动关闭时，OCR 网关自身可能显示 `degraded`，但不影响本接口根据 ASR/TTS 返回 `ok`。
+GPU0 的 OCR/人脸 worker 被主动关闭时，OCR 网关仍以 `status: ok` 表示可以服务，
+并以 `capacity_status: degraded` 和 `healthy_workers` 表示容量下降；不影响本接口
+根据 ASR/TTS 返回的顶层状态。
 
 ## 4. ASR 语音识别
 
@@ -501,3 +503,61 @@ TTS 上游失败示例：
 5. 批处理程序对 `502` 做有限次数退避重试；不要对 `400`、`401`、`404`、`422` 自动重试。
 
 当前接口是同步推理接口：连接会持续到识别或合成完成。真正的高并发批量作业应在其上方增加任务队列和状态查询层。
+
+## 10. 音频分离
+
+Bandit v2多语言影视三轨分离使用独立Celery队列 `audio_separation`，GPU1并发固定为1。输入可以是公网HTTPS音频或视频URL，输出四个OSS WAV地址。
+
+```bash
+curl -X POST "http://127.0.0.1:8320/v1/audio-separation/jobs" \
+  -H "Authorization: Bearer ${SERVICE_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_uri": "https://storage.example.com/video/source.mp4",
+    "model": "bandit-v2-multilingual",
+    "filename_prefix": "separated"
+  }'
+```
+
+```text
+POST /v1/audio-separation/jobs/wait
+GET  /v1/audio-separation/jobs/{job_id}
+POST /v1/audio-separation/jobs/{job_id}/cancel
+```
+
+成功任务返回 `speech_url`、`music_url`、`sfx_url` 和 `background_url`。四轨统一为48kHz双声道PCM WAV，并应用-1dBFS样本峰值保护。`speech`定义为影视对白；歌唱内容通常归入 `music`。
+
+## 11. 视频水印处理
+
+水印处理接收公网 HTTPS 视频 URL，并通过现有素材上传服务返回 OSS HTTPS URL。
+
+异步提交：
+
+```bash
+curl -X POST "http://127.0.0.1:8320/v1/watermark-removal/jobs" \
+  -H "Authorization: Bearer ${SERVICE_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_uri": "https://storage.example.com/video/source.mp4",
+    "filename": "watermark_removed.mp4",
+    "mode": "intensive",
+    "keep_intermediates": false
+  }'
+```
+
+同步等待使用相同请求体：
+
+```text
+POST /v1/watermark-removal/jobs/wait
+```
+
+任务管理：
+
+```text
+GET  /v1/watermark-removal/jobs/{job_id}
+POST /v1/watermark-removal/jobs/{job_id}/cancel
+```
+
+`mode` 支持 `light` 和 `intensive`。`keep_intermediates` 默认为 `false`，此时无论
+成功或失败都会立即清理中间文件。设为 `true` 时，worker 在后续任务启动时清理
+超过 24 小时的中间文件。同步等待超时不会取消后台任务。

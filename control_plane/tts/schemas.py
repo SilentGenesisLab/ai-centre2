@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class TTSProviderName(StrEnum):
@@ -11,6 +12,23 @@ class TTSProviderName(StrEnum):
     VOXCPM2 = "voxcpm2"
     DOUBAO = "doubao"
     ELEVENLABS = "elevenlabs"
+
+
+class TTSQualityMode(StrEnum):
+    STANDARD = "standard"
+    STRICT = "strict"
+
+
+class TTSCloneMode(StrEnum):
+    AUTO = "auto"
+    CONTROLLABLE = "controllable"
+    ULTIMATE = "ultimate"
+
+
+class TTSEmotionStrategy(StrEnum):
+    AUTO = "auto"
+    INHERIT = "inherit"
+    FORCE = "force"
 
 
 class AudioSpec(BaseModel):
@@ -39,16 +57,78 @@ class TimingSpec(BaseModel):
 
 class TTSSpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
-    language: str = Field(min_length=2, max_length=16)
+    language: str = Field(
+        default="auto",
+        min_length=2,
+        max_length=16,
+        description="语言代码；省略或传 auto 时根据合成文本自动判断",
+    )
     voice_profile_id: str = Field(default="default", min_length=1, max_length=128)
     provider: TTSProviderName = TTSProviderName.AUTO
     audio: AudioSpec = Field(default_factory=AudioSpec)
     prosody: ProsodySpec = Field(default_factory=ProsodySpec)
     timing: TimingSpec = Field(default_factory=TimingSpec)
     metadata: dict[str, str] = Field(default_factory=dict)
+    seed: int | None = Field(default=None, ge=0, exclude=True)
 
 
-class TTSJobRequest(TTSSpeechRequest):
+class TTSCloneSpeechRequest(TTSSpeechRequest):
+    reference_audio_path: Path = Field(exclude=True)
+    prompt_text: str | None = Field(
+        default=None,
+        max_length=5000,
+        exclude=True,
+        description="参考音频文本；缺失或为空时先自动识别参考音频",
+    )
+
+
+class TTSAsyncSpeechRequest(TTSSpeechRequest):
+    """Server-side asynchronous synthesis contract for long-form speech."""
+
+    text: str = Field(
+        min_length=1,
+        max_length=20000,
+        description="异步长语音正文，最多20000字符；服务端自动分段并合并。",
+    )
+    reference_audio_url: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=4096,
+        description="可选的公网HTTPS参考音频URL；提供后使用VoxCPM2深度克隆。",
+    )
+    prompt_text: str | None = Field(
+        default=None,
+        max_length=5000,
+        description="参考音频准确文本；缺失或为空时先自动识别参考音频。",
+    )
+    emotion: str | None = Field(default=None, max_length=200)
+    emotion_enhance: bool = False
+    quality_mode: TTSQualityMode = TTSQualityMode.STANDARD
+    clone_mode: TTSCloneMode = TTSCloneMode.AUTO
+    emotion_strategy: TTSEmotionStrategy = TTSEmotionStrategy.AUTO
+
+    @model_validator(mode="after")
+    def require_standard_async_quality(self) -> "TTSAsyncSpeechRequest":
+        if self.quality_mode != TTSQualityMode.STANDARD:
+            raise ValueError("asynchronous long-form TTS only supports quality_mode=standard")
+        return self
+
+
+class TTSJobRequest(TTSAsyncSpeechRequest):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "text": "这是一条异步语音合成任务。",
+                    "language": "zh",
+                    "voice_profile_id": "default",
+                    "provider": "auto",
+                    "idempotency_key": "order-20260802-0001",
+                }
+            ]
+        }
+    )
+
     idempotency_key: str = Field(min_length=8, max_length=256)
 
 
@@ -86,4 +166,3 @@ class TTSJobStatus(BaseModel):
     status: str
     result: dict[str, Any] | None = None
     error: str | None = None
-

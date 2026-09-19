@@ -14,6 +14,7 @@ Environment=PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
 ExecStart=/home/donxu/ai-centre/OCR/.venv/bin/python -m ocr_service.cli
 Restart=always
 RestartSec=5
+MemoryMax=32G
 TimeoutStartSec=180
 TimeoutStopSec=30
 KillSignal=SIGTERM

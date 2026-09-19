@@ -1,0 +1,20 @@
+[Unit]
+Description=AI Centre MiniMax H3 quality A/B benchmark 2026-09-08
+After=network-online.target ai-centre-control.service ai-centre-h3-worker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/donxu/ai-centre
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/python scripts/benchmark_h3_quality_ab.py --base-url https://aicentre2.sligenai.cn:8443 --run-id h3-quality-ab-20260908 --run-dir /home/donxu/ai-centre/runtime/validation/h3-quality-ab-20260908 --deadline-hours 8
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=30
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target

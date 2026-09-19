@@ -75,15 +75,24 @@ async def _worker_health(client: httpx.AsyncClient, worker: WorkerEndpoint) -> d
         }
 
 
+def _pool_health(healthy_count: int, worker_count: int) -> tuple[str, str]:
+    if healthy_count == 0:
+        return "degraded", "unavailable"
+    if healthy_count < worker_count:
+        return "ok", "degraded"
+    return "ok", "full"
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, Any]:
     workers = await asyncio.gather(
         *(_worker_health(request.app.state.http, worker) for worker in config.workers)
     )
     healthy_count = sum(bool(worker["healthy"]) for worker in workers)
-    status = "ok" if healthy_count == len(workers) else "degraded"
+    status, capacity_status = _pool_health(healthy_count, len(workers))
     return {
         "status": status,
+        "capacity_status": capacity_status,
         "healthy_workers": healthy_count,
         "worker_count": len(workers),
         "workers": workers,

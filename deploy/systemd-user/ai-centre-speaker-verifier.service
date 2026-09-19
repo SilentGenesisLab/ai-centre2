@@ -1,0 +1,27 @@
+[Unit]
+Description=AI Centre ERes2NetV2 CPU speaker verification service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=
+Environment=OMP_NUM_THREADS=2
+Environment=MKL_NUM_THREADS=2
+Environment=MODELSCOPE_CACHE=/home/donxu/ai-centre/models/.cache/modelscope
+Environment=SPEAKER_VERIFY_MODEL_PATH=iic/speech_eres2netv2_sv_zh-cn_16k-common
+Environment=SPEAKER_VERIFY_MODEL_NAME=ERes2NetV2
+Environment=SPEAKER_VERIFY_THRESHOLD=0.31
+Environment=SPEAKER_VERIFY_REFERENCE_CACHE_SIZE=128
+ExecStart=/home/donxu/ai-centre/.venv-tts-v026/bin/uvicorn managed_backends.speaker_verify_api:app --host 127.0.0.1 --port 8195
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target

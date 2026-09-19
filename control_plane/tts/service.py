@@ -17,7 +17,12 @@ from .base import (
 from .providers.doubao import DoubaoProvider
 from .providers.elevenlabs import ElevenLabsProvider
 from .providers.voxcpm2 import VoxCPM2Provider
-from .schemas import TTSSpeechRequest, TTSProviderName, VoiceProfile
+from .schemas import (
+    TTSCloneSpeechRequest,
+    TTSSpeechRequest,
+    TTSProviderName,
+    VoiceProfile,
+)
 from .voices import VoiceRegistry
 
 
@@ -44,6 +49,10 @@ class TTSService:
         }
 
     async def synthesize(self, request: TTSSpeechRequest) -> SynthesisResult:
+        if request.language.strip().lower() == "auto":
+            request = request.model_copy(
+                update={"language": self._infer_language(request.text)}
+            )
         profile = self.registry.get(request.voice_profile_id)
         self._validate_language(profile, request.language)
         candidates = self._candidate_names(request, profile)
@@ -114,6 +123,8 @@ class TTSService:
         request: TTSSpeechRequest,
         profile: VoiceProfile,
     ) -> list[str]:
+        if isinstance(request, TTSCloneSpeechRequest):
+            return [TTSProviderName.VOXCPM2.value]
         if request.provider != TTSProviderName.AUTO:
             return [request.provider.value]
         if profile.fallback_order:
@@ -123,6 +134,10 @@ class TTSService:
             for item in self.settings.tts_auto_provider_order.split(",")
             if item.strip()
         ]
+
+    @staticmethod
+    def _infer_language(text: str) -> str:
+        return "zh" if any("\u4e00" <= char <= "\u9fff" for char in text) else "en"
 
     @staticmethod
     def _validate_language(profile: VoiceProfile, language: str) -> None:
@@ -177,4 +192,3 @@ class TTSService:
                 settings.elevenlabs_tts_enabled,
             ),
         ]
-

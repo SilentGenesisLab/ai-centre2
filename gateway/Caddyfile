@@ -2,16 +2,68 @@
 	admin 127.0.0.1:2019
 	http_port 18080
 	https_port 18443
+	servers {
+		protocols h1 h2
+	}
 }
 
 aicentre2.sligenai.cn {
-	@admin path /v1/admin/*
-	respond @admin 404
+	tls /home/donxu/ai-centre/runtime/acme-home/aicentre2.sligenai.cn_ecc/fullchain.cer /home/donxu/ai-centre/runtime/acme-home/aicentre2.sligenai.cn_ecc/aicentre2.sligenai.cn.key
 
-	reverse_proxy 127.0.0.1:8320 {
-		transport http {
-			dial_timeout 10s
-			response_header_timeout 900s
+	@site_root path /
+	handle @site_root {
+		redir * /admin/ 308
+	}
+
+	@public_api_docs path /api-docs.md
+	handle @public_api_docs {
+		header Content-Type "text/markdown; charset=utf-8"
+		root * /home/donxu/ai-centre/docs
+		file_server
+	}
+
+	@admin_ui path /admin /admin/*
+	handle @admin_ui {
+		reverse_proxy 127.0.0.1:8340 {
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 1800s
+			}
+		}
+	}
+
+	@admin_api path /v1/admin/*
+	handle @admin_api {
+		respond 404
+	}
+
+	@internal_api path /internal/*
+	handle @internal_api {
+		respond 404
+	}
+
+	@internal_uploads path /v1/lipsync/jobs/upload /v1/asr/transcriptions/upload /v2/tts/speech/upload /v1/tts/speech
+	handle @internal_uploads {
+		respond 404
+	}
+
+	@tts_stream path /v2/tts/speech/stream
+	handle @tts_stream {
+		reverse_proxy 127.0.0.1:8320 {
+			flush_interval -1
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 1800s
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8320 {
+			transport http {
+				dial_timeout 10s
+				response_header_timeout 1800s
+			}
 		}
 	}
 

@@ -1,0 +1,129 @@
+diff --git a/vllm_omni/entrypoints/openai/serving_speech.py b/vllm_omni/entrypoints/openai/serving_speech.py
+--- a/vllm_omni/entrypoints/openai/serving_speech.py
++++ b/vllm_omni/entrypoints/openai/serving_speech.py
+@@ -3422,6 +3422,44 @@ class OmniOpenAIServingSpeech(OpenAIServing, AudioMixin):
+                 # Stage-0 needs one extra token beyond ming_max_decode_steps.
+                 sampling_params_list[0].max_tokens = int(request.max_new_tokens) + 1
+ 
++        if self._tts_model_type == "voxcpm2" and sampling_params_list:
++            # Match the official VoxCPM2 generation budget.  A fixed 4096-token
++            # ceiling lets a missed EOS turn a short sentence into seconds of
++            # unrelated vocalisation.  Keep the configured/request ceiling,
++            # but never exceed text_tokens * 6 + 10.
++            import copy
++
++            sampling_params_list = copy.deepcopy(sampling_params_list)
++            stage0_params = sampling_params_list[0]
++            token_ids = self._voxcpm2_encode(request.input)
++            bos_token_id = getattr(self._voxcpm2_tokenizer, "bos_token_id", None)
++            text_token_count = len(token_ids)
++            if token_ids and bos_token_id is not None and token_ids[0] == bos_token_id:
++                text_token_count -= 1
++            text_token_count = max(1, text_token_count)
++            official_cap = text_token_count * 6 + 10
++            cap_candidates = [official_cap]
++            configured_cap = getattr(stage0_params, "max_tokens", None)
++            if configured_cap is not None:
++                cap_candidates.append(int(configured_cap))
++            if request.max_new_tokens is not None:
++                cap_candidates.append(int(request.max_new_tokens))
++            stage0_params.max_tokens = max(4, min(cap_candidates))
++
++            # Model preprocess receives prompt additional_information, not the
++            # SamplingParams object.  Copy the caller seed there so CFM noise
++            # and the AR sampler use the same request-level seed.
++            if request.seed is not None and isinstance(prompt, dict):
++                additional = prompt.setdefault("additional_information", {})
++                additional["tts_local_seed"] = int(request.seed)
++            logger.info(
++                "VoxCPM2 dynamic tokens: text_tokens=%d, official_cap=%d, max_tokens=%d, seed=%s",
++                text_token_count,
++                official_cap,
++                stage0_params.max_tokens,
++                request.seed,
++            )
++
+         if request.seed is not None and sampling_params_list:
+             import copy
+ 
+diff --git a/vllm_omni/model_executor/models/voxcpm2/voxcpm2_talker.py b/vllm_omni/model_executor/models/voxcpm2/voxcpm2_talker.py
+--- a/vllm_omni/model_executor/models/voxcpm2/voxcpm2_talker.py
++++ b/vllm_omni/model_executor/models/voxcpm2/voxcpm2_talker.py
+@@ -57,6 +57,7 @@ _ENABLE_NVTX_PROFILE = False
+ # threshold is max(_ACTIVE_STATE_LEAK_WARN_MIN, 4 * max_batch_size) so small
+ # deployments still get a usable floor instead of a tiny noisy one.
+ _ACTIVE_STATE_LEAK_WARN_MIN = 512
++_MIN_DECODE_STEPS = 4
+ 
+ 
+ class _VoxCPM2PromptConfigLike(Protocol):
+@@ -83,6 +84,7 @@ class VoxCPM2PreprocessInput(TypedDict, total=False):
+     voice_profile: dict[str, Any] | list[dict[str, Any]] | None
+     voice_name: str | list[str] | None
+     voice_created_at: int | str | None
++    tts_local_seed: int | list[int] | None
+ 
+ 
+ class VoxCPM2PostprocessInput(TypedDict, total=False):
+@@ -254,6 +256,7 @@ class _RequestState:
+     last_audio_patch_gpu: torch.Tensor | None = None
+     cfm_output_gpu: torch.Tensor | None = None
+     cfm_noise_step: int = 0
++    cfm_noise_seed: int | None = None
+     precomputed_stop_logits: torch.Tensor | None = None
+     pending_audio_chunks_gpu: list[torch.Tensor] = dataclasses.field(default_factory=list)
+     pending_audio_copies: list[_PendingAudioCopy] = dataclasses.field(default_factory=list)
+@@ -2361,11 +2364,14 @@ class VoxCPM2TalkerForConditionalGeneration(nn.Module):
+             ).transpose(1, 2)
+ 
+     def _fill_deterministic_cfm_noise(self, state: _RequestState, out: torch.Tensor) -> None:
+-        """Fill CFM noise deterministically for benchmark replay only."""
+-        request_key = state.request_id.split("_", 1)[0]
+-        if not request_key.isdigit():
+-            request_key = state.request_id
+-        key = f"{self._deterministic_cfm_seed}:{request_key}:{state.cfm_noise_step}".encode()
++        """Fill CFM noise from the caller seed and per-request decode step."""
++        if state.cfm_noise_seed is None:
++            request_key = state.request_id.split("_", 1)[0]
++            if not request_key.isdigit():
++                request_key = state.request_id
++            key = f"{self._deterministic_cfm_seed}:{request_key}:{state.cfm_noise_step}".encode()
++        else:
++            key = f"caller:{state.cfm_noise_seed}:{state.cfm_noise_step}".encode()
+         digest = hashlib.blake2b(key, digest_size=8).digest()
+         seed = int.from_bytes(digest, "little") & 0x7FFF_FFFF_FFFF_FFFF
+         gen = torch.Generator(device=out.device)
+@@ -2721,7 +2727,7 @@ class VoxCPM2TalkerForConditionalGeneration(nn.Module):
+         stop_mask = stacked[:, 1] > stacked[:, 0]
+         stop_mask_cpu = stop_mask.cpu()
+         for i, (state, _) in enumerate(pending):
+-            is_stopping = bool(stop_mask_cpu[i])
++            is_stopping = bool(stop_mask_cpu[i]) and state.decode_step_count >= _MIN_DECODE_STEPS
+             state.precomputed_is_stopping = is_stopping
+             if is_stopping:
+                 state.is_stopping = True
+@@ -2730,6 +2736,9 @@ class VoxCPM2TalkerForConditionalGeneration(nn.Module):
+     def _should_stop_from_cached_logits(state: _RequestState) -> bool:
+         if state.is_stopping:
+             return True
++        if state.decode_step_count < _MIN_DECODE_STEPS:
++            state.precomputed_is_stopping = False
++            return False
+         cached = state.precomputed_is_stopping
+         if cached is not None:
+             return cached
+@@ -3083,6 +3092,14 @@ class VoxCPM2TalkerForConditionalGeneration(nn.Module):
+                 state.prefill_completed = False
+                 state.is_last_prefill_chunk = False
+                 state.decode_step_count = 0
++                state.cfm_noise_step = 0
++                caller_seed = info_dict.get("tts_local_seed")
++                if isinstance(caller_seed, list):
++                    caller_seed = caller_seed[0] if caller_seed else None
++                try:
++                    state.cfm_noise_seed = int(caller_seed) if caller_seed is not None else None
++                except (TypeError, ValueError):
++                    state.cfm_noise_seed = None
+                 state.precomputed_stop_logits = None
+                 state.precomputed_is_stopping = None
+                 state.last_audio_patch_gpu = None

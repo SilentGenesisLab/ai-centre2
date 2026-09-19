@@ -7,6 +7,7 @@ It proxies:
 
 - ASR to the managed Faster-Whisper service on `http://127.0.0.1:9001`.
 - TTS to the compatibility gateway on `http://127.0.0.1:8193`.
+- CAM++ CPU speaker verification on `http://127.0.0.1:8195`.
 
 The compatibility gateway forwards to the managed vLLM-Omni VoxCPM2 server on
 `http://127.0.0.1:8192`. The adapter preserves the existing `/tts` and
@@ -84,10 +85,12 @@ Inspect operations:
 systemctl --user status ai-centre-asr-gpu0.service
 systemctl --user status ai-centre-voxcpm2-gpu1.service
 systemctl --user status ai-centre-tts-backend.service
+systemctl --user status ai-centre-speaker-verifier.service
 
 journalctl --user -u ai-centre-asr-gpu0.service -n 100 --no-pager
 journalctl --user -u ai-centre-voxcpm2-gpu1.service -n 100 --no-pager
 journalctl --user -u ai-centre-tts-backend.service -n 100 --no-pager
+journalctl --user -u ai-centre-speaker-verifier.service -n 100 --no-pager
 ```
 
 ## Control-plane cutover
@@ -109,10 +112,12 @@ systemctl --user restart ai-centre-control.service
 systemctl --user restart ai-centre-tts-worker.service
 ```
 
-Voice cloning is fail-closed at the compatibility gateway because reference
-audio can terminate the pinned VoxCPM2 vLLM-Omni engine. Keep
-`VOXCPM2_ENABLE_VOICE_CLONING=false` until the upstream engine passes a
-reference-audio regression test. Plain TTS remains available.
+Voice cloning is enabled after the VoxCPM2 reference-audio regression test.
+The service must keep the CUDA 13 NVRTC library directory in
+`LD_LIBRARY_PATH`; without it, prompt-cache compilation falls back to
+zero-shot mode and the engine rejects the padded clone prefill. Keep
+`VOXCPM2_ENABLE_VOICE_CLONING=true` only while both the clone regression test
+and the plain-TTS regression test pass.
 
 Rollback only requires restoring the previous backend URL in `.env` and
 restarting the two control services.

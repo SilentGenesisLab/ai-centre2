@@ -280,7 +280,7 @@ def _coarse_scan(
             )
         if not image_inputs:
             continue
-        results = engine.recognize_batch(image_inputs)
+        results = engine.recognize_batch(image_inputs, source_lang_hint)
         for result in results:
             raw_by_frame[int(result.image_id)] = [
                 {"bbox": item.bbox, "text": item.text, "score": item.score}
@@ -843,7 +843,7 @@ def _refine_event_boundaries(
             mapping[image_id] = (frame_index, bbox_key)
         if not inputs:
             continue
-        for result in engine.recognize_batch(inputs):
+        for result in engine.recognize_batch(inputs, source_lang_hint):
             frame_index, bbox_key = mapping[result.image_id]
             text = " ".join(item.text for item in result.items if item.score >= min_score)
             for event in requested[(frame_index, bbox_key)]:

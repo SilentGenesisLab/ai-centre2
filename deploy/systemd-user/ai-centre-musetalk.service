@@ -1,0 +1,24 @@
+[Unit]
+Description=AI Centre managed MuseTalk 1.5 lip-sync backend on physical GPU 0
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=0
+Environment=MUSETALK_PORT=9011
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/python -m managed_backends.musetalk_api
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+TimeoutStopSec=60
+KillMode=control-group
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=1024
+
+[Install]
+WantedBy=default.target
