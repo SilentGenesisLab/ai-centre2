@@ -30,6 +30,18 @@ def _filter_path(path: Path) -> str:
     return path.as_posix().replace(":", r"\:").replace("'", r"\'")
 
 
+def _blend_opacity(strength: float) -> float:
+    """把对外的「LUT 强度」换算成 FFmpeg blend 的 all_opacity。
+
+    ``blend`` 的第一个输入是 top，normal 模式的结果为
+    ``top * opacity + bottom * (1 - opacity)``。滤镜图里 top 是原片、
+    bottom 是 LUT 结果，所以 opacity 实际控制的是**原片保留多少**。
+    要让 ``strength`` 表示 LUT 强度，就得取反：strength=1 -> opacity=0
+    （输出完全来自 LUT），strength=0 -> opacity=1（输出就是原片）。
+    """
+    return 1.0 - min(1.0, max(0.0, float(strength)))
+
+
 def _sanitize_cube(source: Path, target: Path) -> int:
     lines = source.read_text(encoding="utf-8-sig", errors="strict").splitlines()
     size = None
@@ -115,7 +127,12 @@ def color_grade_task(self, request_data: dict[str, Any]) -> dict[str, Any]:
         video_encoder = getattr(settings, "color_grade_video_encoder", "libx264")
         video_bitrate = getattr(settings, "color_grade_video_bitrate", "14M")
         self.update_state(state="PROGRESS", meta={"stage": "grading", "progress": 15, "lut_size": cube_size})
-        filter_graph = f"[0:v]split=2[original][graded];[graded]lut3d=file={_filter_path(clean_cube)}[lut];[original][lut]blend=all_mode=normal:all_opacity={strength:.6f}[v]"
+        # strength 是对外的 LUT 强度，_blend_opacity 负责换算成 blend 的保留比例
+        filter_graph = (
+            "[0:v]split=2[original][graded];"
+            f"[graded]lut3d=file={_filter_path(clean_cube)}[lut];"
+            f"[original][lut]blend=all_mode=normal:all_opacity={_blend_opacity(strength):.6f}[v]"
+        )
         completed = subprocess.run(
             [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
              "-filter_complex", filter_graph, "-map", "[v]", "-map", "0:a?",
