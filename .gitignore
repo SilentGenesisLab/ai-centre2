@@ -39,3 +39,7 @@ docs/reports/**/*.M4A
 docs/reports/**/*.mp4
 docs/reports/**/*.webm
 docs/reports/**/assets/
+docs/reports/**/*
+!docs/reports/**/*.md
+NUL
+runtime_*.tgz
