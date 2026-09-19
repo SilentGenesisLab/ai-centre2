@@ -1,0 +1,21 @@
+[Unit]
+Description=AI Centre 2 .cube video color grading worker
+After=network-online.target redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=CUDA_VISIBLE_DEVICES=
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker -I control_plane.color_grade_tasks -Q color_grade -n color-grade@%%h --pool=threads --concurrency=1 --prefetch-multiplier=1 --loglevel=INFO
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=512
+
+[Install]
+WantedBy=default.target

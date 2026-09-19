@@ -58,6 +58,9 @@ on the router instead of this server.
 - `POST /v1/video-upscale/jobs/wait`
 - `GET /v1/video-upscale/jobs/{job_id}`
 - `POST /v1/video-upscale/jobs/{job_id}/cancel`
+- `POST /v1/color-grade/jobs`
+- `GET /v1/color-grade/jobs/{job_id}`
+- `POST /v1/color-grade/jobs/{job_id}/cancel`
 - `POST /v2/tts/speech`
 - `POST /v2/tts/jobs`
 - `GET /v2/tts/jobs/{job_id}`

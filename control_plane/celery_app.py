@@ -17,6 +17,7 @@ celery_app = Celery(
         "control_plane.watermark_tasks",
         "control_plane.depth_tasks",
         "control_plane.audio_separation_tasks",
+        "control_plane.color_grade_tasks",
         "control_plane.video_upscale_tasks",
         "control_plane.h3_tasks",
         "control_plane.generation_tasks",

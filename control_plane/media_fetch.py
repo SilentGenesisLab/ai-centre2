@@ -49,6 +49,14 @@ VIDEO_MEDIA = MediaSpec(
         "video/webm": ".webm",
     },
 )
+CUBE_MEDIA = MediaSpec(
+    suffixes=frozenset({".cube"}),
+    content_types={
+        "text/plain": ".cube",
+        "application/octet-stream": ".cube",
+        "application/x-cube": ".cube",
+    },
+)
 AUDIO_MEDIA = MediaSpec(
     suffixes=frozenset({".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg"}),
     content_types={

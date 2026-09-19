@@ -135,6 +135,18 @@ class Settings(BaseSettings):
     audio_separation_gpu_lock_path: Path = Path(
         "/home/donxu/ai-centre/runtime/video-depth/gpu.lock"
     )
+    color_grade_work_dir: Path = Path(
+        "/home/donxu/ai-centre/runtime/color-grade"
+    )
+    color_grade_max_download_bytes: int = 2 * 1024 * 1024 * 1024
+    color_grade_cube_max_bytes: int = 8 * 1024 * 1024
+    color_grade_download_timeout_seconds: float = 900
+    color_grade_ffmpeg_timeout_seconds: float = 7200
+    color_grade_upload_timeout_seconds: float = 900
+    color_grade_result_expires_seconds: int = 604800
+    color_grade_ffmpeg_bin: str = "auto"
+    color_grade_video_encoder: str = "libx264"
+    color_grade_video_bitrate: str = "14M"
     runninghub_base_url: str = "https://www.runninghub.cn"
     runninghub_api_token: SecretStr | None = None
     video_upscale_auto_provider_order: str = "flashvsr_v2,flashvsr,seedvr2"
@@ -243,6 +255,7 @@ def get_settings() -> Settings:
     settings.watermark_work_dir.mkdir(parents=True, exist_ok=True)
     settings.depth_work_dir.mkdir(parents=True, exist_ok=True)
     settings.audio_separation_work_dir.mkdir(parents=True, exist_ok=True)
+    settings.color_grade_work_dir.mkdir(parents=True, exist_ok=True)
     settings.video_upscale_work_dir.mkdir(parents=True, exist_ok=True)
     settings.h3_work_dir.mkdir(parents=True, exist_ok=True)
     settings.h3_db_path.parent.mkdir(parents=True, exist_ok=True)

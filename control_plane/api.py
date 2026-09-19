@@ -52,6 +52,7 @@ from .audio_separation_jobs import (
     AudioSeparationJobClient,
     AudioSeparationJobNotFound,
 )
+from .color_grade_jobs import ColorGradeJobClient, ColorGradeJobNotFound
 from .video_upscale_jobs import VideoUpscaleJobClient, VideoUpscaleJobNotFound
 from .h3_jobs import H3JobClient, H3JobNotFound
 from .h3_scheduler import H3Scheduler, probe_worker
@@ -172,6 +173,12 @@ app.openapi_tags.append(
     {
         "name": "音频分离",
         "description": "使用Bandit v2将音视频分离为对白、音乐、音效和背景轨。",
+    }
+)
+app.openapi_tags.append(
+    {
+        "name": "视频调色",
+        "description": "使用 .cube 3D LUT 异步处理视频并返回成片 URL。",
     }
 )
 app.openapi_tags.append(
@@ -600,6 +607,30 @@ class AudioSeparationUrlJobRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ColorGradeUrlJobRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [{
+                "video_url": "https://storage.example.com/video/source.mp4",
+                "cube_url": "https://storage.example.com/luts/warm.cube",
+                "strength": 0.65,
+                "filename": "warm_graded.mp4",
+            }],
+        },
+    )
+
+    video_url: str = Field(min_length=1, max_length=4096, description="公网 HTTPS 视频 URL。")
+    cube_url: str = Field(min_length=1, max_length=4096, description="公网 HTTPS .cube LUT URL。")
+    strength: float = Field(default=0.65, ge=0.0, le=1.0, description="LUT 强度；0 为原片，1 为完整 LUT。")
+    filename: str = Field(default="color_graded.mp4", min_length=1, max_length=256, pattern=r"^[^/\\]+\.mp4$")
+    external_ref: str | None = Field(default=None, max_length=256)
+    run_id: str | None = Field(default=None, max_length=256)
+    campaign_id: str | None = Field(default=None, max_length=256)
+    project_id: str | None = Field(default=None, max_length=256)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class VideoGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str = Field(default="seedance-2.0", min_length=1, max_length=128)
@@ -963,6 +994,11 @@ def get_depth_jobs() -> DepthJobClient:
 @lru_cache(maxsize=1)
 def get_audio_separation_jobs() -> AudioSeparationJobClient:
     return AudioSeparationJobClient(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_color_grade_jobs() -> ColorGradeJobClient:
+    return ColorGradeJobClient(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -2186,6 +2222,65 @@ async def cancel_audio_separation_job(job_id: UUID) -> dict[str, Any]:
         )
     except AudioSeparationJobNotFound as exc:
         raise HTTPException(status_code=404, detail="audio separation job not found") from exc
+
+
+async def _validate_color_grade_sources(request: ColorGradeUrlJobRequest) -> None:
+    try:
+        await asyncio.gather(
+            asyncio.to_thread(validate_public_https_url, request.video_url),
+            asyncio.to_thread(validate_public_https_url, request.cube_url),
+        )
+    except MediaFetchError as exc:
+        raise HTTPException(exc.status_code, exc.detail) from exc
+
+
+@app.post(
+    "/v1/color-grade/jobs",
+    tags=["视频调色"],
+    summary="创建异步 .cube 视频调色任务",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_service_token)],
+)
+async def create_color_grade_job(request: ColorGradeUrlJobRequest) -> dict[str, Any]:
+    await _validate_color_grade_sources(request)
+    priority = 0 if request.metadata.get("probe") is True else 5
+    try:
+        job = await asyncio.to_thread(get_color_grade_jobs().submit, request.model_dump(), priority)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"unable to enqueue color grade job: {type(exc).__name__}") from exc
+    return {
+        "job_id": job.id,
+        "status": "queued",
+        "priority": priority,
+        "strength": request.strength,
+        "status_url": f"/v1/color-grade/jobs/{job.id}",
+    }
+
+
+@app.get(
+    "/v1/color-grade/jobs/{job_id}",
+    tags=["视频调色"],
+    summary="查询视频调色任务",
+    dependencies=[Depends(require_service_token)],
+)
+async def get_color_grade_job(job_id: UUID) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(get_color_grade_jobs().status, str(job_id))
+    except ColorGradeJobNotFound as exc:
+        raise HTTPException(status_code=404, detail="color grade job not found") from exc
+
+
+@app.post(
+    "/v1/color-grade/jobs/{job_id}/cancel",
+    tags=["视频调色"],
+    summary="取消视频调色任务",
+    dependencies=[Depends(require_service_token)],
+)
+async def cancel_color_grade_job(job_id: UUID) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(get_color_grade_jobs().cancel, str(job_id))
+    except ColorGradeJobNotFound as exc:
+        raise HTTPException(status_code=404, detail="color grade job not found") from exc
 
 
 def _transcription_language(transcription: dict[str, Any], text: str | None) -> str | None:
