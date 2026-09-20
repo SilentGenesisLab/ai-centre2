@@ -40,3 +40,17 @@ out/
 *.orig
 *.rej
 
+# --- 服务器上的运行时/备份目录（保留在磁盘，不入库）---
+backups/
+admin-backups/
+runtime_validation/
+.runtime/
+
+# --- 自建的 vLLM Omni 轮子（16MB 二进制，不入库）---
+# 注意：scripts/install_voxcpm2_v026_test.sh 硬引用
+# vendor/wheels/vllm_omni-0.26.0+sligen1-py3-none-any.whl，
+# 全新克隆需先用 scripts/build_voxcpm2_vllm_wheel.sh
+# 配合 patches/vllm-omni-v0.26.0-voxcpm2-stability.patch 重新构建。
+vendor/wheels/
+*.whl
+

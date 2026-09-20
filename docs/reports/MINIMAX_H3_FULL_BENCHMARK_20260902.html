@@ -1,0 +1,1164 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MiniMax H3 192条审核</title><style>
+body{margin:0;background:#07111f;color:#dbeafe;font:14px system-ui}header{position:sticky;top:0;background:#0b1729ee;padding:16px;z-index:2}select,input{margin:4px;padding:8px;background:#10243e;color:#dbeafe;border:1px solid #31577d;border-radius:6px}main{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px;padding:16px}.card{background:#0e2037;border:1px solid #24486b;border-radius:12px;padding:12px}video{width:100%;aspect-ratio:16/9;background:#000}h3{font-size:14px}p{height:4.5em;overflow:auto;color:#9ec9ef}dl{display:grid;grid-template-columns:90px 1fr;gap:4px}dt{color:#73b8ef}dd{margin:0}.hidden{display:none}
+</style></head><body><header><strong>MiniMax H3 全量审核</strong>
+<select id="resolution"><option value="">全部清晰度</option><option>480p</option><option>720p</option><option>1080p</option></select>
+<select id="duration"><option value="">全部时长</option><option value="5">5秒</option><option value="10">10秒</option><option value="15">15秒</option><option value="24">24秒</option><option value="30">30秒</option></select>
+<select id="mode"><option value="">全部输入</option><option>text</option><option>image</option><option>video</option><option>audio</option><option>multimodal</option></select>
+<select id="concurrency"><option value="">全部并发</option><option>1</option><option>3</option><option>6</option><option>12</option></select>
+<select id="status"><option value="">全部状态</option><option value="anomaly">仅异常</option><option value="normal">仅正常</option></select>
+<select id="review"><option value="">全部样本</option><option value="review">人工审核集</option><option value="other">非审核集</option></select>
+<input id="search" placeholder="搜索Case或Prompt"></header><main>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/b98fad92ab39458ea219c8becbe0e9d1.mp4"></video>
+  <h3>single-480p-5s-text-c1</h3>
+  <p>一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>43.452s</dd><dt>端到端</dt><dd>43.473s</dd><dt>有效RTF</dt><dd>8.6904</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.183614</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="text" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/3cd179d60e734087804ae25c63a2621f.mp4"></video>
+  <h3>single-480p-5s-text-c3</h3>
+  <p>A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>32.899s</dd><dt>端到端</dt><dd>32.918s</dd><dt>有效RTF</dt><dd>6.5798</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.58934</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="text" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/7e51f4a3d4574edb90e0ff52caeb91eb.mp4"></video>
+  <h3>single-480p-5s-text-c6</h3>
+  <p>透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>32.812s</dd><dt>端到端</dt><dd>32.833s</dd><dt>有效RTF</dt><dd>6.5624</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.454985</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="text" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/139e5b28ae36414781b23e80bee4a70d.mp4"></video>
+  <h3>single-480p-5s-text-c12</h3>
+  <p>Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>27.949s</dd><dt>端到端</dt><dd>27.965s</dd><dt>有效RTF</dt><dd>5.5898</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.357389</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="image" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/d993c27e75de4b389bcbe4dd0ba42c19.mp4"></video>
+  <h3>single-480p-5s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>80.057s</dd><dt>端到端</dt><dd>80.799s</dd><dt>有效RTF</dt><dd>16.0114</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.290059</dd><dt>DINOv2</dt><dd>0.181936</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="image" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/ebb39ffe90c641af9036c471abd54824.mp4"></video>
+  <h3>single-480p-5s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. Steam rises slowly from freshly baked bread as a chef cuts through the crisp crust, warm kitchen background, appetizing food commercial close-up</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>40.184s</dd><dt>端到端</dt><dd>431.29s</dd><dt>有效RTF</dt><dd>8.0368</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.267784</dd><dt>DINOv2</dt><dd>0.110919</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/e7582dd87c964461b52317fd382b40b8.mp4"></video>
+  <h3>single-480p-5s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>39.105s</dd><dt>端到端</dt><dd>110.141s</dd><dt>有效RTF</dt><dd>7.821</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.263969</dd><dt>DINOv2</dt><dd>0.051423</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="image" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/05ed9ce3e6984b7d89fbde68f0cfa478.mp4"></video>
+  <h3>single-480p-5s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>33.3s</dd><dt>端到端</dt><dd>33.935s</dd><dt>有效RTF</dt><dd>6.66</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.015055</dd><dt>DINOv2</dt><dd>0.928508</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/55413bac9a0c4ad2ba4107e4d1f7eaf3.mp4"></video>
+  <h3>single-480p-5s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一款高端智能手表放在深色展台上，金属边缘出现流动高光，镜头环绕产品，商业广告质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>204.344s</dd><dt>端到端</dt><dd>289.424s</dd><dt>有效RTF</dt><dd>40.8688</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.4245</dd><dt>DINOv2</dt><dd>0.56391</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="video" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/a5037e636b7c42eb9dd64399f37079bb.mp4"></video>
+  <h3>single-480p-5s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. A transparent skincare serum bottle stands on pale blue water, ripples and tiny droplets surround it, smooth camera move, clean premium beauty commercial</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>84.855s</dd><dt>端到端</dt><dd>85.369s</dd><dt>有效RTF</dt><dd>16.971</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.313552</dd><dt>DINOv2</dt><dd>0.073525</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="video" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/d992f1548034412b9bf8ee35a97dd08b.mp4"></video>
+  <h3>single-480p-5s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>313.137s</dd><dt>端到端</dt><dd>635.37s</dd><dt>有效RTF</dt><dd>62.6274</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.297889</dd><dt>DINOv2</dt><dd>0.943134</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="video" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/6e26c662ed3f4726bc67c99dfc034d1e.mp4"></video>
+  <h3>single-480p-5s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>214.88s</dd><dt>端到端</dt><dd>380.986s</dd><dt>有效RTF</dt><dd>42.976</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.79653</dd><dt>DINOv2</dt><dd>0.074084</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="audio" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/d0792245301445baae009e7bbe9e573c.mp4"></video>
+  <h3>single-480p-5s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。热气从刚出炉的面包上缓慢升起，厨师切开酥脆表皮，暖色厨房背景，食物广告近景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>33.493s</dd><dt>端到端</dt><dd>33.802s</dd><dt>有效RTF</dt><dd>6.6986</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.001323</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/464b3daa7bd34d968e1b1237cf5cb951.mp4"></video>
+  <h3>single-480p-5s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A golden retriever runs across grass toward sunset, fur and blades of grass moving naturally, low tracking shot, warm realistic atmosphere</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>39.204s</dd><dt>端到端</dt><dd>39.412s</dd><dt>有效RTF</dt><dd>7.8408</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.403431</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="audio" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/9c204ce2a1884a3d840c8fc87a988fe0.mp4"></video>
+  <h3>single-480p-5s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>34.046s</dd><dt>端到端</dt><dd>34.841s</dd><dt>有效RTF</dt><dd>6.8092</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.007892</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/dd243cda6581474abcfc52f9eaeea4b9.mp4"></video>
+  <h3>single-480p-5s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>39.065s</dd><dt>端到端</dt><dd>39.921s</dd><dt>有效RTF</dt><dd>7.813</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.019942</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="multimodal" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/57ad2737711b4691951ef211c7206044.mp4"></video>
+  <h3>single-480p-5s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>189.831s</dd><dt>端到端</dt><dd>192.08s</dd><dt>有效RTF</dt><dd>37.9662</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.714377</dd><dt>DINOv2</dt><dd>-0.04989</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/5978d117ab1d4a01886ea06d225130f4.mp4"></video>
+  <h3>single-480p-5s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>88.999s</dd><dt>端到端</dt><dd>90.208s</dd><dt>有效RTF</dt><dd>17.7998</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.60315</dd><dt>DINOv2</dt><dd>0.873084</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="multimodal" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/8914c9c4a9c7409fa1c144658616bbb8.mp4"></video>
+  <h3>single-480p-5s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>225.85s</dd><dt>端到端</dt><dd>296.141s</dd><dt>有效RTF</dt><dd>45.17</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.430627</dd><dt>DINOv2</dt><dd>0.041017</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="5" data-mode="multimodal" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/178227006e374fffaca757c1b13f55a6.mp4"></video>
+  <h3>single-480p-5s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>188.112s</dd><dt>端到端</dt><dd>188.545s</dd><dt>有效RTF</dt><dd>37.6224</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.048281</dd><dt>DINOv2</dt><dd>0.123946</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/a4ab0b13c65146d0b36faf309a37f76d.mp4"></video>
+  <h3>single-480p-10s-text-c1</h3>
+  <p>一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>82.999s</dd><dt>端到端</dt><dd>83.024s</dd><dt>有效RTF</dt><dd>8.2999</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.731119</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="text" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/c0fa87520821433e91a41f3611929639.mp4"></video>
+  <h3>single-480p-10s-text-c3</h3>
+  <p>A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>75.661s</dd><dt>端到端</dt><dd>75.682s</dd><dt>有效RTF</dt><dd>7.5661</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.148785</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="text" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/85f4613946bb44f7a02980fdce329c4c.mp4"></video>
+  <h3>single-480p-10s-text-c6</h3>
+  <p>未来空间站悬浮在蓝色星球上方，机械结构灯光依次点亮，镜头从远景缓慢接近，真实科幻电影画面</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>49.452s</dd><dt>端到端</dt><dd>49.476s</dd><dt>有效RTF</dt><dd>4.9452</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.001023</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="text" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/3dbcf3c50509436980332d08d955e11a.mp4"></video>
+  <h3>single-480p-10s-text-c12</h3>
+  <p>An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>53.885s</dd><dt>端到端</dt><dd>81.772s</dd><dt>有效RTF</dt><dd>5.3885</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.383047</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="image" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/baef778c96a04dc1a3d3bb13000f6043.mp4"></video>
+  <h3>single-480p-10s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>64.651s</dd><dt>端到端</dt><dd>65.38s</dd><dt>有效RTF</dt><dd>6.4651</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.142562</dd><dt>DINOv2</dt><dd>0.852327</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="image" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/e68c2a00810e4876b2f73e4b45be4a8a.mp4"></video>
+  <h3>single-480p-10s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>56.033s</dd><dt>端到端</dt><dd>56.187s</dd><dt>有效RTF</dt><dd>5.6033</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.374078</dd><dt>DINOv2</dt><dd>0.073964</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/c1f1c44bc15c4c3e926b4f02be965590.mp4"></video>
+  <h3>single-480p-10s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。微距镜头观察一滴水沿绿色叶片滑落，叶脉和水珠反射清晰，浅景深，自然光柔和变化</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>80.627s</dd><dt>端到端</dt><dd>91.288s</dd><dt>有效RTF</dt><dd>8.0627</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.113459</dd><dt>DINOv2</dt><dd>0.230959</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="image" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/f4b4350b9dfa47c1ae1337812c269f09.mp4"></video>
+  <h3>single-480p-10s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. A young woman turns naturally beside a window with a relaxed expression, soft morning light shaping her face, slow camera push-in, realistic cinematic detail</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>154.924s</dd><dt>端到端</dt><dd>58497.048s</dd><dt>有效RTF</dt><dd>15.4924</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.009095</dd><dt>DINOv2</dt><dd>0.161224</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/7c65c812dcd142509f758ee1033ccea9.mp4"></video>
+  <h3>single-480p-10s-video-c1</h3>
+  <p>使用&lt;Video 1&gt;作为参考，保持参考主体和节奏自然一致。雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>217.896s</dd><dt>端到端</dt><dd>218.447s</dd><dt>有效RTF</dt><dd>21.7896</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.232053</dd><dt>DINOv2</dt><dd>0.932914</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="video" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/6426f9adc1274ef78ad17f98c07f03ae.mp4"></video>
+  <h3>single-480p-10s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>453.285s</dd><dt>端到端</dt><dd>513.316s</dd><dt>有效RTF</dt><dd>45.3285</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.017527</dd><dt>DINOv2</dt><dd>0.048104</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="video" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/002d0a4bcfa846ef97b647cdff4a7691.mp4"></video>
+  <h3>single-480p-10s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>535.579s</dd><dt>端到端</dt><dd>536.017s</dd><dt>有效RTF</dt><dd>53.5579</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.250765</dd><dt>DINOv2</dt><dd>0.190232</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="video" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/adfbe194ebe84449aebc8ec472ade50a.mp4"></video>
+  <h3>single-480p-10s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>279.124s</dd><dt>端到端</dt><dd>58529.689s</dd><dt>有效RTF</dt><dd>27.9124</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.000923</dd><dt>DINOv2</dt><dd>0.773263</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="audio" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/e454a80d4eec4d58855a909bf3ec9952.mp4"></video>
+  <h3>single-480p-10s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>54.26s</dd><dt>端到端</dt><dd>54.687s</dd><dt>有效RTF</dt><dd>5.426</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.208303</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/175bb26cdeab4a9d8808ba815fdf81e7.mp4"></video>
+  <h3>single-480p-10s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>252.697s</dd><dt>端到端</dt><dd>253.416s</dd><dt>有效RTF</dt><dd>25.2697</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.048755</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="audio" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/97f5c62e1c5543fc944c4a146d6039f4.mp4"></video>
+  <h3>single-480p-10s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>59.65s</dd><dt>端到端</dt><dd>108.805s</dd><dt>有效RTF</dt><dd>5.965</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.017962</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/e315fa7e247b4a9597ed694ff02fadc7.mp4"></video>
+  <h3>single-480p-10s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>80.754s</dd><dt>端到端</dt><dd>90.946s</dd><dt>有效RTF</dt><dd>8.0754</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.236749</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="multimodal" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/951abd4dcd9f469483dd46615ef69bbd.mp4"></video>
+  <h3>single-480p-10s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。未来空间站悬浮在蓝色星球上方，机械结构灯光依次点亮，镜头从远景缓慢接近，真实科幻电影画面</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>265.311s</dd><dt>端到端</dt><dd>266.651s</dd><dt>有效RTF</dt><dd>26.5311</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.016039</dd><dt>DINOv2</dt><dd>0.466205</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/5f5177d1f558451d8b06ab6c012ad61d.mp4"></video>
+  <h3>single-480p-10s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>390.51s</dd><dt>端到端</dt><dd>477.458s</dd><dt>有效RTF</dt><dd>39.051</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.004519</dd><dt>DINOv2</dt><dd>0.093514</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="multimodal" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/0b852ceb705e4f64a142cc821ee56e64.mp4"></video>
+  <h3>single-480p-10s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>226.573s</dd><dt>端到端</dt><dd>1108.848s</dd><dt>有效RTF</dt><dd>22.6573</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.002381</dd><dt>DINOv2</dt><dd>0.659184</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="10" data-mode="multimodal" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/d057dfcae18a47579891924c248c139b.mp4"></video>
+  <h3>single-480p-10s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. Steam rises slowly from freshly baked bread as a chef cuts through the crisp crust, warm kitchen background, appetizing food commercial close-up</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>401.494s</dd><dt>端到端</dt><dd>401.984s</dd><dt>有效RTF</dt><dd>40.1494</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.176348</dd><dt>DINOv2</dt><dd>0.078306</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/7cdb74d589d244a4acecafdee2ce917f.mp4"></video>
+  <h3>single-480p-15s-text-c1</h3>
+  <p>微距镜头观察一滴水沿绿色叶片滑落，叶脉和水珠反射清晰，浅景深，自然光柔和变化</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>133.047s</dd><dt>端到端</dt><dd>133.076s</dd><dt>有效RTF</dt><dd>8.8698</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.082394</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="text" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/c40a74f0431d4adb8312151adc791a66.mp4"></video>
+  <h3>single-480p-15s-text-c3</h3>
+  <p>A young woman turns naturally beside a window with a relaxed expression, soft morning light shaping her face, slow camera push-in, realistic cinematic detail</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>95.358s</dd><dt>端到端</dt><dd>95.384s</dd><dt>有效RTF</dt><dd>6.3572</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.008441</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="text" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/85a3b646ba2b46b694fdb97ac5a52012.mp4"></video>
+  <h3>single-480p-15s-text-c6</h3>
+  <p>一款高端智能手表放在深色展台上，金属边缘出现流动高光，镜头环绕产品，商业广告质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>74.975s</dd><dt>端到端</dt><dd>161.075s</dd><dt>有效RTF</dt><dd>4.998333</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.199342</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="text" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/75c9e6a15cff4d78ab9ef1187e2a0fcb.mp4"></video>
+  <h3>single-480p-15s-text-c12</h3>
+  <p>A transparent skincare serum bottle stands on pale blue water, ripples and tiny droplets surround it, smooth camera move, clean premium beauty commercial</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>144.06s</dd><dt>端到端</dt><dd>154.094s</dd><dt>有效RTF</dt><dd>9.604</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.968333</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="image" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/1b566ccdca2f46769d677f92bde73f22.mp4"></video>
+  <h3>single-480p-15s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>102.14s</dd><dt>端到端</dt><dd>102.522s</dd><dt>有效RTF</dt><dd>6.809333</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.183008</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="image" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/f329567bfd944d72bfa15abf80135f3c.mp4"></video>
+  <h3>single-480p-15s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>157.993s</dd><dt>端到端</dt><dd>158.105s</dd><dt>有效RTF</dt><dd>10.532867</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.013398</dd><dt>DINOv2</dt><dd>0.371695</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/4a0206c9e2cc4d2eab73c2c9711bde21.mp4"></video>
+  <h3>single-480p-15s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。热气从刚出炉的面包上缓慢升起，厨师切开酥脆表皮，暖色厨房背景，食物广告近景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>127.211s</dd><dt>端到端</dt><dd>127.342s</dd><dt>有效RTF</dt><dd>8.480733</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.008973</dd><dt>DINOv2</dt><dd>0.30449</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="image" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/fa8307dbd6604581a245cf4b24040409.mp4"></video>
+  <h3>single-480p-15s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. A golden retriever runs across grass toward sunset, fur and blades of grass moving naturally, low tracking shot, warm realistic atmosphere</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>76.632s</dd><dt>端到端</dt><dd>76.968s</dd><dt>有效RTF</dt><dd>5.1088</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.028883</dd><dt>DINOv2</dt><dd>0.034916</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="video" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/525b799bbb62400696d314479866435a.mp4"></video>
+  <h3>single-480p-15s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>647.797s</dd><dt>端到端</dt><dd>648.7s</dd><dt>有效RTF</dt><dd>43.186467</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.001728</dd><dt>DINOv2</dt><dd>0.383875</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="video" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/c1d0b89a7a66493e804e5c78e099abae.mp4"></video>
+  <h3>single-480p-15s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>672.891s</dd><dt>端到端</dt><dd>941.459s</dd><dt>有效RTF</dt><dd>44.8594</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.83479</dd><dt>DINOv2</dt><dd>0.715246</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="video" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/74a52dffe38a4b909886c721fca05607.mp4"></video>
+  <h3>single-480p-15s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>743.562s</dd><dt>端到端</dt><dd>743.758s</dd><dt>有效RTF</dt><dd>49.5708</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.071871</dd><dt>DINOv2</dt><dd>-0.015132</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="video" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/e33010399d874a37bd821d218e4f86be.mp4"></video>
+  <h3>single-480p-15s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>979.994s</dd><dt>端到端</dt><dd>983.559s</dd><dt>有效RTF</dt><dd>65.332933</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.174345</dd><dt>DINOv2</dt><dd>0.651369</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="audio" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/aff1eef2e4f34c409e4241f4dccbd647.mp4"></video>
+  <h3>single-480p-15s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>75.898s</dd><dt>端到端</dt><dd>76.524s</dd><dt>有效RTF</dt><dd>5.059867</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.608499</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/213b029023254cbfa59ace5e7e7b4362.mp4"></video>
+  <h3>single-480p-15s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. Steam rises slowly from freshly baked bread as a chef cuts through the crisp crust, warm kitchen background, appetizing food commercial close-up</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>102.714s</dd><dt>端到端</dt><dd>103.177s</dd><dt>有效RTF</dt><dd>6.8476</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.01096</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="audio" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/9fc8dc117f7b400dbb1508abe65e16cf.mp4"></video>
+  <h3>single-480p-15s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>102.742s</dd><dt>端到端</dt><dd>176.485s</dd><dt>有效RTF</dt><dd>6.849467</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.670429</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/58685497ba1747e9b2fc0d685b51b999.mp4"></video>
+  <h3>single-480p-15s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>129.651s</dd><dt>端到端</dt><dd>130.028s</dd><dt>有效RTF</dt><dd>8.6434</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.016612</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="multimodal" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/15846e27c74a43a3b27d56a90994a814.mp4"></video>
+  <h3>single-480p-15s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一款高端智能手表放在深色展台上，金属边缘出现流动高光，镜头环绕产品，商业广告质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>763.998s</dd><dt>端到端</dt><dd>765.275s</dd><dt>有效RTF</dt><dd>50.9332</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.320742</dd><dt>DINOv2</dt><dd>0.693417</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/5851224d8032451eb8135402ff175fe5.mp4"></video>
+  <h3>single-480p-15s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A transparent skincare serum bottle stands on pale blue water, ripples and tiny droplets surround it, smooth camera move, clean premium beauty commercial</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>642.646s</dd><dt>端到端</dt><dd>698.331s</dd><dt>有效RTF</dt><dd>42.843067</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.631673</dd><dt>DINOv2</dt><dd>-0.019988</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="multimodal" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/ef650e13cc374432b5b9d20b3473bd74.mp4"></video>
+  <h3>single-480p-15s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>387.508s</dd><dt>端到端</dt><dd>575.73s</dd><dt>有效RTF</dt><dd>25.833867</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.300416</dd><dt>DINOv2</dt><dd>0.938292</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="15" data-mode="multimodal" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/47a323f894c44d4ab81dec948aa5d3ba.mp4"></video>
+  <h3>single-480p-15s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>401.339s</dd><dt>端到端</dt><dd>58460.84s</dd><dt>有效RTF</dt><dd>26.755933</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.281566</dd><dt>DINOv2</dt><dd>0.162876</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/99a2bd37b48d41179b452a0b67489af7.mp4"></video>
+  <h3>single-720p-5s-text-c1</h3>
+  <p>热气从刚出炉的面包上缓慢升起，厨师切开酥脆表皮，暖色厨房背景，食物广告近景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>71.229s</dd><dt>端到端</dt><dd>71.248s</dd><dt>有效RTF</dt><dd>14.2458</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.008638</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="text" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/94dc874e024342a4b7b8bac5132d7e88.mp4"></video>
+  <h3>single-720p-5s-text-c3</h3>
+  <p>A golden retriever runs across grass toward sunset, fur and blades of grass moving naturally, low tracking shot, warm realistic atmosphere</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>153.075s</dd><dt>端到端</dt><dd>214.81s</dd><dt>有效RTF</dt><dd>30.615</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.29273</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="text" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/d6151416928b462ab7209c7e0174adcd.mp4"></video>
+  <h3>single-720p-5s-text-c6</h3>
+  <p>雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>44.102s</dd><dt>端到端</dt><dd>44.126s</dd><dt>有效RTF</dt><dd>8.8204</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.019154</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="text" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/73bffd1a953a45d0afe2e637e225dd65.mp4"></video>
+  <h3>single-720p-5s-text-c12</h3>
+  <p>A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>54.404s</dd><dt>端到端</dt><dd>64.439s</dd><dt>有效RTF</dt><dd>10.8808</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.001138</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="image" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/cdbf2b1629e34c2193b6434f78bb2706.mp4"></video>
+  <h3>single-720p-5s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>110.975s</dd><dt>端到端</dt><dd>111.144s</dd><dt>有效RTF</dt><dd>22.195</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.616025</dd><dt>DINOv2</dt><dd>-0.014928</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="image" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/7b3ea83a441f4b08a3ed20a95aa10c0b.mp4"></video>
+  <h3>single-720p-5s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>80.253s</dd><dt>端到端</dt><dd>80.424s</dd><dt>有效RTF</dt><dd>16.0506</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.274232</dd><dt>DINOv2</dt><dd>0.945842</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/9cd4da4b7973422d8ba6dba339837aa4.mp4"></video>
+  <h3>single-720p-5s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt;作为参考，保持参考主体和节奏自然一致。阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>117.646s</dd><dt>端到端</dt><dd>172.432s</dd><dt>有效RTF</dt><dd>23.5292</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.04317</dd><dt>DINOv2</dt><dd>0.120992</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="image" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/2e6e8987db4742a295eb0fff5865194f.mp4"></video>
+  <h3>single-720p-5s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>50.706s</dd><dt>端到端</dt><dd>51.356s</dd><dt>有效RTF</dt><dd>10.1412</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.106974</dd><dt>DINOv2</dt><dd>0.185651</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/2012dd22474447deb29df097f49c45d9.mp4"></video>
+  <h3>single-720p-5s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>260.086s</dd><dt>端到端</dt><dd>298.832s</dd><dt>有效RTF</dt><dd>52.0172</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.354082</dd><dt>DINOv2</dt><dd>0.046395</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="video" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/35200ffa0aa140a2aab473e61a517ff7.mp4"></video>
+  <h3>single-720p-5s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>240.754s</dd><dt>端到端</dt><dd>241.028s</dd><dt>有效RTF</dt><dd>48.1508</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.01581</dd><dt>DINOv2</dt><dd>0.905516</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="video" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/f26e83299d60402991f90597f5f64289.mp4"></video>
+  <h3>single-720p-5s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。未来空间站悬浮在蓝色星球上方，机械结构灯光依次点亮，镜头从远景缓慢接近，真实科幻电影画面</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>251.006s</dd><dt>端到端</dt><dd>251.26s</dd><dt>有效RTF</dt><dd>50.2012</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.004218</dd><dt>DINOv2</dt><dd>0.061177</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="video" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/8297110a017c4b7fb90d185e33ae44ba.mp4"></video>
+  <h3>single-720p-5s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>250.511s</dd><dt>端到端</dt><dd>30803.145s</dd><dt>有效RTF</dt><dd>50.1022</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.756799</dd><dt>DINOv2</dt><dd>0.031909</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="audio" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/79600e81b6a24d22aff3d73ede4d3986.mp4"></video>
+  <h3>single-720p-5s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>44.724s</dd><dt>端到端</dt><dd>45.611s</dd><dt>有效RTF</dt><dd>8.9448</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.006645</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/eff0f158e29441aba5417d3a31a37a15.mp4"></video>
+  <h3>single-720p-5s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>76.99s</dd><dt>端到端</dt><dd>77.181s</dd><dt>有效RTF</dt><dd>15.398</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.436673</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="audio" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/5d72c8996fe34631ae9d87b82ff66ce0.mp4"></video>
+  <h3>single-720p-5s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。微距镜头观察一滴水沿绿色叶片滑落，叶脉和水珠反射清晰，浅景深，自然光柔和变化</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>55.686s</dd><dt>端到端</dt><dd>66.545s</dd><dt>有效RTF</dt><dd>11.1372</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.049021</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/8563aff95d3840b5a45dcd7fb839676a.mp4"></video>
+  <h3>single-720p-5s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A young woman turns naturally beside a window with a relaxed expression, soft morning light shaping her face, slow camera push-in, realistic cinematic detail</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>80.771s</dd><dt>端到端</dt><dd>80.949s</dd><dt>有效RTF</dt><dd>16.1542</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.009516</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="multimodal" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/1a3546e1fc8f4af89edc8e734e471b11.mp4"></video>
+  <h3>single-720p-5s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>158.264s</dd><dt>端到端</dt><dd>158.598s</dd><dt>有效RTF</dt><dd>31.6528</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.291434</dd><dt>DINOv2</dt><dd>0.93163</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="multimodal" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/3d0128c24ecc4ac1a03dfc15e40eeb18.mp4"></video>
+  <h3>single-720p-5s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>158.516s</dd><dt>端到端</dt><dd>254.391s</dd><dt>有效RTF</dt><dd>31.7032</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.024131</dd><dt>DINOv2</dt><dd>0.118643</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="multimodal" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/ce2bb7dbbe004ba1a3ae0fd2c7e6c22e.mp4"></video>
+  <h3>single-720p-5s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>131.957s</dd><dt>端到端</dt><dd>368.794s</dd><dt>有效RTF</dt><dd>26.3914</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.058657</dd><dt>DINOv2</dt><dd>0.576023</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="5" data-mode="multimodal" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/2b3823d3773744aa8aae46051619055f.mp4"></video>
+  <h3>single-720p-5s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>231.229s</dd><dt>端到端</dt><dd>231.71s</dd><dt>有效RTF</dt><dd>46.2458</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.015285</dd><dt>DINOv2</dt><dd>0.65662</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/9163b6c5aea4444baac43c770501c94c.mp4"></video>
+  <h3>single-720p-10s-text-c1</h3>
+  <p>阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>184.001s</dd><dt>端到端</dt><dd>184.017s</dd><dt>有效RTF</dt><dd>18.4001</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.645638</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="text" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/ec7cf4d5e34a4259bcbd9faf8350197d.mp4"></video>
+  <h3>single-720p-10s-text-c3</h3>
+  <p>A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>184.814s</dd><dt>端到端</dt><dd>504.102s</dd><dt>有效RTF</dt><dd>18.4814</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.143646</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="text" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/8566ff93ec3b41b9b7da1b85a0ab821e.mp4"></video>
+  <h3>single-720p-10s-text-c6</h3>
+  <p>一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>95.016s</dd><dt>端到端</dt><dd>95.039s</dd><dt>有效RTF</dt><dd>9.5016</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.341628</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="text" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/66ea82071de24c37bf9395bb1b8c6312.mp4"></video>
+  <h3>single-720p-10s-text-c12</h3>
+  <p>A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>126.686s</dd><dt>端到端</dt><dd>126.71s</dd><dt>有效RTF</dt><dd>12.6686</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.135444</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="image" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/38d15bc934f84551bb30b487f73ff18c.mp4"></video>
+  <h3>single-720p-10s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。未来空间站悬浮在蓝色星球上方，机械结构灯光依次点亮，镜头从远景缓慢接近，真实科幻电影画面</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>135.323s</dd><dt>端到端</dt><dd>135.473s</dd><dt>有效RTF</dt><dd>13.5323</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.041836</dd><dt>DINOv2</dt><dd>0.076023</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="image" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/b85a2812f98c4e01bdd171e6658c6258.mp4"></video>
+  <h3>single-720p-10s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>238.608s</dd><dt>端到端</dt><dd>238.907s</dd><dt>有效RTF</dt><dd>23.8608</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.370583</dd><dt>DINOv2</dt><dd>0.061427</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/a728b6cddf78486b91bfa6534e959fe5.mp4"></video>
+  <h3>single-720p-10s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>246.832s</dd><dt>端到端</dt><dd>246.946s</dd><dt>有效RTF</dt><dd>24.6832</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.05341</dd><dt>DINOv2</dt><dd>0.370968</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="image" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/c78891cd337a47d78416097d60d343ef.mp4"></video>
+  <h3>single-720p-10s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. Steam rises slowly from freshly baked bread as a chef cuts through the crisp crust, warm kitchen background, appetizing food commercial close-up</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>96.454s</dd><dt>端到端</dt><dd>96.56s</dd><dt>有效RTF</dt><dd>9.6454</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.002822</dd><dt>DINOv2</dt><dd>0.226026</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/f7e13633253145f8a8e3fda727a2ed76.mp4"></video>
+  <h3>single-720p-10s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。微距镜头观察一滴水沿绿色叶片滑落，叶脉和水珠反射清晰，浅景深，自然光柔和变化</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>550.503s</dd><dt>端到端</dt><dd>550.696s</dd><dt>有效RTF</dt><dd>55.0503</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.063281</dd><dt>DINOv2</dt><dd>0.136289</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/5f98e26a06e54187945d8d1c0b6f5f01.mp4"></video>
+  <h3>single-720p-10s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. A young woman turns naturally beside a window with a relaxed expression, soft morning light shaping her face, slow camera push-in, realistic cinematic detail</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>302.903s</dd><dt>端到端</dt><dd>303.369s</dd><dt>有效RTF</dt><dd>30.2903</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.006134</dd><dt>DINOv2</dt><dd>0.345366</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="video" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/e34a3fc30de240e1920d5a21f3c69c32.mp4"></video>
+  <h3>single-720p-10s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一款高端智能手表放在深色展台上，金属边缘出现流动高光，镜头环绕产品，商业广告质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>700.836s</dd><dt>端到端</dt><dd>869.699s</dd><dt>有效RTF</dt><dd>70.0836</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.673131</dd><dt>DINOv2</dt><dd>0.483182</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="video" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/ca4c8b26e6504bdaa5582d95d6d2c103.mp4"></video>
+  <h3>single-720p-10s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. A transparent skincare serum bottle stands on pale blue water, ripples and tiny droplets surround it, smooth camera move, clean premium beauty commercial</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>491.473s</dd><dt>端到端</dt><dd>1709.847s</dd><dt>有效RTF</dt><dd>49.1473</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.266867</dd><dt>DINOv2</dt><dd>0.552612</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="audio" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/55d2c0c24b9348c49a24f1849e30f17c.mp4"></video>
+  <h3>single-720p-10s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>96.428s</dd><dt>端到端</dt><dd>96.863s</dd><dt>有效RTF</dt><dd>9.6428</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.268561</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/8957b6c9a8394755a52e0349a2bdc66b.mp4"></video>
+  <h3>single-720p-10s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>192.17s</dd><dt>端到端</dt><dd>192.352s</dd><dt>有效RTF</dt><dd>19.217</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.937859</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="audio" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/f20b13400e9946a3bd359891db256359.mp4"></video>
+  <h3>single-720p-10s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。热气从刚出炉的面包上缓慢升起，厨师切开酥脆表皮，暖色厨房背景，食物广告近景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>143.083s</dd><dt>端到端</dt><dd>153.249s</dd><dt>有效RTF</dt><dd>14.3083</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.003853</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/8430ccfbf1ed4f38b65d405d986bd74c.mp4"></video>
+  <h3>single-720p-10s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A golden retriever runs across grass toward sunset, fur and blades of grass moving naturally, low tracking shot, warm realistic atmosphere</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>257.929s</dd><dt>端到端</dt><dd>336.344s</dd><dt>有效RTF</dt><dd>25.7929</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.627225</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="multimodal" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/b8a2412bb11840a8b62a4ea7990cbdac.mp4"></video>
+  <h3>single-720p-10s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>687.533s</dd><dt>端到端</dt><dd>700.308s</dd><dt>有效RTF</dt><dd>68.7533</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.045801</dd><dt>DINOv2</dt><dd>0.46598</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="multimodal" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/1597b9c602fc42c1ba55b62abac97f41.mp4"></video>
+  <h3>single-720p-10s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>307.006s</dd><dt>端到端</dt><dd>307.951s</dd><dt>有效RTF</dt><dd>30.7006</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.710716</dd><dt>DINOv2</dt><dd>0.555468</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="multimodal" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/cbf73edc24d94eae97bbc2a19d050e74.mp4"></video>
+  <h3>single-720p-10s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>313.27s</dd><dt>端到端</dt><dd>446.488s</dd><dt>有效RTF</dt><dd>31.327</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.189736</dd><dt>DINOv2</dt><dd>0.368761</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="10" data-mode="multimodal" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>single-720p-10s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>67.457s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/2e8073753cf84aa38ab956b72c489ba2.mp4"></video>
+  <h3>single-720p-15s-text-c1</h3>
+  <p>一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>450.786s</dd><dt>端到端</dt><dd>450.805s</dd><dt>有效RTF</dt><dd>30.0524</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.342316</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="text" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/3c12c25e8a8f4507931be13dbbd1d9ea.mp4"></video>
+  <h3>single-720p-15s-text-c3</h3>
+  <p>Steam rises slowly from freshly baked bread as a chef cuts through the crisp crust, warm kitchen background, appetizing food commercial close-up</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>431.412s</dd><dt>端到端</dt><dd>431.432s</dd><dt>有效RTF</dt><dd>28.7608</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.19808</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="text" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/ced0df857f4d480d9bdbaa6353a0c986.mp4"></video>
+  <h3>single-720p-15s-text-c6</h3>
+  <p>一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>184.355s</dd><dt>端到端</dt><dd>184.381s</dd><dt>有效RTF</dt><dd>12.290333</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.654688</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="text" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/17c3d64c7f9e4a538d1d67a0ee63672a.mp4"></video>
+  <h3>single-720p-15s-text-c12</h3>
+  <p>A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>233.467s</dd><dt>端到端</dt><dd>243.506s</dd><dt>有效RTF</dt><dd>15.564467</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.027475</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="image" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/3e4c4ed61f104449bbd3107688c0b06c.mp4"></video>
+  <h3>single-720p-15s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。一款高端智能手表放在深色展台上，金属边缘出现流动高光，镜头环绕产品，商业广告质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>205.314s</dd><dt>端到端</dt><dd>205.814s</dd><dt>有效RTF</dt><dd>13.6876</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.441683</dd><dt>DINOv2</dt><dd>0.425757</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="image" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/083df4a8b69b4f5d86e516692bd77b90.mp4"></video>
+  <h3>single-720p-15s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. A transparent skincare serum bottle stands on pale blue water, ripples and tiny droplets surround it, smooth camera move, clean premium beauty commercial</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>361.241s</dd><dt>端到端</dt><dd>361.36s</dd><dt>有效RTF</dt><dd>24.082733</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.403473</dd><dt>DINOv2</dt><dd>0.029821</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/6419dd0a90c547c4a018674640011b75.mp4"></video>
+  <h3>single-720p-15s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>410.433s</dd><dt>端到端</dt><dd>1125.714s</dd><dt>有效RTF</dt><dd>27.3622</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.203442</dd><dt>DINOv2</dt><dd>0.353773</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="image" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/0e765130496f429f99c590ae87389acc.mp4"></video>
+  <h3>single-720p-15s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>206.618s</dd><dt>端到端</dt><dd>58489.685s</dd><dt>有效RTF</dt><dd>13.774533</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.011487</dd><dt>DINOv2</dt><dd>0.073334</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/d03514ae73304d1aac0db7c157984df4.mp4"></video>
+  <h3>single-720p-15s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。热气从刚出炉的面包上缓慢升起，厨师切开酥脆表皮，暖色厨房背景，食物广告近景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1010.925s</dd><dt>端到端</dt><dd>1011.823s</dd><dt>有效RTF</dt><dd>67.395</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.106874</dd><dt>DINOv2</dt><dd>0.158827</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="video" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/160ba7be49734d37bd369670bb4fba39.mp4"></video>
+  <h3>single-720p-15s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. A golden retriever runs across grass toward sunset, fur and blades of grass moving naturally, low tracking shot, warm realistic atmosphere</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>721.699s</dd><dt>端到端</dt><dd>782.823s</dd><dt>有效RTF</dt><dd>48.113267</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.330042</dd><dt>DINOv2</dt><dd>0.06113</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="video" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/e7d14ddc23f9431c8bfc995a56500726.mp4"></video>
+  <h3>single-720p-15s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1201.841s</dd><dt>端到端</dt><dd>1212.902s</dd><dt>有效RTF</dt><dd>80.122733</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.013879</dd><dt>DINOv2</dt><dd>0.923533</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="video" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/2ebdeb6638b84d658c72955f177c2c10.mp4"></video>
+  <h3>single-720p-15s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1208.377s</dd><dt>端到端</dt><dd>1209.401s</dd><dt>有效RTF</dt><dd>80.558467</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.001746</dd><dt>DINOv2</dt><dd>0.632378</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="audio" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/10c4db8c854a4d61abce747c9afcbc5d.mp4"></video>
+  <h3>single-720p-15s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>186.928s</dd><dt>端到端</dt><dd>187.331s</dd><dt>有效RTF</dt><dd>12.461867</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.284184</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/e93e3801f2bd4963ab65c879c9c77689.mp4"></video>
+  <h3>single-720p-15s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>244.764s</dd><dt>端到端</dt><dd>245.649s</dd><dt>有效RTF</dt><dd>16.3176</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.393768</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="audio" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/e49f013de9b846be874f9d5fae15f51d.mp4"></video>
+  <h3>single-720p-15s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>291.581s</dd><dt>端到端</dt><dd>434.996s</dd><dt>有效RTF</dt><dd>19.438733</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.455361</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/4e2b8c0051b1444c8f3a6bf0ba2bcd03.mp4"></video>
+  <h3>single-720p-15s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>454.269s</dd><dt>端到端</dt><dd>2174.963s</dd><dt>有效RTF</dt><dd>30.2846</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.043398</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="multimodal" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/bb04f3133f734bbc8441e8512ce091de.mp4"></video>
+  <h3>single-720p-15s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1215.084s</dd><dt>端到端</dt><dd>1250.429s</dd><dt>有效RTF</dt><dd>81.0056</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.315989</dd><dt>DINOv2</dt><dd>0.068441</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="multimodal" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/71d31d4010fb4085bd7b252ab1a637c7.mp4"></video>
+  <h3>single-720p-15s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>857.695s</dd><dt>端到端</dt><dd>1005.269s</dd><dt>有效RTF</dt><dd>57.179667</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.031866</dd><dt>DINOv2</dt><dd>0.910875</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="multimodal" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/8ff6174c41a7417b97d27e1080ce8b8c.mp4"></video>
+  <h3>single-720p-15s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。未来空间站悬浮在蓝色星球上方，机械结构灯光依次点亮，镜头从远景缓慢接近，真实科幻电影画面</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>991.668s</dd><dt>端到端</dt><dd>992.244s</dd><dt>有效RTF</dt><dd>66.1112</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.003463</dd><dt>DINOv2</dt><dd>0.709505</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="15" data-mode="multimodal" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/f90ca1df12a24f2a85f834fcd347aaf7.mp4"></video>
+  <h3>single-720p-15s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>713.594s</dd><dt>端到端</dt><dd>58460.751s</dd><dt>有效RTF</dt><dd>47.572933</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.173322</dd><dt>DINOv2</dt><dd>0.392031</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/4a9583ac75c94e0c8b213afcb01194b1.mp4"></video>
+  <h3>single-1080p-5s-text-c1</h3>
+  <p>清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>86.297s</dd><dt>端到端</dt><dd>86.321s</dd><dt>有效RTF</dt><dd>17.2594</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.32356</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="text" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/dd79edb0f5af42c98f62a78d59dea8e8.mp4"></video>
+  <h3>single-1080p-5s-text-c3</h3>
+  <p>Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>91.218s</dd><dt>端到端</dt><dd>309.854s</dd><dt>有效RTF</dt><dd>18.2436</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.21748</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="text" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/2040e890f13f4eca82fb96f68a5d8ecf.mp4"></video>
+  <h3>single-1080p-5s-text-c6</h3>
+  <p>微距镜头观察一滴水沿绿色叶片滑落，叶脉和水珠反射清晰，浅景深，自然光柔和变化</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>85.629s</dd><dt>端到端</dt><dd>122.414s</dd><dt>有效RTF</dt><dd>17.1258</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.02242</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="text" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/5fb7d7a4fe32460e9b7c0001aa057987.mp4"></video>
+  <h3>single-1080p-5s-text-c12</h3>
+  <p>A young woman turns naturally beside a window with a relaxed expression, soft morning light shaping her face, slow camera push-in, realistic cinematic detail</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>80.026s</dd><dt>端到端</dt><dd>365.537s</dd><dt>有效RTF</dt><dd>16.0052</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.75315</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="image" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/aa3d513c692841d5a2477dba1fe44db0.mp4"></video>
+  <h3>single-1080p-5s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt;作为参考，保持参考主体和节奏自然一致。雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>86.819s</dd><dt>端到端</dt><dd>88.087s</dd><dt>有效RTF</dt><dd>17.3638</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.029157</dd><dt>DINOv2</dt><dd>0.921012</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="image" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/350a0a991b5c4e8f8e515c6394bb776d.mp4"></video>
+  <h3>single-1080p-5s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>87.025s</dd><dt>端到端</dt><dd>87.6s</dd><dt>有效RTF</dt><dd>17.405</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.038021</dd><dt>DINOv2</dt><dd>0.048333</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/71bb46ca6c7c446a926c6e9e6d463eeb.mp4"></video>
+  <h3>single-1080p-5s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>192.803s</dd><dt>端到端</dt><dd>192.981s</dd><dt>有效RTF</dt><dd>38.5606</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.059196</dd><dt>DINOv2</dt><dd>0.416105</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="image" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/9f2e241f37094a0aa928ec4cc161ef74.mp4"></video>
+  <h3>single-1080p-5s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>91.503s</dd><dt>端到端</dt><dd>30741.187s</dd><dt>有效RTF</dt><dd>18.3006</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.444892</dd><dt>DINOv2</dt><dd>0.442485</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/d7d5ad254700445193d138ce34098af4.mp4"></video>
+  <h3>single-1080p-5s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>262.653s</dd><dt>端到端</dt><dd>300.884s</dd><dt>有效RTF</dt><dd>52.5306</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.484304</dd><dt>DINOv2</dt><dd>0.078714</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="video" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/74e1bee0a25340e597dced800f02c380.mp4"></video>
+  <h3>single-1080p-5s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>163.399s</dd><dt>端到端</dt><dd>163.924s</dd><dt>有效RTF</dt><dd>32.6798</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.032159</dd><dt>DINOv2</dt><dd>0.17344</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="video" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/d765a27d8282418a826970820693d9d8.mp4"></video>
+  <h3>single-1080p-5s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>322.376s</dd><dt>端到端</dt><dd>323.282s</dd><dt>有效RTF</dt><dd>64.4752</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.041601</dd><dt>DINOv2</dt><dd>0.164699</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="video" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/3a6720060d6d4f8dabadcd582b674513.mp4"></video>
+  <h3>single-1080p-5s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>266.623s</dd><dt>端到端</dt><dd>350.37s</dd><dt>有效RTF</dt><dd>53.3246</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.258677</dd><dt>DINOv2</dt><dd>0.543297</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="audio" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/19857e7fec25496aad9bc961b20ccdcc.mp4"></video>
+  <h3>single-1080p-5s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。未来空间站悬浮在蓝色星球上方，机械结构灯光依次点亮，镜头从远景缓慢接近，真实科幻电影画面</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>114.785s</dd><dt>端到端</dt><dd>115.653s</dd><dt>有效RTF</dt><dd>22.957</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.014656</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/cbabb6cf20704fb89e51fd69cb3d5a9b.mp4"></video>
+  <h3>single-1080p-5s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>128.322s</dd><dt>端到端</dt><dd>201.37s</dd><dt>有效RTF</dt><dd>25.6644</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.564753</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="audio" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/3d5a97a512974d6dbc49aa398487fde2.mp4"></video>
+  <h3>single-1080p-5s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>92.467s</dd><dt>端到端</dt><dd>92.678s</dd><dt>有效RTF</dt><dd>18.4934</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.42073</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/2b4d64778fd74bbbbe7d0ea1cbb422e6.mp4"></video>
+  <h3>single-1080p-5s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. Steam rises slowly from freshly baked bread as a chef cuts through the crisp crust, warm kitchen background, appetizing food commercial close-up</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>98.012s</dd><dt>端到端</dt><dd>98.891s</dd><dt>有效RTF</dt><dd>19.6024</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.064538</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="multimodal" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>single-1080p-5s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。微距镜头观察一滴水沿绿色叶片滑落，叶脉和水珠反射清晰，浅景深，自然光柔和变化</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>153.712s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/431247c991924625a3b65c9226831572.mp4"></video>
+  <h3>single-1080p-5s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A young woman turns naturally beside a window with a relaxed expression, soft morning light shaping her face, slow camera push-in, realistic cinematic detail</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>173.453s</dd><dt>端到端</dt><dd>5084.458s</dd><dt>有效RTF</dt><dd>34.6906</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.000492</dd><dt>DINOv2</dt><dd>0.228009</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="multimodal" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/1cd3bccbf8d8447996b5b980ec24e8eb.mp4"></video>
+  <h3>single-1080p-5s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一款高端智能手表放在深色展台上，金属边缘出现流动高光，镜头环绕产品，商业广告质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>276.62s</dd><dt>端到端</dt><dd>278.898s</dd><dt>有效RTF</dt><dd>55.324</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.594339</dd><dt>DINOv2</dt><dd>0.648773</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="5" data-mode="multimodal" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/c1f498d1af5f44f0ab27d33e29f0560e.mp4"></video>
+  <h3>single-1080p-5s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A transparent skincare serum bottle stands on pale blue water, ripples and tiny droplets surround it, smooth camera move, clean premium beauty commercial</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>324.542s</dd><dt>端到端</dt><dd>384.441s</dd><dt>有效RTF</dt><dd>64.9084</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.727652</dd><dt>DINOv2</dt><dd>-0.028101</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/7375f2939bac44069e4a3f4b8e1829c1.mp4"></video>
+  <h3>single-1080p-10s-text-c1</h3>
+  <p>工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>226.396s</dd><dt>端到端</dt><dd>419.099s</dd><dt>有效RTF</dt><dd>22.6396</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.330351</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="text" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/c63619f9fa3f4ad68f1d11d347e9ae1d.mp4"></video>
+  <h3>single-1080p-10s-text-c3</h3>
+  <p>A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>292.614s</dd><dt>端到端</dt><dd>292.639s</dd><dt>有效RTF</dt><dd>29.2614</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.845553</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="text" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/ae6bd1b3aefd48649247d659566fbb70.mp4"></video>
+  <h3>single-1080p-10s-text-c6</h3>
+  <p>热气从刚出炉的面包上缓慢升起，厨师切开酥脆表皮，暖色厨房背景，食物广告近景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>231.183s</dd><dt>端到端</dt><dd>640.799s</dd><dt>有效RTF</dt><dd>23.1183</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.009678</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="text" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/a9eaad6223584948af88efe181bbab1e.mp4"></video>
+  <h3>single-1080p-10s-text-c12</h3>
+  <p>A golden retriever runs across grass toward sunset, fur and blades of grass moving naturally, low tracking shot, warm realistic atmosphere</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>226.645s</dd><dt>端到端</dt><dd>226.663s</dd><dt>有效RTF</dt><dd>22.6645</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.503549</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="image" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/a11fed1ad0b04be7a28407a7382990a7.mp4"></video>
+  <h3>single-1080p-10s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>220.365s</dd><dt>端到端</dt><dd>220.493s</dd><dt>有效RTF</dt><dd>22.0365</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.159263</dd><dt>DINOv2</dt><dd>0.150405</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="image" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/b66e5e6d570d4c7185f6db3d27ef4c57.mp4"></video>
+  <h3>single-1080p-10s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>238.431s</dd><dt>端到端</dt><dd>332.313s</dd><dt>有效RTF</dt><dd>23.8431</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.656592</dd><dt>DINOv2</dt><dd>0.473184</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="image" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/d1acd31ef4a445d9a7b49f785a9782d9.mp4"></video>
+  <h3>single-1080p-10s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt;作为参考，保持参考主体和节奏自然一致。透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>230.781s</dd><dt>端到端</dt><dd>396.047s</dd><dt>有效RTF</dt><dd>23.0781</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.942398</dd><dt>DINOv2</dt><dd>-0.032815</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="image" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/ab5dc10cb2cf41419a626aff89e22a7e.mp4"></video>
+  <h3>single-1080p-10s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; as references and preserve the referenced subject and rhythm naturally. Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>280.103s</dd><dt>端到端</dt><dd>495.105s</dd><dt>有效RTF</dt><dd>28.0103</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.342611</dd><dt>DINOv2</dt><dd>0.875681</dd><dt>异常</dt><dd>frozen_frames</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/0ba7ffd2a2314621a3aba10046d8af0a.mp4"></video>
+  <h3>single-1080p-10s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>748.895s</dd><dt>端到端</dt><dd>749.093s</dd><dt>有效RTF</dt><dd>74.8895</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.034537</dd><dt>DINOv2</dt><dd>0.622649</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>single-1080p-10s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. Steam rises slowly from freshly baked bread as a chef cuts through the crisp crust, warm kitchen background, appetizing food commercial close-up</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>5310.222s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="video" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/2b434a7dcd83493f82155487945f54f6.mp4"></video>
+  <h3>single-1080p-10s-video-c6</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>737.364s</dd><dt>端到端</dt><dd>737.637s</dd><dt>有效RTF</dt><dd>73.7364</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.084995</dd><dt>DINOv2</dt><dd>0.054913</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="video" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/e874f708ce834fb8afdda47bef4ada6a.mp4"></video>
+  <h3>single-1080p-10s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>751.382s</dd><dt>端到端</dt><dd>751.658s</dd><dt>有效RTF</dt><dd>75.1382</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.176535</dd><dt>DINOv2</dt><dd>0.928296</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="audio" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/31207e0107f042fabf5f4890b8724970.mp4"></video>
+  <h3>single-1080p-10s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。一款高端智能手表放在深色展台上，金属边缘出现流动高光，镜头环绕产品，商业广告质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>295.04s</dd><dt>端到端</dt><dd>295.445s</dd><dt>有效RTF</dt><dd>29.504</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.45657</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/f6952598ae8a42ffaddef16ef047ed9a.mp4"></video>
+  <h3>single-1080p-10s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A transparent skincare serum bottle stands on pale blue water, ripples and tiny droplets surround it, smooth camera move, clean premium beauty commercial</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>226.57s</dd><dt>端到端</dt><dd>226.733s</dd><dt>有效RTF</dt><dd>22.657</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.615111</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="audio" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/68c5a6c178f141a7808ea377f26b4a92.mp4"></video>
+  <h3>single-1080p-10s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>297.022s</dd><dt>端到端</dt><dd>297.864s</dd><dt>有效RTF</dt><dd>29.7022</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.184517</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/ff442d715dbe4f4e9f73a8e7348c065d.mp4"></video>
+  <h3>single-1080p-10s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>303.718s</dd><dt>端到端</dt><dd>304.561s</dd><dt>有效RTF</dt><dd>30.3718</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.359435</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="multimodal" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/71bf90040454498f8bcb8a13c7c803da.mp4"></video>
+  <h3>single-1080p-10s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。热气从刚出炉的面包上缓慢升起，厨师切开酥脆表皮，暖色厨房背景，食物广告近景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>712.013s</dd><dt>端到端</dt><dd>746.427s</dd><dt>有效RTF</dt><dd>71.2013</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.064687</dd><dt>DINOv2</dt><dd>0.263927</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="multimodal" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/b5f0f80c50064bdb92cceb8c96c30afb.mp4"></video>
+  <h3>single-1080p-10s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A golden retriever runs across grass toward sunset, fur and blades of grass moving naturally, low tracking shot, warm realistic atmosphere</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>439.898s</dd><dt>端到端</dt><dd>441.48s</dd><dt>有效RTF</dt><dd>43.9898</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.571744</dd><dt>DINOv2</dt><dd>0.089819</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="multimodal" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/19d1fba728f540c1b5557470b5831fe2.mp4"></video>
+  <h3>single-1080p-10s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt;作为参考，保持参考主体和节奏自然一致。雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>450.641s</dd><dt>端到端</dt><dd>1238.458s</dd><dt>有效RTF</dt><dd>45.0641</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.225203</dd><dt>DINOv2</dt><dd>0.93635</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="10" data-mode="multimodal" data-concurrency="12" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/f4c86717696d43d5bf1644207824dc4e.mp4"></video>
+  <h3>single-1080p-10s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>696.98s</dd><dt>端到端</dt><dd>31713.705s</dd><dt>有效RTF</dt><dd>69.698</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.116256</dd><dt>DINOv2</dt><dd>-0.001971</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="text" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/5868be2f6dba4685a1407a713f4c2d7d.mp4"></video>
+  <h3>single-1080p-15s-text-c1</h3>
+  <p>透明护肤精华瓶立在浅蓝水面，水波和微小水珠环绕瓶身，镜头平稳推进，干净高级的美妆广告</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>440.182s</dd><dt>端到端</dt><dd>440.205s</dd><dt>有效RTF</dt><dd>29.345467</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.930146</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="text" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/d6e5953142434273882af3bbfbf98c79.mp4"></video>
+  <h3>single-1080p-15s-text-c3</h3>
+  <p>Morning mist moves through layered valleys as sunlight gradually illuminates the forest, slow aerial advance, grand nature documentary style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>439.169s</dd><dt>端到端</dt><dd>439.192s</dd><dt>有效RTF</dt><dd>29.277933</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.354528</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="text" data-concurrency="6" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/9ab94fff94964f1fbbf285c25496e04d.mp4"></video>
+  <h3>single-1080p-15s-text-c6</h3>
+  <p>阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>479.516s</dd><dt>端到端</dt><dd>1262.614s</dd><dt>有效RTF</dt><dd>31.967733</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.008399</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="text" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/4e327f9cc51144b1926e4ff792daba42.mp4"></video>
+  <h3>single-1080p-15s-text-c12</h3>
+  <p>A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>410.794s</dd><dt>端到端</dt><dd>410.818s</dd><dt>有效RTF</dt><dd>27.386267</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.068465</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="image" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/adb037efd4f4477da57cb54749b01275.mp4"></video>
+  <h3>single-1080p-15s-image-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。一只金毛犬在草地上迎着夕阳奔跑，毛发和草叶运动自然，低机位跟拍，温暖真实</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>464.452s</dd><dt>端到端</dt><dd>465.15s</dd><dt>有效RTF</dt><dd>30.963467</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.342223</dd><dt>DINOv2</dt><dd>0.034415</dd><dt>异常</dt><dd>dino_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="image" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/e0ea72a202234a74a1890792c5f7bcbd.mp4"></video>
+  <h3>single-1080p-15s-image-c3</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. A modern city street after rain reflects neon lights, pedestrians and traffic move naturally, steady forward camera motion, realistic night scene</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>571.767s</dd><dt>端到端</dt><dd>572.127s</dd><dt>有效RTF</dt><dd>38.1178</dd><dt>IQR长尾</dt><dd>True</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.012059</dd><dt>DINOv2</dt><dd>0.737634</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="image" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/3df777a8d71d46ce9eefaffa53a35780.mp4"></video>
+  <h3>single-1080p-15s-image-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt;作为参考，保持参考主体和节奏自然一致。未来空间站悬浮在蓝色星球上方，机械结构灯光依次点亮，镜头从远景缓慢接近，真实科幻电影画面</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>450.973s</dd><dt>端到端</dt><dd>451.591s</dd><dt>有效RTF</dt><dd>30.064867</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.053417</dd><dt>DINOv2</dt><dd>0.357802</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="image" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/4a0f756800e948379a07bd90002c142c.mp4"></video>
+  <h3>single-1080p-15s-image-c12</h3>
+  <p>Use &lt;Picture 1&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>446.819s</dd><dt>端到端</dt><dd>59694.831s</dd><dt>有效RTF</dt><dd>29.787933</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.200789</dd><dt>DINOv2</dt><dd>0.384119</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="video" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/6373c201f00f47b4853ec28a16b89652.mp4"></video>
+  <h3>single-1080p-15s-video-c1</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。清晨云雾穿过层叠山谷，阳光逐渐照亮森林，航拍镜头缓慢向前，宏大自然纪录片风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1305.058s</dd><dt>端到端</dt><dd>1306.093s</dd><dt>有效RTF</dt><dd>87.003867</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.389524</dd><dt>DINOv2</dt><dd>0.642068</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="video" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/a71b24fcb2194fb29bc8d7e0787afc1e.mp4"></video>
+  <h3>single-1080p-15s-video-c3</h3>
+  <p>Use &lt;Video 1&gt; as references and preserve the referenced subject and rhythm naturally. Sunlight passes through the geometric structure of a modern museum, shadows move slowly across the walls, wide lateral camera move, architectural film style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1075.773s</dd><dt>端到端</dt><dd>1092.213s</dd><dt>有效RTF</dt><dd>71.7182</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.009848</dd><dt>DINOv2</dt><dd>0.133982</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="video" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/fe5975325eba4125b11d7de116425e97.mp4"></video>
+  <h3>single-1080p-15s-video-c6</h3>
+  <p>使用&lt;Video 1&gt;作为参考，保持参考主体和节奏自然一致。微距镜头观察一滴水沿绿色叶片滑落，叶脉和水珠反射清晰，浅景深，自然光柔和变化</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1089.225s</dd><dt>端到端</dt><dd>1089.358s</dd><dt>有效RTF</dt><dd>72.615</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.017699</dd><dt>DINOv2</dt><dd>0.168223</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="video" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/3dc0d09cf7c147cc8d4c08846bc3ecb6.mp4"></video>
+  <h3>single-1080p-15s-video-c12</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A young woman turns naturally beside a window with a relaxed expression, soft morning light shaping her face, slow camera push-in, realistic cinematic detail</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1387.928s</dd><dt>端到端</dt><dd>1388.485s</dd><dt>有效RTF</dt><dd>92.528533</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.048695</dd><dt>DINOv2</dt><dd>0.223733</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="audio" data-concurrency="1" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/300a2c100f924833aa7a189f6c216fe0.mp4"></video>
+  <h3>single-1080p-15s-audio-c1</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。雨后的现代城市街道倒映霓虹灯，行人和车辆自然移动，镜头沿街平稳前进，写实夜景</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>516.11s</dd><dt>端到端</dt><dd>516.29s</dd><dt>有效RTF</dt><dd>34.407333</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.014759</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="audio" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/c80c703661db481098f20ef1d02fa963.mp4"></video>
+  <h3>single-1080p-15s-audio-c3</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A future space station floats above a blue planet, mechanical lights activate in sequence, camera slowly approaches from a wide view, realistic science-fiction cinema</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>428.125s</dd><dt>端到端</dt><dd>428.397s</dd><dt>有效RTF</dt><dd>28.541667</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.016415</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="audio" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/cfcbdca94b0f4c3995aa62f093d3463b.mp4"></video>
+  <h3>single-1080p-15s-audio-c6</h3>
+  <p>使用&lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>427.57s</dd><dt>端到端</dt><dd>427.758s</dd><dt>有效RTF</dt><dd>28.504667</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.227201</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="audio" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/01490febbfc64bd6b4cded5e48326121.mp4"></video>
+  <h3>single-1080p-15s-audio-c12</h3>
+  <p>Use &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>460.518s</dd><dt>端到端</dt><dd>471.439s</dd><dt>有效RTF</dt><dd>30.7012</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.427292</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="multimodal" data-concurrency="1" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/b81af8f9e308444ba43c1510ce761533.mp4"></video>
+  <h3>single-1080p-15s-multimodal-c1</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。阳光穿过现代博物馆的几何结构，在墙面形成缓慢移动的光影，广角镜头横移，建筑摄影风格</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1489.322s</dd><dt>端到端</dt><dd>1491.592s</dd><dt>有效RTF</dt><dd>99.288133</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.001219</dd><dt>DINOv2</dt><dd>0.175623</dd><dt>异常</dt><dd>siglip_bottom_10_percent</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="multimodal" data-concurrency="3" data-status="normal" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/52cdfcd5c48844a7b8405ebb9a586aa8.mp4"></video>
+  <h3>single-1080p-15s-multimodal-c3</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A macro shot follows a water droplet sliding across a green leaf, crisp veins and reflections, shallow depth of field, gentle natural light changes</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1471.869s</dd><dt>端到端</dt><dd>1597.574s</dd><dt>有效RTF</dt><dd>98.1246</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.022731</dd><dt>DINOv2</dt><dd>0.21552</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="multimodal" data-concurrency="6" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260902/b772b3b6e59f4ddcac94aeb004dfed5e.mp4"></video>
+  <h3>single-1080p-15s-multimodal-c6</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一位年轻女性在窗边自然回头，神态放松，柔和晨光勾勒面部轮廓，镜头缓慢推近，写实电影质感</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1393.845s</dd><dt>端到端</dt><dd>1549.836s</dd><dt>有效RTF</dt><dd>92.923</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.026599</dd><dt>DINOv2</dt><dd>0.228332</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="15" data-mode="multimodal" data-concurrency="12" data-status="normal" data-review="other">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260901/c24678103582428ead88ce6ca8d707b6.mp4"></video>
+  <h3>single-1080p-15s-multimodal-c12</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Video 1&gt; &lt;Audio 1&gt; as references and preserve the referenced subject and rhythm naturally. A premium smart watch rests on a dark pedestal, moving highlights trace the metal edge, camera orbit around the product, polished commercial style</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1091.355s</dd><dt>端到端</dt><dd>1207.098s</dd><dt>有效RTF</dt><dd>72.757</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>True</dd><dt>SigLIP</dt><dd>0.699715</dd><dt>DINOv2</dt><dd>0.50689</dd><dt>异常</dt><dd>-</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="24" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/6790f73598d84606897581ded59ba6d3.mp4"></video>
+  <h3>two-part-480p-24s-video</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实 || 使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1184.828s</dd><dt>端到端</dt><dd>1211.413s</dd><dt>有效RTF</dt><dd>49.367833</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="24" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/15a7ac54b814427288e3f443dc05d9f8.mp4"></video>
+  <h3>two-part-480p-24s-multimodal</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting || Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1149.042s</dd><dt>端到端</dt><dd>3139.092s</dd><dt>有效RTF</dt><dd>47.87675</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="30" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>two-part-480p-30s-video</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实 || 使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>0.895s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="480p" data-duration="30" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>two-part-480p-30s-multimodal</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting || Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>2.352s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="24" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/c762a6a4c75740a089bdeb3502f38142.mp4"></video>
+  <h3>two-part-720p-24s-video</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting || Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1480.785s</dd><dt>端到端</dt><dd>1545.074s</dd><dt>有效RTF</dt><dd>61.699375</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="24" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/1124620d0e3a4bbb984e976fca4bf7ac.mp4"></video>
+  <h3>two-part-720p-24s-multimodal</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实 || 使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>1494.165s</dd><dt>端到端</dt><dd>2599.656s</dd><dt>有效RTF</dt><dd>62.256875</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="30" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>two-part-720p-30s-video</h3>
+  <p>Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting || Use &lt;Video 1&gt; &lt;Video 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>0.428s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="720p" data-duration="30" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>two-part-720p-30s-multimodal</h3>
+  <p>使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实 || 使用&lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>1.504s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="24" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/3dd401e440fc4ef9b29815be675e767d.mp4"></video>
+  <h3>two-part-1080p-24s-video</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实 || 使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>2020.808s</dd><dt>端到端</dt><dd>2032.698s</dd><dt>有效RTF</dt><dd>84.200333</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="24" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src="https://oss-imgai.sligenai.cn/ai-video-kernel/20260903/87f6921e9719414c8bfb64a18d7b4775.mp4"></video>
+  <h3>two-part-1080p-24s-multimodal</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting || Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>succeeded</dd><dt>有效处理</dt><dd>2002.909s</dd><dt>端到端</dt><dd>2004.779s</dd><dt>有效RTF</dt><dd>83.454542</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="30" data-mode="video" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>two-part-1080p-30s-video</h3>
+  <p>使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。一名舞者完成连贯的转身和抬手动作，衣摆随动作自然摆动，稳定全身镜头，舞台光影真实 || 使用&lt;Video 1&gt; &lt;Video 2&gt;作为参考，保持参考主体和节奏自然一致。工匠在安静工作室中专注打磨木制器物，手部动作准确连贯，环境光真实，纪录片式固定镜头</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>0.536s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article>
+<article class="card" data-resolution="1080p" data-duration="30" data-mode="multimodal" data-concurrency="3" data-status="anomaly" data-review="review">
+  <video controls preload="none" src=""></video>
+  <h3>two-part-1080p-30s-multimodal</h3>
+  <p>Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. A dancer performs a coherent turn and arm movement, fabric reacting naturally, stable full-body framing, realistic stage lighting || Use &lt;Picture 1&gt; &lt;Picture 2&gt; &lt;Video 1&gt; &lt;Video 2&gt; &lt;Audio 1&gt; &lt;Audio 2&gt; as references and preserve the referenced subject and rhythm naturally. An artisan carefully polishes a wooden object in a quiet workshop, precise coherent hand movement, natural ambient light, observational documentary framing</p>
+  <dl><dt>状态</dt><dd>failed</dd><dt>有效处理</dt><dd>Nones</dd><dt>端到端</dt><dd>1.368s</dd><dt>有效RTF</dt><dd>None</dd><dt>IQR长尾</dt><dd>False</dd><dt>技术门禁</dt><dd>False</dd><dt>SigLIP</dt><dd>None</dd><dt>DINOv2</dt><dd>None</dd><dt>异常</dt><dd>generation_failed, technical_failed</dd></dl>
+</article></main><script>
+const ids=['resolution','duration','mode','concurrency','status','review'];function apply(){const q=document.querySelector('#search').value.toLowerCase();document.querySelectorAll('.card').forEach(c=>{const ok=ids.every(id=>!document.querySelector('#'+id).value||c.dataset[id]===document.querySelector('#'+id).value)&&(!q||c.innerText.toLowerCase().includes(q));c.classList.toggle('hidden',!ok)})}ids.forEach(id=>document.querySelector('#'+id).addEventListener('change',apply));document.querySelector('#search').addEventListener('input',apply);
+</script></body></html>
