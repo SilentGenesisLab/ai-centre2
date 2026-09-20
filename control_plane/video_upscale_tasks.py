@@ -15,10 +15,13 @@ from .config import get_settings
 from .media_fetch import VIDEO_MEDIA, download_public_media
 
 
+# video_field 随节点类型而变：flashvsr 的视频节点是 LoadVideo（字段 file），
+# 另两个是 VHS_LoadVideo（字段 video）。节点号以 RunningHub 应用详情页的
+# nodeInfoList 为准，改应用后可能失效。
 PROVIDERS: dict[str, dict[str, str]] = {
-    "flashvsr": {"app_id": "1996062530516795394", "video_node": "23", "size_node": "16"},
-    "flashvsr_v2": {"app_id": "1983119055743819777", "video_node": "24", "size_node": "16"},
-    "seedvr2": {"app_id": "1990029249488801793", "video_node": "16", "size_node": "71"},
+    "flashvsr": {"app_id": "1996062530516795394", "video_node": "27", "video_field": "file", "size_node": "16"},
+    "flashvsr_v2": {"app_id": "1983119055743819777", "video_node": "24", "video_field": "video", "size_node": "16"},
+    "seedvr2": {"app_id": "1990029249488801793", "video_node": "16", "video_field": "video", "size_node": "71"},
 }
 TERMINAL_SUCCESS = {"SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE", "FINISHED"}
 TERMINAL_FAILURE = {"FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED"}
@@ -40,7 +43,7 @@ def build_payload(provider: str, source_uri: str, max_resolution: int) -> dict[s
     size_description = "设置最短边" if provider == "seedvr2" else "最大分辨率设置"
     return {
         "nodeInfoList": [
-            {"nodeId": spec["video_node"], "fieldName": "video", "fieldValue": source_uri,
+            {"nodeId": spec["video_node"], "fieldName": spec["video_field"], "fieldValue": source_uri,
              "description": "上传视频"},
             {"nodeId": spec["size_node"], "fieldName": "value", "fieldValue": str(max_resolution),
              "description": size_description},
@@ -200,8 +203,16 @@ def _process_segment(
                 "path": downloaded.path,
             }
         except Exception as exc:
-            attempts.append({"provider": provider, "status": "failed", "error": type(exc).__name__})
-    raise ProviderFailure(f"segment {index} failed after {len(attempts)} attempts")
+            # 记完整信息：只留类型名时，"3 次尝试都失败"这条日志无法定位到底是
+            # 供应商报错、下载失败还是网络超时。
+            attempts.append({
+                "provider": provider, "status": "failed", "error": type(exc).__name__,
+                "detail": str(exc)[:400],
+            })
+    raise ProviderFailure(
+        f"segment {index} failed after {len(attempts)} attempts: "
+        + "; ".join(f"{item['provider']}={item['error']}({item.get('detail', '')})" for item in attempts)
+    )
 
 
 def _media_metadata(path: Path) -> dict[str, Any]:

@@ -26,6 +26,11 @@ class VideoUpscaleTests(unittest.TestCase):
         self.assertEqual(seed["nodeInfoList"][0]["nodeId"], "16")
         self.assertEqual(seed["nodeInfoList"][1]["nodeId"], "71")
 
+    def test_flashvsr_uses_load_video_node_and_file_field(self) -> None:
+        payload = build_payload("flashvsr", "https://cdn.example/a.mp4", 1920)
+        self.assertEqual(payload["nodeInfoList"][0]["nodeId"], "27")
+        self.assertEqual(payload["nodeInfoList"][0]["fieldName"], "file")
+
     @patch("control_plane.video_upscale_tasks._run_ffmpeg")
     def test_splitter_uses_sub_twelve_second_boundary(self, run_ffmpeg) -> None:
         with TemporaryDirectory() as temporary:
