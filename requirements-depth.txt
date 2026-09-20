@@ -1,5 +1,6 @@
 celery[redis]==5.5.3
 addict>=2.4,<3
+cryptography>=42
 decord>=0.6,<1
 easydict>=1.13,<2
 einops>=0.8,<1
