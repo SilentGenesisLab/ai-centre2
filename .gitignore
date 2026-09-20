@@ -24,3 +24,19 @@ OCR/.venv/
 *.onnx
 *.safetensors
 
+# --- Node/Next.js 前端（admin 管理台、project-status-site 旧版）---
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.next-*/
+
+# --- 生产服务器上的手工备份（2026-09-20 git 对齐前扫出）---
+*.bak
+*.bak-*
+*.backup-*
+*.before-*
+*.pre-*
+*.orig
+*.rej
+

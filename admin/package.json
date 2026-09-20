@@ -1,0 +1,39 @@
+{
+  "name": "ai-centre-admin",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 8340",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 8340",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:e2e": "npm run build && playwright test",
+    "lint": "eslint . --ignore-pattern .next --ignore-pattern test-results"
+  },
+  "dependencies": {
+    "next": "^16.2.12",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "tailwindcss": "4.2.1",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.56.1"
+  },
+  "overrides": {
+    "postcss": "8.5.25",
+    "sharp": "0.35.3"
+  },
+  "type": "module"
+}

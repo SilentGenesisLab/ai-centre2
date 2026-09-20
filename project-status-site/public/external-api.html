@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#168dcc">
+  <link rel="icon" type="image/svg+xml" href="/admin/favicon.svg?v=3">
+  <title>AI Centre 2 第三方接口文档</title>
+  <style>
+    :root{color-scheme:dark;--bg:#071019;--card:#101d28;--line:#263847;--text:#eaf5fa;--muted:#9bb0bd;--cyan:#54d8dc;--amber:#f8c86c;--green:#77e4b5}*{box-sizing:border-box}body{margin:0;background:linear-gradient(140deg,#071019,#0b1721 55%,#10202a);color:var(--text);font:15px/1.7 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:1100px;margin:auto;padding:48px 24px 96px}header,.card{padding:28px;border:1px solid var(--line);border-radius:20px;background:#0e1b25cc}.card{margin:20px 0}h1{font-size:36px;margin:0 0 8px}h2{margin-top:46px;border-bottom:1px solid var(--line);padding-bottom:8px}h3{color:var(--cyan)}p,li{color:#cedce3}.meta,.muted{color:var(--muted)}code,pre{font-family:"Cascadia Code",Consolas,monospace}code{color:var(--cyan)}pre{overflow:auto;padding:18px;border:1px solid var(--line);border-radius:12px;background:#061019;color:#d7f3f4;white-space:pre}table{width:100%;border-collapse:collapse;margin:18px 0}th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}th{background:#142633}.notice{padding:15px 18px;border-left:4px solid var(--amber);background:#1f1b13;border-radius:8px}.ok{color:var(--green)}nav{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}nav a,a{color:var(--cyan);text-decoration:none}nav a{border:1px solid var(--line);border-radius:999px;padding:5px 11px}.method{display:inline-block;min-width:52px;color:#071019;background:var(--green);padding:1px 7px;border-radius:5px;font-weight:700;margin-right:7px}
+  </style>
+</head>
+<body><main>
+  <header>
+    <div class="meta">EXTERNAL API · VERSION 2.5 · 2026-08-20</div>
+    <h1>AI Centre 2 第三方接口文档</h1>
+    <p>生产地址：<code>https://aicentre2.sligenai.cn:8443</code>　<a href="/docs">Swagger</a>　<a href="/openapi.json">OpenAPI JSON</a>　<a href="/admin/audio-separation-api.html">音频分离独立文档</a></p>
+    <div class="notice">公开接口只接收公网 HTTPS 素材 URL，不接收本地文件或 multipart 上传。除健康检查外，统一发送 <code>Authorization: Bearer &lt;SERVICE_TOKEN&gt;</code>。</div>
+    <nav><a href="#auth">SERVICE_TOKEN</a><a href="#start">直接开始</a><a href="#catalog">接口分类</a><a href="#asr">语音识别</a><a href="#lipsync">唇形驱动</a><a href="#tts">语音合成</a><a href="#ocr">OCR</a><a href="#face">人脸处理</a><a href="#depth">视频深度</a><a href="#separation">音频分离</a><a href="#upscale">视频超分</a><a href="#h3">MiniMax H3</a><a href="#errors">错误码</a></nav>
+  </header>
+
+  <section class="card" id="auth">
+    <h2 style="margin-top:0">SERVICE_TOKEN 获取与正确填写</h2>
+    <p><code>&lt;SERVICE_TOKEN&gt;</code> 是占位符，不是可以直接发送的文字。Token 由 AI Centre 管理员单独分配，出于安全原因不会写入这个公网网页。交付第三方时，请通过私聊或密码管理器单独发送。</p>
+    <p><strong>鉴权必须包含 <code>Bearer </code> 前缀，前缀与 Token 之间有一个空格。</strong></p>
+    <table><thead><tr><th>结果</th><th>Authorization 请求头</th></tr></thead><tbody>
+      <tr><td class="ok">正确</td><td><code>Authorization: Bearer 实际SERVICE_TOKEN</code></td></tr>
+      <tr><td>错误</td><td><code>Authorization: 实际SERVICE_TOKEN</code></td></tr>
+    </tbody></table>
+    <pre>export SERVICE_TOKEN='粘贴管理员单独发给你的Token'
+curl -H "Authorization: Bearer ${SERVICE_TOKEN}" \
+  "https://aicentre2.sligenai.cn:8443/v2/tts/providers"</pre>
+  </section>
+
+  <h2 id="start">一、用本地素材直接开始</h2>
+  <p>本次示例原文件：</p>
+  <pre>K:\三瑞集团：尊爱AI视频需求汇总\视频脚本\脚本1\女1.mp4
+K:\三瑞集团：尊爱AI视频需求汇总\视频脚本\脚本1\女1.MP3</pre>
+  <p>先裁剪前 10 秒，原文件不会被覆盖：</p>
+  <pre>ffmpeg -ss 0 -i "K:\三瑞集团：尊爱AI视频需求汇总\视频脚本\脚本1\女1.MP3" `
+  -t 10 -map 0:a:0 -c:a libmp3lame -q:a 2 `
+  "K:\三瑞集团：尊爱AI视频需求汇总\视频脚本\脚本1\女1_前10秒.mp3"</pre>
+  <p>把视频和新音频上传到你自己的对象存储，取得公网 HTTPS URL，然后设置以下 PowerShell 变量。<code>K:\...</code> 本地路径不能直接放进 JSON。</p>
+  <pre>$Base = "https://aicentre2.sligenai.cn:8443"
+$Token = "替换为分配给你的SERVICE_TOKEN"
+$VideoUrl = "https://你的对象存储.example.com/女1.mp4?签名参数"
+$AudioUrl = "https://你的对象存储.example.com/女1_前10秒.mp3?签名参数"
+$Headers = @{ Authorization = "Bearer $Token" }</pre>
+
+  <h2 id="catalog">二、接口分类与中文接口名</h2>
+  <table><thead><tr><th>分类</th><th>中文接口名</th><th>方法与路径</th></tr></thead><tbody>
+    <tr><td>系统状态</td><td>检查中台与上游服务健康状态</td><td><code>GET /health</code></td></tr>
+    <tr><td>唇形驱动</td><td>通过视频和音频 URL 创建唇形驱动任务</td><td><code>POST /v1/lipsync/jobs</code></td></tr>
+    <tr><td>语音识别</td><td>通过音视频 URL 识别文字</td><td><code>POST /v1/asr/transcriptions</code></td></tr>
+    <tr><td>语音合成</td><td>语音合成或 VoxCPM2 深度语音克隆</td><td><code>POST /v2/tts/speech</code></td></tr>
+    <tr><td>语音合成</td><td>48kHz PCM 实时流式合成</td><td><code>POST /v2/tts/speech/stream</code></td></tr>
+    <tr><td>语音合成</td><td>查询异步质量审计</td><td><code>GET /v2/tts/quality/{request_id}</code></td></tr>
+    <tr><td>OCR 文字识别</td><td>通过图片 URL 批量识别文字</td><td><code>POST /v1/ocr/batch</code></td></tr>
+    <tr><td>人脸处理</td><td>提交人脸处理并等待 OSS 结果</td><td><code>POST /v1/face-mosaic/jobs/wait</code></td></tr>
+    <tr><td>人脸处理</td><td>通过视频 URL 创建异步任务</td><td><code>POST /v1/face-mosaic/jobs</code></td></tr>
+    <tr><td>视频切片</td><td>创建异步 SceneDetect 视频切片任务</td><td><code>POST /v1/video-scenes/jobs</code></td></tr>
+    <tr><td>视频切片</td><td>高优先级提交并等待 OSS 结果</td><td><code>POST /v1/video-scenes/jobs/wait</code></td></tr>
+    <tr><td>视频深度推理</td><td>创建异步 DA2/DA3 Small/Base 任务</td><td><code>POST /v1/video-depth/jobs</code></td></tr>
+    <tr><td>视频深度推理</td><td>高优先级提交并等待 OSS 深度视频</td><td><code>POST /v1/video-depth/jobs/wait</code></td></tr>
+    <tr><td>音频分离</td><td>异步提取对白、音乐、音效和背景四轨</td><td><code>POST /v1/audio-separation/jobs</code></td></tr>
+    <tr><td>音频分离</td><td>高优先级提交并等待四轨 OSS 结果</td><td><code>POST /v1/audio-separation/jobs/wait</code></td></tr>
+    <tr><td>视频超分</td><td>FlashVSR V2 / FlashVSR / SeedVR2智能故障切换</td><td><code>POST /v1/video-upscale/jobs</code></td></tr>
+    <tr><td>MiniMax H3视频生成</td><td>单段/两段异步生成与多机故障转移</td><td><code>POST /v1/video-generations/minimax-h3/jobs</code></td></tr>
+  </tbody></table>
+
+  <h2 id="asr">三、语音识别</h2>
+  <h3><span class="method">POST</span>通过音视频 URL 识别文字</h3>
+  <p><code>language</code> 可省略或传 <code>auto</code>，都会自动识别语种；已知语种时也可明确传 <code>zh</code>、<code>en</code> 等代码。</p>
+  <pre>$Body = @{file_url=$AudioUrl; language="auto"; beam_size=5} | ConvertTo-Json
+$Asr = Invoke-RestMethod -Method Post -Uri "$Base/v1/asr/transcriptions" `
+  -Headers $Headers -ContentType "application/json" -Body $Body -TimeoutSec 900
+$Asr.segments | Select-Object start,end,text
+$Asr | ConvertTo-Json -Depth 20 | Set-Content -Encoding utf8 ".\女1_前10秒_ASR.json"</pre>
+  <p>响应包含识别语言、媒体时长、分段文字及逐字时间信息。</p>
+
+  <h2 id="lipsync">四、唇形驱动</h2>
+  <h3><span class="method">POST</span>通过视频和音频 URL 创建唇形驱动任务</h3>
+  <pre>$Body = @{video_url=$VideoUrl; audio_url=$AudioUrl; face_restore=$true} | ConvertTo-Json
+$Created = Invoke-RestMethod -Method Post -Uri "$Base/v1/lipsync/jobs" `
+  -Headers $Headers -ContentType "application/json" -Body $Body -TimeoutSec 900
+$JobId = $Created.job_id
+$Created</pre>
+  <h3>轮询并下载结果</h3>
+  <pre>do {
+  Start-Sleep -Seconds 3
+  $Job = Invoke-RestMethod -Uri "$Base/v1/lipsync/jobs/$JobId" -Headers $Headers
+  Write-Host "$($Job.state) / $($Job.stage)"
+} while ($Job.state -in @("queued", "running"))
+
+if ($Job.state -eq "completed") {
+  Invoke-WebRequest -Uri $Job.result_url -OutFile ".\女1_唇形驱动_GFPGAN.mp4"
+} else { throw $Job.error }</pre>
+  <p>任务完成后，响应中的 <code>result_url</code> 是可直接访问的 OSS HTTPS 地址，无需再拼接中台本地路径。原来的鉴权下载接口仍保留作为兜底。</p>
+  <pre>{
+  "state": "completed",
+  "result_url": "https://bucket-silge-internal-products.oss-cn-shenzhen.aliyuncs.com/ai-centre/lipsync/{job_id}/result.mp4",
+  "result_storage": "oss"
+}</pre>
+  <table><tr><td>查询列表</td><td><code>GET /v1/lipsync/jobs?limit=50&amp;state=completed</code></td></tr><tr><td>查询状态</td><td><code>GET /v1/lipsync/jobs/{job_id}</code></td></tr><tr><td>查看日志</td><td><code>GET /v1/lipsync/jobs/{job_id}/logs?stage=musetalk&amp;tail=200</code></td></tr><tr><td>取消任务</td><td><code>POST /v1/lipsync/jobs/{job_id}/cancel</code></td></tr><tr><td>下载结果</td><td><code>GET /v1/lipsync/jobs/{job_id}/video</code></td></tr></table>
+
+  <h2 id="tts">五、语音合成</h2>
+  <h3><span class="method">POST</span>普通语音合成</h3>
+  <pre>$Body = @{text="您好，这是语音合成示例。"; language="auto"; voice_profile_id="default"; provider="auto"} | ConvertTo-Json
+Invoke-WebRequest -Method Post -Uri "$Base/v2/tts/speech" -Headers $Headers `
+  -ContentType "application/json" -Body $Body -OutFile ".\普通语音合成.wav" -TimeoutSec 900</pre>
+  <h3><span class="method">POST</span>VoxCPM2 深度语音克隆</h3>
+  <p>参考音频可选；提供 <code>reference_audio_url</code> 时强制走 VoxCPM2。<code>clone_mode</code> 支持 <code>auto / controllable / ultimate</code>，<code>emotion_strategy</code> 支持 <code>auto / inherit / force</code>。跨语言会自动使用隔离 Reference/Controllable 模式，参考文本只参与语言检测和质量审计，不送入 continuation；长参考会自动选择代表性约5秒。情绪一致时继承参考表达，冲突时才注入风格。同步请求先生成常规候选，仅在正文、首尾或 ERes2NetV2 说话人门禁失败时追加受控 seed，跨语言最多六个候选；隔离参考的中文中长句按逗号短语分段，减少音色漂移。最终选择正文、音色、情绪和首尾均更稳的结果，不使用可能引入额外发声的前导词。<code>prosody.speed/volume/pitch</code> 均真实生效。</p>
+  <pre>$Body = @{
+  text="这段文字将使用参考音频进行深度语音克隆。"
+  voice_profile_id="default"
+  reference_audio_url=$AudioUrl
+  prompt_text="参考音频中准确说出的文字"
+  emotion="真诚、温暖、有感染力"
+  emotion_enhance=$false
+  clone_mode="auto"
+  emotion_strategy="auto"
+  prosody=@{speed=1.0; volume=1.0; pitch=1.0}
+  quality_mode="standard"
+} | ConvertTo-Json
+Invoke-WebRequest -Method Post -Uri "$Base/v2/tts/speech" -Headers $Headers `
+  -ContentType "application/json" -Body $Body -OutFile ".\VoxCPM2_克隆.wav" -TimeoutSec 900</pre>
+  <p>实际路由见响应头：<code>X-TTS-Clone-Mode</code>、<code>X-TTS-Clone-Fallback</code>、<code>X-TTS-Reference-Language</code>、<code>X-TTS-Target-Language</code>、<code>X-TTS-Emotion-Strategy</code>、<code>X-TTS-Candidate-Count</code>、<code>X-TTS-Reference-Window</code>、<code>X-TTS-Reference-Fallback</code>。</p>
+  <h3><span class="method">POST</span>实时 PCM 流式合成</h3>
+  <p>请求体与同步接口相同，只支持 <code>quality_mode=standard</code>。跨语言流式使用最佳参考片段单次生成；响应为 48kHz、16-bit、小端、单声道 PCM；使用响应头 <code>X-TTS-Request-ID</code> 查询最终质量审计。</p>
+  <pre>curl -N -X POST "$BASE/v2/tts/speech/stream" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"text":"这是实时流式语音。","emotion":"自然、亲切","prosody":{"speed":1.1,"volume":1.0,"pitch":1.0}}' \
+  --output speech.pcm
+ffplay -f s16le -ar 48000 -ac 1 speech.pcm</pre>
+  <h3><span class="method">POST</span>最多20000字符的异步长语音</h3>
+  <p>同步和流式接口最多5000字符；<code>POST /v2/tts/jobs</code> 最多支持20000字符，服务端自动分段、最多预生成2段、顺序合并并上传OSS。支持普通TTS和带 <code>reference_audio_url</code> 的VoxCPM2深度克隆；长语音固定使用 <code>quality_mode=standard</code>，失败分段独立重试。</p>
+  <pre>python - &lt;&lt;'PY'
+import json
+text = "这是需要合成的长文本。" * 800
+with open("long-tts-request.json", "w", encoding="utf-8") as file:
+    json.dump({
+      "text": text, "language": "zh", "voice_profile_id": "default",
+      "provider": "auto", "quality_mode": "standard",
+      "reference_audio_url": "https://你的对象存储.example.com/reference.MP3",
+      "prompt_text": "参考音频准确文本",
+      "prosody": {"speed": 1.0, "volume": 1.0, "pitch": 1.0},
+      "idempotency_key": "order-20260820-long-001"
+    }, file, ensure_ascii=False)
+PY
+curl -X POST "$BASE/v2/tts/jobs" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" -H "Content-Type: application/json" \
+  --data-binary @long-tts-request.json</pre>
+  <p><code>GET /v2/tts/jobs/{job_id}</code> 查询进度；完成后 <code>result.audio_url</code> 是公网OSS WAV。<code>GET /v2/tts/jobs/{job_id}/audio</code> 保留为鉴权下载。相同的8～256字符 <code>idempotency_key</code> 会复用原任务。</p>
+
+  <h2 id="ocr">六、OCR 文字识别</h2>
+  <h3><span class="method">POST</span>通过图片 URL 批量识别文字</h3>
+  <pre>$Body = @{
+  job_id="order-20260802-001"; source_lang_hint="zh"
+  images=@(@{image_id="front"; url="https://你的对象存储.example.com/front.png"; regions=@()})
+} | ConvertTo-Json -Depth 10
+Invoke-RestMethod -Method Post -Uri "$Base/v1/ocr/batch" -Headers $Headers `
+  -ContentType "application/json" -Body $Body -TimeoutSec 900</pre>
+
+  <h2 id="face">七、人脸处理</h2>
+  <h3><span class="method">POST</span>提交人脸处理并等待 OSS 结果（推荐）</h3>
+  <p>HTTP 长连接等待内部高优先级任务完成，成功后直接返回 OSS <code>video_url</code>，客户端无需轮询。客户端超时请设置为至少 1800 秒。</p>
+  <pre>$Body = @{source_uri=$VideoUrl; filename="face_mosaic.mp4"; external_ref="order-001"; metadata=@{}} | ConvertTo-Json
+$FaceResult = Invoke-RestMethod -Method Post -Uri "$Base/v1/face-mosaic/jobs/wait" `
+  -Headers $Headers -ContentType "application/json" -Body $Body -TimeoutSec 1800
+$FaceResult.video_url</pre>
+  <pre>{
+  "job_id": "任务UUID",
+  "status": "succeeded",
+  "video_url": "https://oss.example.com/path/face_mosaic.mp4",
+  "applied": true,
+  "analysis": {}
+}</pre>
+  <p>等待超时返回 504 时任务仍继续执行，响应会包含 <code>job_id</code>，可用原查询接口继续查询。</p>
+  <h3><span class="method">POST</span>通过视频 URL 创建人脸处理任务</h3>
+  <pre>$Body = @{source_uri=$VideoUrl; filename="face_mosaic.mp4"; external_ref="order-001"; metadata=@{}} | ConvertTo-Json
+$Face = Invoke-RestMethod -Method Post -Uri "$Base/v1/face-mosaic/jobs" `
+  -Headers $Headers -ContentType "application/json" -Body $Body -TimeoutSec 900</pre>
+  <p><code>GET /v1/face-mosaic/jobs/{job_id}</code> 查询，<code>POST /v1/face-mosaic/jobs/{job_id}/cancel</code> 取消。</p>
+
+  <h2 id="scenes">八、SceneDetect 视频切片</h2>
+  <p>输入公网 HTTPS 视频 URL，默认使用 ContentDetector：<code>threshold=27.0</code>、<code>min_scene_len=15</code> 帧。每个切片都会上传 OSS。</p>
+  <h3><span class="method">POST</span>普通异步任务（优先级 5）</h3>
+  <pre>$SceneBody = @{
+  source_uri=$VideoUrl
+  filename="scene.mp4"
+  threshold=27.0
+  min_scene_len=15
+  external_ref="order-001"
+  metadata=@{}
+} | ConvertTo-Json
+$SceneJob = Invoke-RestMethod -Method Post -Uri "$Base/v1/video-scenes/jobs" `
+  -Headers $Headers -ContentType "application/json" -Body $SceneBody
+$SceneJob.job_id</pre>
+  <p><code>GET /v1/video-scenes/jobs/{job_id}</code> 查询，<code>POST /v1/video-scenes/jobs/{job_id}/cancel</code> 取消。</p>
+  <h3><span class="method">POST</span>提交并等待 OSS 结果（优先级 9）</h3>
+  <p>服务端内部仍异步执行，但 HTTP 请求等待完成，建议客户端超时至少 1800 秒。</p>
+  <pre>$SceneResult = Invoke-RestMethod -Method Post -Uri "$Base/v1/video-scenes/jobs/wait" `
+  -Headers $Headers -ContentType "application/json" -Body $SceneBody -TimeoutSec 1800
+$SceneResult.scenes | Select-Object index,start_seconds,end_seconds,duration_seconds,video_url</pre>
+  <pre>{
+  "job_id": "任务UUID",
+  "status": "succeeded",
+  "scene_count": 2,
+  "scenes": [{
+    "index": 1,
+    "start_seconds": 0.0,
+    "end_seconds": 5.0,
+    "duration_seconds": 5.0,
+    "video_url": "https://oss.example.com/path/scene_001.mp4"
+  }]
+}</pre>
+  <p>等待超时返回 504 和 <code>job_id</code>，任务继续运行，可用查询接口获取结果。</p>
+
+  <h2 id="depth">九、DA2 / DA3 单目视频深度推理</h2>
+  <p>支持 DA2（Video Depth Anything）与 Depth Anything 3，均可选择 Small/Base。输入公网 HTTPS 视频 URL，输出时序一致的灰度深度 MP4 和可直接访问的 OSS URL。</p>
+  <pre>curl -X POST "$BASE/v1/video-depth/jobs" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"source_uri":"https://storage.example.com/video/source.mp4","version":"da2","model":"small","filename":"depth.mp4","input_size":518,"max_resolution":960,"target_fps":-1}'</pre>
+  <p><code>version</code> 可选 <code>da2</code>/<code>da3</code>，<code>model</code> 可选 <code>small</code>/<code>base</code>；默认 DA2 Small。<code>input_size</code> 必须是14的倍数（224～756）；生产 GPU 上 DA2 Base 超过392会自动降为392，并在响应中返回实际尺寸。<code>max_resolution</code> 默认960；<code>target_fps=-1</code>保持原帧率。使用 <code>GET /v1/video-depth/jobs/{job_id}</code> 查询，<code>POST /v1/video-depth/jobs/{job_id}/cancel</code> 取消。需要直接等待结果时提交到 <code>/v1/video-depth/jobs/wait</code>。</p>
+
+  <h2 id="separation">十、音频分离</h2>
+  <p>使用 Bandit v2 DnR v3 Multilingual，把音频或视频分成影视对白、音乐、音效，并返回组合背景轨。输入只接受公网 HTTPS URL。</p>
+  <pre>$Body = @{
+  source_uri=$VideoUrl
+  model="bandit-v2-multilingual"
+  filename_prefix="campaign-001"
+  external_ref="order-001"
+  metadata=@{}
+} | ConvertTo-Json
+$Job = Invoke-RestMethod -Method Post -Uri "$Base/v1/audio-separation/jobs" `
+  -Headers $Headers -ContentType "application/json" -Body $Body
+$Job.job_id</pre>
+  <p><code>GET /v1/audio-separation/jobs/{job_id}</code>查询，<code>POST /v1/audio-separation/jobs/{job_id}/cancel</code>取消。需要保持连接直接等待结果时使用<code>POST /v1/audio-separation/jobs/wait</code>。</p>
+  <pre>{
+  "status": "succeeded",
+  "speech_url": "https://oss.example.com/audio/campaign-001_speech.wav",
+  "music_url": "https://oss.example.com/audio/campaign-001_music.wav",
+  "sfx_url": "https://oss.example.com/audio/campaign-001_sfx.wav",
+  "background_url": "https://oss.example.com/audio/campaign-001_background.wav",
+  "duration_seconds": 32.829,
+  "rtf": 0.1033
+}</pre>
+  <p><code>speech</code>表示影视对白，歌唱声通常进入<code>music</code>；<code>background</code>等于音乐与音效组合。四个结果均为48kHz双声道PCM WAV，并应用-1dBFS峰值保护。</p>
+
+  <h2 id="upscale">十一、视频超分</h2>
+  <p>默认<code>provider=auto</code>，依次使用FlashVSR V2、FlashVSR、SeedVR2。长视频自动切成不超过12秒的片段，最多3片并发超分；失败片段独立重生，不重跑成功片段。全部成功后按原顺序无转场合并并恢复原始音轨。</p>
+  <pre>curl -X POST "$BASE/v1/video-upscale/jobs" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" -H "Content-Type: application/json" \
+  -d '{"source_uri":"https://storage.example.com/video/source.mp4","provider":"auto","max_resolution":1920,"external_ref":"order-001","metadata":{}}'</pre>
+  <p><code>provider</code>支持<code>auto / flashvsr_v2 / flashvsr / seedvr2</code>。查询：<code>GET /v1/video-upscale/jobs/{job_id}</code>；取消：<code>POST /v1/video-upscale/jobs/{job_id}/cancel</code>；等待模式：<code>POST /v1/video-upscale/jobs/wait</code>。</p>
+
+  <h2 id="h3">十二、MiniMax H3多机视频生成</h2>
+  <p>固定受控H3工作流，支持纯文本生成，也支持单段/两段、可选参考图、参考视频、参考音频和Worker故障转移。Prompt按请求原文传递，不允许提交任意ComfyUI工作流。</p>
+  <pre>curl -X POST "$BASE/v1/video-generations/minimax-h3/jobs" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" -H "Content-Type: application/json" \
+  -d '{
+    "segment_mode":"single",
+    "prompts":["一只雄鹰在黑夜中飞过雪山，电影级光影"],
+    "duration_seconds":5,
+    "quality":"medium",
+    "resolution":"480p",
+    "aspect_ratio":"9:16",
+    "priority":500,
+    "seed":482901731,
+    "external_ref":"order-001",
+    "metadata":{}
+  }'</pre>
+  <p>参考图、参考视频、参考音频均为可选URL列表，全部留空时为纯文本生成。默认单段、720P、9:16、5秒、中质量；清晰度支持480P/720P/1080P，比例支持9:16、16:9、1:1、4:3、3:4，时长范围2～15秒。<code>quality</code>支持<code>low / medium / high</code>：低档快速预览，中档为默认生产流程，高档使用质量采样器且耗时明显增加；兼容<code>midia</code>并归一化为<code>medium</code>。两段模式仍要求参考视频总长4～30秒、每段2～15秒及两条Prompt。<code>priority</code>范围1～1000、默认500，数值越高越先获得下一台空闲Worker，同优先级按提交时间处理，但不会中断已运行任务。</p>
+  <pre>GET  /v1/video-generations/minimax-h3/jobs/{job_id}
+GET  /v1/video-generations/minimax-h3/jobs/{job_id}/queue-position
+GET  /v1/video-generations/minimax-h3/workers/status
+POST /v1/video-generations/minimax-h3/jobs/{job_id}/cancel</pre>
+  <p>排队接口的<code>ahead_count</code>表示前面还有多少个任务；Worker状态接口返回在线、空闲、忙碌、离线、停用、排空和不兼容机器数量。完成结果中的<code>result_url</code>和<code>part_urls</code>均为OSS URL。</p>
+
+  <h2 id="errors">十三、状态码</h2>
+  <table><thead><tr><th>状态码</th><th>含义与处理</th></tr></thead><tbody><tr><td>200 / 202</td><td>成功 / 已接收</td></tr><tr><td>400</td><td>空素材或业务参数错误，不要重试</td></tr><tr><td>401</td><td>Token 缺失或错误</td></tr><tr><td>404</td><td>接口或任务不存在</td></tr><tr><td>409</td><td>结果未就绪，稍后查询</td></tr><tr><td>413</td><td>素材超限</td></tr><tr><td>415</td><td>后缀或 Content-Type 不支持/冲突</td></tr><tr><td>422</td><td>URL 非 HTTPS、非公网或字段无效</td></tr><tr><td>502</td><td>素材下载或推理上游失败</td></tr><tr><td>503 / 504</td><td>服务不可用或超时，按 2、5、10 秒退避重试</td></tr></tbody></table>
+  <p class="muted">完整 Python 示例、异步 TTS、字段定义及安全要求请见随项目交付的 <code>docs/EXTERNAL_API.md</code>。不要记录完整签名 URL 或生产 Token。</p>
+</main></body>
+</html>

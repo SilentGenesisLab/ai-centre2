@@ -1,0 +1,182 @@
+[
+  {
+    "model": "gpt-image-2",
+    "case": "tvc_storyboard",
+    "file": "gpt-image-2-tvc_storyboard.png",
+    "bytes": 1725659,
+    "sha256": "1ac9de1af961fae7b2603f02f41a87ebf4e35df7003927be3505bcf7a1563200",
+    "elapsed_seconds": 39.667,
+    "job_id": "bf335979-353a-427a-abec-a445bd9c602b"
+  },
+  {
+    "model": "gpt-image-2",
+    "case": "character",
+    "file": "gpt-image-2-character.png",
+    "bytes": 2022388,
+    "sha256": "2cdd34d3ae2020e631a9c199ec7baa9789a7855a8b7c4e5a0398e8f25bac496b",
+    "elapsed_seconds": 42.161,
+    "job_id": "d27ad682-677f-427a-82b5-a4dc978bfdb2"
+  },
+  {
+    "model": "gpt-image-2",
+    "case": "asset",
+    "file": "gpt-image-2-asset.png",
+    "bytes": 1430576,
+    "sha256": "03b2417a60f8a66987ec0c6ad03ce66499c9dfa1d6c57475c4916537118735c4",
+    "elapsed_seconds": 41.52,
+    "job_id": "7982fac5-8a7d-4e3a-8b96-76c46f5558ad"
+  },
+  {
+    "model": "gpt-image-2",
+    "case": "environment",
+    "file": "gpt-image-2-environment.png",
+    "bytes": 2130081,
+    "sha256": "f9e3366f3f2a628162f9fb7c5e7cfbe4a4be26648ca74da7ac4cb3c0478b6605",
+    "elapsed_seconds": 43.949,
+    "job_id": "d7280531-0761-4d70-9dc9-c7bcc6b9d4b6"
+  },
+  {
+    "model": "gpt-image-2.5",
+    "case": "tvc_storyboard",
+    "file": "gpt-image-2.5-tvc_storyboard.png",
+    "bytes": 1948426,
+    "sha256": "46d1f4c0605aec8a91691bfa08e4b23ef0f9453ecf1c93cc7ad02d292eb41fb6",
+    "elapsed_seconds": 64.716,
+    "job_id": "8f26e561-1958-4a21-846b-0385705d4345"
+  },
+  {
+    "model": "gpt-image-2.5",
+    "case": "character",
+    "file": "gpt-image-2.5-character.png",
+    "bytes": 1913483,
+    "sha256": "a360418eb77c1be748f45d975d6b0302891b6700bac31de80558175383cb2dc9",
+    "elapsed_seconds": 55.757,
+    "job_id": "c5a2e7f5-42fe-4bf6-b23c-c33c532da9cf"
+  },
+  {
+    "model": "gpt-image-2.5",
+    "case": "asset",
+    "file": "gpt-image-2.5-asset.png",
+    "bytes": 1435632,
+    "sha256": "f8bb25a42fe6ff2c6c1409e5003db004b4f66670cfa0f6028c05c6e3863d8f76",
+    "elapsed_seconds": 39.492,
+    "job_id": "3baeff33-4318-46c8-8fad-8a2c28a906f8"
+  },
+  {
+    "model": "gpt-image-2.5",
+    "case": "environment",
+    "file": "gpt-image-2.5-environment.png",
+    "bytes": 2046376,
+    "sha256": "115d91ac1de64adc785a90943de2e84789526dd098775fbcd34ea6ae337a9b47",
+    "elapsed_seconds": 44.224,
+    "job_id": "35b00608-c4c8-4e99-ac52-8b2bd99634a6"
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "case": "tvc_storyboard",
+    "file": "gpt-image-2.5-sunburst-tvc_storyboard.png",
+    "bytes": 1226039,
+    "sha256": "8897775027e1ea146dc392766cb15d66f3563484ca58490197e4e77238c1a6a6",
+    "elapsed_seconds": 27.822,
+    "job_id": "d6353e1c-52c0-45d2-94f5-a404aa5c53bd"
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "case": "character",
+    "file": "gpt-image-2.5-sunburst-character.png",
+    "bytes": 1126966,
+    "sha256": "1eb265965680f0be98f5c9c22839f7b276e5e902addbf513fe3447243f6485f7",
+    "elapsed_seconds": 32.337,
+    "job_id": "65ec4e62-0330-4291-be38-e29e81672e61"
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "case": "asset",
+    "file": "gpt-image-2.5-sunburst-asset.png",
+    "bytes": 1171960,
+    "sha256": "64a62d439613182076e8ed89642423cd075298125d023983b74d61cdc169a25d",
+    "elapsed_seconds": 32.474,
+    "job_id": "1db704e9-f6bc-44f7-9a67-ab69a6fa87f1"
+  },
+  {
+    "model": "gpt-image-2.5-sunburst",
+    "case": "environment",
+    "file": "gpt-image-2.5-sunburst-environment.png",
+    "bytes": 1574184,
+    "sha256": "49f46aaeca68dfd0f2ab881858c3e66b205f42f8382594ee6ebb2a03e1682fb6",
+    "elapsed_seconds": 39.497,
+    "job_id": "e97383ad-8450-4d1a-9f2a-0d2d6f0296c1"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "case": "tvc_storyboard",
+    "file": "gpt-image-2.5-flare-tvc_storyboard.png",
+    "bytes": 1149387,
+    "sha256": "1a965ed428b9f5dd325255e94c21bfa495a7b1f68a46d4f8cd123fc32aca2c12",
+    "elapsed_seconds": 35.148,
+    "job_id": "5d3354a1-8c6f-41dd-a45c-562567343b85"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "case": "character",
+    "file": "gpt-image-2.5-flare-character.png",
+    "bytes": 1064278,
+    "sha256": "17725f17aef5c4d6f9d93ea594c287282d2dd8cb197438cc1230ec6071c67bff",
+    "elapsed_seconds": 24.681,
+    "job_id": "76c849a9-8b13-4be0-b0b3-68f8b665ec33"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "case": "asset",
+    "file": "gpt-image-2.5-flare-asset.png",
+    "bytes": 1150935,
+    "sha256": "59fd8d9795b775483bc96a12acde2b5c6f4fc4ee047b8132f8db9c63c9cb54dc",
+    "elapsed_seconds": 29.302,
+    "job_id": "ddbc2d7f-c1bc-43e7-ba48-aa4279ef9de9"
+  },
+  {
+    "model": "gpt-image-2.5-flare",
+    "case": "environment",
+    "file": "gpt-image-2.5-flare-environment.png",
+    "bytes": 1591236,
+    "sha256": "24b550d58c5a3ffb43e61a7d4b1af8dec13ff0e996975cb622e03c933adf4538",
+    "elapsed_seconds": 25.954,
+    "job_id": "e86815e7-83c4-4b71-ba4d-ac665b225f03"
+  },
+  {
+    "model": "nano-banana-2",
+    "case": "tvc_storyboard",
+    "file": "nano-banana-2-tvc_storyboard.png",
+    "bytes": 1582861,
+    "sha256": "b99f6e0a59c401cc6a698387f75bbdadd2609958be05617469b9559a64c921bd",
+    "elapsed_seconds": 33.769,
+    "job_id": "05d7a39a-bb35-477f-a69a-2ba86013d12b"
+  },
+  {
+    "model": "nano-banana-2",
+    "case": "character",
+    "file": "nano-banana-2-character.png",
+    "bytes": 1057687,
+    "sha256": "f4b91d3969842d79d18d0a6a77b6505e2f7637cc075a106f05ecc8a204b9cbdd",
+    "elapsed_seconds": 119.702,
+    "job_id": "575855bd-720c-4073-8d2b-f2a56ddd2f81"
+  },
+  {
+    "model": "nano-banana-2",
+    "case": "asset",
+    "file": "nano-banana-2-asset.png",
+    "bytes": 642851,
+    "sha256": "a74e55a8e63fa28baa88b3e4306b995370b130c304665510001681511e581ea7",
+    "elapsed_seconds": 112.108,
+    "job_id": "95eb9c76-1cbe-40fe-8b1b-ba156e05d968"
+  },
+  {
+    "model": "nano-banana-2",
+    "case": "environment",
+    "file": "nano-banana-2-environment.png",
+    "bytes": 1774615,
+    "sha256": "e69c90251ccbbdc62ccec973f710e2eb92f240d610856a940088d598c6fa422a",
+    "elapsed_seconds": 305.775,
+    "job_id": "2f02d2c5-2e9f-4928-a809-9d0c1c804eb9"
+  }
+]

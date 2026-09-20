@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GRSAI 五模型 TVC 图像对照</title>
+<style>
+:root{color-scheme:light;--bg:#edf3fa;--panel:#fff;--text:#172033;--muted:#64748b;--blue:#2563eb;--line:#dce6f2}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Inter,"Microsoft YaHei",sans-serif}.wrap{max-width:1920px;margin:auto;padding:24px}h1{font-size:28px;margin:0 0 6px}.lead{color:var(--muted);margin:0 0 20px}.summary{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}.metric,.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 18px #203b5d0c}.metric{padding:14px}.metric b{display:block;font-size:15px}.metric span{color:var(--blue);font-size:22px;font-weight:750}.section{margin:26px 0 10px;display:flex;align-items:end;justify-content:space-between}.section h2{margin:0;font-size:20px}.section small{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(5,minmax(230px,1fr));gap:12px}.card{padding:10px;overflow:hidden}.imagebox{height:320px;background:#f3f6fa;border-radius:9px;display:flex;align-items:center;justify-content:center;overflow:hidden}.imagebox img{width:100%;height:100%;object-fit:contain}.name{font-weight:750;margin-top:8px}.time{color:var(--muted)}.tag{display:inline-block;margin-top:5px;padding:2px 8px;border-radius:999px;background:#e8f0ff;color:#2459bd;font-size:12px}.note{margin-top:24px;padding:16px;background:#fff;border:1px solid var(--line);border-radius:14px}.note li{margin:5px 0}@media(max-width:1100px){.grid,.summary{grid-template-columns:repeat(2,1fr)}}@media(max-width:620px){.wrap{padding:14px}.grid,.summary{grid-template-columns:1fr}.imagebox{height:auto;min-height:260px}}
+</style></head><body><main class="wrap"><h1>GRSAI 五模型 × 四类 TVC 素材</h1><p class="lead">2026-09-09 · 1K档 · 同类使用相同提示词 · 共20张，最终成功率20/20。点击图片可查看原图。</p>
+<section class="summary">
+<div class="metric"><b>GPT Image 2</b><span>39.96s</span><small>平均耗时</small></div>
+<div class="metric"><b>GPT Image 2.5</b><span>38.99s</span><small>平均耗时</small></div>
+<div class="metric"><b>2.5 Sunburst</b><span>28.71s</span><small>平均耗时</small></div>
+<div class="metric"><b>2.5 Flare</b><span>25.09s</span><small>平均耗时</small></div>
+<div class="metric"><b>Nano Banana 2</b><span>44.21s</span><small>平均耗时</small></div>
+</section><div id="content"></div>
+<aside class="note"><b>首轮结论</b><ul><li>GPT Image 2.5综合构图、人物和产品材质最均衡，适合作为默认商业出图模型。</li><li>Sunburst更适合暖光、美妆和情绪氛围；Flare速度最快，适合强高光广告帧。</li><li>Nano Banana 2四类均成功，但人物样本出现88.60秒长尾，需要继续监控P95。</li><li>每格只有一个随机样本，本页用于直观首轮选型，不代表统计显著的最终排名。</li></ul></aside>
+</main><script>
+const rows={
+"TVC关键帧":[
+["GPT Image 2",40.91,"https://file6.aitohumanize.com/file/315d460287fd4e12829b1101743be313.png"],
+["GPT Image 2.5",39.64,"https://file2.aitohumanize.com/file/5da69000d5a24244a7f2e236bd200e89.png"],
+["GPT Image 2.5 Sunburst",27.689,"https://file1.aitohumanize.com/file/7c513e6c0ebc4b149756817f01182ae3.png"],
+["GPT Image 2.5 Flare",22.905,"https://file6.aitohumanize.com/file/fd61fb6264904350bb1d564d300c18a0.png"],
+["Nano Banana 2",30.839,"https://file5.aitohumanize.com/file/0b9c24ef5e2d4747a06a9a83826d355d.png"]],
+"人物定妆":[
+["GPT Image 2",35.25,"https://file6.aitohumanize.com/file/b3e6e5415c844c8895d0ba28239df438.png"],
+["GPT Image 2.5",37.748,"https://file1.aitohumanize.com/file/fa02555de91f45058ff74e2723169e70.png"],
+["GPT Image 2.5 Sunburst",29.287,"https://file2.aitohumanize.com/file/392aec9e0edf4583a2d7e6424e14a292.png"],
+["GPT Image 2.5 Flare",22.741,"https://file3.aitohumanize.com/file/9217d7b7a4534ce9bdb0ca4e5a936c5a.png"],
+["Nano Banana 2",88.598,"https://file3.aitohumanize.com/file/ed713498d3624ca3b32b94f609fcd55a.png"]],
+"产品资产":[
+["GPT Image 2",34.311,"https://file5.aitohumanize.com/file/8b65c72d900a4aeea81e09a8204aec04.png"],
+["GPT Image 2.5",36.844,"https://file3.aitohumanize.com/file/06976a11c1164cd8929512072b5a81b6.png"],
+["GPT Image 2.5 Sunburst",28.828,"https://file6.aitohumanize.com/file/3f578447100a497cb73122d028fb8acc.png"],
+["GPT Image 2.5 Flare",27.387,"https://file3.aitohumanize.com/file/41cb86103402490f8cb6e862bfe8faa4.png"],
+["Nano Banana 2",24.876,"https://file3.aitohumanize.com/file/a9b6fe8ffa25483cbb9ffb37a8e22799.png"]],
+"环境空镜":[
+["GPT Image 2",49.374,"https://file3.aitohumanize.com/file/252c6dc6dde64a0493600f32edefb511.png"],
+["GPT Image 2.5",41.724,"https://file3.aitohumanize.com/file/544ab592360d447d8b1800f8deacf332.png"],
+["GPT Image 2.5 Sunburst",29.021,"https://file1.aitohumanize.com/file/4ffb170fe89648dfaa7a486021fcf7dd.png"],
+["GPT Image 2.5 Flare",27.329,"https://file5.aitohumanize.com/file/cf8c5c3ee9724e99a3cd5a6063443336.png"],
+["Nano Banana 2",32.515,"https://file6.aitohumanize.com/file/699371907e9e47d9974af8e765301a33.png"]]};
+document.querySelector('#content').innerHTML=Object.entries(rows).map(([kind,items])=>`<section><div class="section"><h2>${kind}</h2><small>从左到右为五个模型</small></div><div class="grid">${items.map(([name,time,url])=>`<article class="card"><a href="${url}" target="_blank" rel="noopener"><div class="imagebox"><img loading="lazy" src="${url}" alt="${name} ${kind}"></div></a><div class="name">${name}</div><div class="time">耗时 ${time.toFixed(2)}s</div><span class="tag">${kind}</span></article>`).join('')}</div></section>`).join('');
+</script></body></html>
