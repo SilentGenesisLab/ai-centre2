@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -42,7 +43,8 @@ class WatermarkProcessorTests(unittest.TestCase):
 
         result = processor.process("intensive")
 
-        self.assertEqual(result, output / "final_h264_source.mp4")
+        self.assertEqual(result.parent, output)
+        self.assertRegex(result.name, r"^[0-9a-f]{32}-final_h264_source\.mp4$")
         self.assertTrue(result.is_file())
         self.assertEqual(list((output / "temp").iterdir()), [])
 
@@ -56,10 +58,25 @@ class WatermarkProcessorTests(unittest.TestCase):
 
         result = processor.process("light")
 
-        self.assertEqual(result, output / "final_light_source.mp4")
-        self.assertEqual(
-            {path.name for path in (output / "temp").iterdir()},
-            {"step1_gaussian_source.mp4", "white_noise_source.wav"},
+        self.assertEqual(result.parent, output)
+        self.assertRegex(result.name, r"^[0-9a-f]{32}-final_light_source\.mp4$")
+        intermediates = {path.name for path in (output / "temp").iterdir()}
+        self.assertEqual(len(intermediates), 2)
+        self.assertTrue(
+            any(
+                re.fullmatch(
+                    r"[0-9a-f]{32}-step1_gaussian_source\.mp4", name
+                )
+                for name in intermediates
+            )
+        )
+        self.assertTrue(
+            any(
+                re.fullmatch(
+                    r"[0-9a-f]{32}-white_noise_source\.wav", name
+                )
+                for name in intermediates
+            )
         )
 
     def test_failed_pipeline_still_removes_current_intermediates(self) -> None:

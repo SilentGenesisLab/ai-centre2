@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     redis_broker_url: str = "redis://127.0.0.1:6379/12"
     redis_result_url: str = "redis://127.0.0.1:6379/13"
     work_dir: Path = Path("/home/donxu/ai-centre/data")
+    temp_data_root: Path = Path("/home/donxu/temp-data")
     face_model_path: Path = Path("/home/donxu/ai-centre/models/yolov8n-face.onnx")
     face_conf_threshold: float = 0.25
     face_iou_threshold: float = 0.45
@@ -31,4 +32,5 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     settings = Settings()
     settings.work_dir.mkdir(parents=True, exist_ok=True)
+    settings.temp_data_root.mkdir(parents=True, exist_ok=True)
     return settings

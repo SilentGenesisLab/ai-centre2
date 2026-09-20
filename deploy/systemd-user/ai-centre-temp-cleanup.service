@@ -1,0 +1,13 @@
+[Unit]
+Description=AI Centre expired temporary media cleanup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/donxu/ai-centre
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=AI_CENTRE_TEMP_DATA_ROOT=/home/donxu/temp-data
+Environment=AI_CENTRE_TEMP_DATA_TIMEZONE=Asia/Shanghai
+Environment=AI_CENTRE_TEMP_FAILURE_RETENTION_SECONDS=86400
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/python -m temp_media cleanup --retention-seconds 86400
+NoNewPrivileges=true
+PrivateTmp=false

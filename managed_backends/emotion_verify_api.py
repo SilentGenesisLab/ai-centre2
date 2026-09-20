@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,6 +9,9 @@ from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from funasr import AutoModel
+
+from temp_media import allocate_path, cleanup_success, mark_failed
+from control_plane.media_fetch import AUDIO_MEDIA, sniff_media_suffix
 
 
 MODEL_PATH = os.getenv(
@@ -57,17 +59,29 @@ def _classify(path: Path) -> dict[str, Any]:
     return {"label": pairs[0]["label"], "score": pairs[0]["score"], "scores": pairs}
 
 
-async def _save_upload(upload: UploadFile, directory: Path) -> Path:
-    target = directory / "audio.wav"
-    size = 0
-    with target.open("wb") as output:
-        while chunk := await upload.read(1024 * 1024):
-            size += len(chunk)
+async def _save_upload(upload: UploadFile) -> Path:
+    first_chunk = await upload.read(1024 * 1024)
+    if not first_chunk:
+        raise HTTPException(status_code=400, detail="audio is empty")
+    suffix = sniff_media_suffix(first_chunk[:64])
+    if suffix not in AUDIO_MEDIA.suffixes:
+        raise HTTPException(status_code=415, detail="unsupported audio file type")
+    target = allocate_path(upload.filename or "audio.wav", suffix=suffix)
+    size = len(first_chunk)
+    try:
+        with target.open("wb") as output:
             if size > MAX_AUDIO_BYTES:
                 raise HTTPException(status_code=413, detail="audio is too large")
-            output.write(chunk)
-    if not size:
-        raise HTTPException(status_code=400, detail="audio is empty")
+            output.write(first_chunk)
+            while chunk := await upload.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_AUDIO_BYTES:
+                    raise HTTPException(status_code=413, detail="audio is too large")
+                output.write(chunk)
+    except BaseException as exc:
+        mark_failed(target, exc)
+        raise
+    target.chmod(0o660)
     return target
 
 
@@ -91,12 +105,20 @@ async def health() -> dict[str, str]:
 
 @app.post("/v1/emotion")
 async def classify_emotion(audio: UploadFile = File(...)) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="ai-centre-emotion-") as temporary:
-        path = await _save_upload(audio, Path(temporary))
-        try:
-            return await asyncio.to_thread(_classify, path)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"unable to classify emotion: {type(exc).__name__}",
-            ) from exc
+    path: Path | None = None
+    try:
+        path = await _save_upload(audio)
+        result = await asyncio.to_thread(_classify, path)
+    except HTTPException as exc:
+        if path is not None:
+            mark_failed(path, exc)
+        raise
+    except Exception as exc:
+        if path is not None:
+            mark_failed(path, exc)
+        raise HTTPException(
+            status_code=422,
+            detail=f"unable to classify emotion: {type(exc).__name__}",
+        ) from exc
+    cleanup_success(path)
+    return result

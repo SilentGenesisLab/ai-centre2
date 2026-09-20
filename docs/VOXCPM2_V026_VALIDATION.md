@@ -1,4 +1,4 @@
-x# VoxCPM2 vLLM-Omni v0.26.0 production validation
+# VoxCPM2 vLLM-Omni v0.26.0 production validation
 
 Validated on 2026-08-03 on physical GPU 1, an NVIDIA GeForce RTX 5090.
 

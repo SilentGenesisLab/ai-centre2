@@ -16,26 +16,16 @@ fi
   --python .venv-control/bin/python \
   -r requirements-control.txt
 
-mkdir -p runtime/control runtime/watermark-removal runtime/video-reviews "$USER_UNIT_DIR"
+mkdir -p runtime/control "$USER_UNIT_DIR"
 install -m 0644 \
   deploy/systemd-user/ai-centre-control.service \
   "$USER_UNIT_DIR/ai-centre-control.service"
 install -m 0644 \
   deploy/systemd-user/ai-centre-tts-worker.service \
   "$USER_UNIT_DIR/ai-centre-tts-worker.service"
-install -m 0644 \
-  deploy/systemd-user/ai-centre-watermark-worker.service \
-  "$USER_UNIT_DIR/ai-centre-watermark-worker.service"
-install -m 0644 \
-  deploy/systemd-user/ai-centre-video-review-worker.service \
-  "$USER_UNIT_DIR/ai-centre-video-review-worker.service"
 
 systemctl --user daemon-reload
 systemctl --user enable ai-centre-control.service
 systemctl --user enable ai-centre-tts-worker.service
-systemctl --user enable ai-centre-watermark-worker.service
-systemctl --user enable ai-centre-video-review-worker.service
 systemctl --user restart ai-centre-control.service
 systemctl --user restart ai-centre-tts-worker.service
-systemctl --user restart ai-centre-watermark-worker.service
-systemctl --user restart ai-centre-video-review-worker.service

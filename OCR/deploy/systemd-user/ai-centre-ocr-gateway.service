@@ -5,8 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+UMask=0007
 WorkingDirectory=/home/donxu/ai-centre/OCR
-Environment=PYTHONPATH=/home/donxu/ai-centre/OCR/src
+Environment=PYTHONPATH=/home/donxu/ai-centre:/home/donxu/ai-centre/OCR/src
+Environment=AI_CENTRE_TEMP_DATA_ROOT=/home/donxu/temp-data
+Environment=AI_CENTRE_TEMP_DATA_TIMEZONE=Asia/Shanghai
+Environment=AI_CENTRE_TEMP_FAILURE_RETENTION_SECONDS=86400
 Environment=OCR_GATEWAY_CONFIG=/home/donxu/ai-centre/OCR/config/linux/gateway.json
 ExecStart=/home/donxu/ai-centre/OCR/.venv/bin/python -m ocr_service.gateway_cli
 Restart=always

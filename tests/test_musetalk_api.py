@@ -90,14 +90,15 @@ class MuseTalkApiTests(unittest.TestCase):
 
     def test_url_job_persists_downloads_without_source_urls(self) -> None:
         async def fake_download(_url, directory, stem, *_args, **_kwargs):
-            suffix = ".mp4" if stem == "input-video" else ".wav"
+            suffix = ".mp4" if stem.endswith("input-video") else ".wav"
             path = directory / f"{stem}{suffix}"
             path.write_bytes(stem.encode())
             return DownloadedMedia(path, path.stat().st_size, "application/octet-stream")
 
         with tempfile.TemporaryDirectory() as temporary:
             fake_jobs = MuseTalkJobs()
-            fake_jobs.data_dir = Path(temporary)
+            fake_jobs.data_dir = Path(temporary) / "jobs"
+            fake_jobs.temp_data_root = Path(temporary) / "temp-data"
             with (
                 patch("managed_backends.musetalk_api.jobs", fake_jobs),
                 patch(
@@ -122,7 +123,7 @@ class MuseTalkApiTests(unittest.TestCase):
 
     def test_url_job_cleans_directory_when_one_download_fails(self) -> None:
         async def fake_download(_url, directory, stem, *_args, **_kwargs):
-            if stem == "input-audio":
+            if stem.endswith("input-audio"):
                 raise MediaFetchError(502, "remote media download failed")
             path = directory / "input-video.mp4"
             path.write_bytes(b"video")
@@ -130,7 +131,8 @@ class MuseTalkApiTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             fake_jobs = MuseTalkJobs()
-            fake_jobs.data_dir = Path(temporary)
+            fake_jobs.data_dir = Path(temporary) / "jobs"
+            fake_jobs.temp_data_root = Path(temporary) / "temp-data"
             with (
                 patch("managed_backends.musetalk_api.jobs", fake_jobs),
                 patch(
@@ -149,7 +151,9 @@ class MuseTalkApiTests(unittest.TestCase):
                     )
 
             self.assertEqual(raised.exception.status_code, 502)
-            self.assertEqual(list(Path(temporary).iterdir()), [])
+            self.assertFalse(fake_jobs.data_dir.exists())
+            failed = list(fake_jobs.temp_data_root.glob("*/*.failed.json"))
+            self.assertEqual(len(failed), 1)
 
     def test_queued_job_can_be_cancelled_and_persists(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

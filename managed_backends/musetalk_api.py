@@ -25,11 +25,20 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from temp_media import (
+    allocate_work_directory,
+    cleanup_success,
+    mark_failed,
+    sanitize_original_name,
+)
+
 from control_plane.media_fetch import (
     AUDIO_MEDIA,
     VIDEO_MEDIA,
     MediaFetchError,
+    MediaSpec,
     download_public_media_async,
+    sniff_media_suffix,
 )
 
 
@@ -81,6 +90,39 @@ async def save_upload(upload: UploadFile, destination: Path, max_bytes: int) -> 
         destination.unlink(missing_ok=True)
         raise
     return size
+
+
+async def save_typed_upload(
+    upload: UploadFile,
+    directory: Path,
+    kind: str,
+    spec: MediaSpec,
+    max_bytes: int,
+) -> tuple[Path, int]:
+    media_id = uuid.uuid4().hex
+    provisional = directory / f".{media_id}-{kind}.part"
+    try:
+        size = await save_upload(upload, provisional, max_bytes)
+        with provisional.open("rb") as stream:
+            suffix = sniff_media_suffix(stream.read(64))
+        if suffix not in spec.suffixes:
+            raise HTTPException(status_code=415, detail=f"unsupported {kind} file type")
+        safe_name = sanitize_original_name(
+            upload.filename,
+            fallback=f"{kind}{suffix}",
+            suffix=suffix,
+        )
+        target = directory / f"{media_id}-{safe_name}"
+        descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o660)
+        os.close(descriptor)
+        os.replace(provisional, target)
+        target.chmod(0o660)
+        return target, size
+    except Exception:
+        provisional.unlink(missing_ok=True)
+        if "target" in locals():
+            target.unlink(missing_ok=True)
+        raise
 
 
 class OssResultPublisher:
@@ -161,6 +203,9 @@ class MuseTalkJobs:
                 "/home/donxu/ai-centre/runtime/musetalk/jobs",
             )
         )
+        self.temp_data_root = Path(
+            os.environ.get("AI_CENTRE_TEMP_DATA_ROOT", "/home/donxu/temp-data")
+        )
         self.ffmpeg_dir = Path(
             os.environ.get(
                 "MUSETALK_FFMPEG_PATH",
@@ -227,8 +272,14 @@ class MuseTalkJobs:
             if log_path.is_file():
                 archived = job_dir / f"{log_path.stem}.recovery-{recovery_count}.log"
                 os.replace(log_path, archived)
-        shutil.rmtree(job_dir / "output", ignore_errors=True)
-        for name in ("inference.yaml", "musetalk-result.mp4", "result.mp4"):
+        temp_dir = self._job_temp_dir(job, job_dir)
+        shutil.rmtree(temp_dir / "output", ignore_errors=True)
+        for output_dir in temp_dir.glob("*-output"):
+            shutil.rmtree(output_dir, ignore_errors=True)
+        (temp_dir / "musetalk-result.mp4").unlink(missing_ok=True)
+        for path in temp_dir.glob("*-musetalk-result.mp4"):
+            path.unlink(missing_ok=True)
+        for name in ("inference.yaml", "result.mp4"):
             (job_dir / name).unlink(missing_ok=True)
         for timing in ("elapsed_seconds", "musetalk_seconds", "gfpgan_seconds"):
             job.pop(timing, None)
@@ -262,6 +313,10 @@ class MuseTalkJobs:
         video_bytes: int,
         audio_bytes: int,
         face_restore: bool,
+        *,
+        temp_dir: Path | None = None,
+        video_temp_name: str | None = None,
+        audio_temp_name: str | None = None,
     ) -> dict[str, Any]:
         job = {
             "job_id": job_id,
@@ -274,6 +329,9 @@ class MuseTalkJobs:
             "video_bytes": video_bytes,
             "audio_bytes": audio_bytes,
             "face_restore": face_restore,
+            "temp_dir": str(temp_dir) if temp_dir is not None else None,
+            "video_temp_name": video_temp_name,
+            "audio_temp_name": audio_temp_name,
             "stage": "queued",
             "result_url": f"/v1/lipsync/jobs/{job_id}/video",
             "error": None,
@@ -348,6 +406,8 @@ class MuseTalkJobs:
             self._terminate(process)
         job.update(state="cancelled", finished_at=utc_now(), error=None)
         self._write_status(job)
+        if job.get("temp_dir"):
+            mark_failed(self._job_temp_dir(job), "lip-sync job cancelled")
         return job
 
     def health(self) -> dict[str, Any]:
@@ -401,6 +461,8 @@ class MuseTalkJobs:
                         finished_at=utc_now(),
                     )
                     self._write_status(job)
+                    if job.get("temp_dir"):
+                        mark_failed(self._job_temp_dir(job), exc)
 
     def _run_job(self, job_id: str) -> None:
         job_dir = self.data_dir / job_id
@@ -410,14 +472,18 @@ class MuseTalkJobs:
         job.update(state="running", stage="musetalk", started_at=utc_now())
         self._write_status(job)
         self._active_job = job_id
+        temp_dir = self._job_temp_dir(job, job_dir)
+        video_path = self._job_input_path(job, temp_dir, "video")
+        audio_path = self._job_input_path(job, temp_dir, "audio")
+        result_name = f"{uuid.uuid4().hex}-result.mp4"
         config_path = job_dir / "inference.yaml"
         config_path.write_text(
             yaml.safe_dump(
                 {
                     "task_0": {
-                        "video_path": str(next(job_dir.glob("input-video.*"))),
-                        "audio_path": str(next(job_dir.glob("input-audio.*"))),
-                        "result_name": "result.mp4",
+                        "video_path": str(video_path),
+                        "audio_path": str(audio_path),
+                        "result_name": result_name,
                     }
                 },
                 allow_unicode=True,
@@ -425,8 +491,8 @@ class MuseTalkJobs:
             ),
             encoding="utf-8",
         )
-        output_dir = job_dir / "output"
-        output_dir.mkdir(exist_ok=True)
+        output_dir = temp_dir / f"{uuid.uuid4().hex}-output"
+        output_dir.mkdir(mode=0o770)
         log_path = job_dir / "inference.log"
         command = [
             str(self.python),
@@ -476,14 +542,14 @@ class MuseTalkJobs:
                 return
             if return_code != 0:
                 raise RuntimeError(f"MuseTalk exited with code {return_code}; see inference.log")
-            candidates = list(output_dir.rglob("result.mp4"))
+            candidates = list(output_dir.rglob(result_name))
             if not candidates:
                 candidates = list(output_dir.rglob("*.mp4"))
             if not candidates:
                 raise RuntimeError("MuseTalk did not produce an MP4 result")
             musetalk_seconds = round(time.monotonic() - started, 3)
             if job.get("face_restore") and self.gfpgan_enabled:
-                raw_result = job_dir / "musetalk-result.mp4"
+                raw_result = temp_dir / f"{uuid.uuid4().hex}-musetalk-result.mp4"
                 shutil.move(str(candidates[0]), raw_result)
                 job.update(stage="gfpgan", musetalk_seconds=musetalk_seconds)
                 self._write_status(job)
@@ -555,10 +621,36 @@ class MuseTalkJobs:
                 error=None,
             )
             self._write_status(job)
+            if job.get("temp_dir"):
+                cleanup_success(temp_dir)
         finally:
             with self._lock:
                 self._processes.pop(job_id, None)
             self._active_job = None
+
+    def _job_temp_dir(self, job: dict[str, Any], legacy_dir: Path | None = None) -> Path:
+        raw = job.get("temp_dir")
+        if not raw:
+            return legacy_dir or (self.data_dir / str(job["job_id"]))
+        path = Path(str(raw)).resolve(strict=False)
+        try:
+            path.relative_to(self.temp_data_root.resolve(strict=False))
+        except ValueError as exc:
+            raise RuntimeError("lip-sync temporary path is outside the configured root") from exc
+        return path
+
+    @staticmethod
+    def _job_input_path(job: dict[str, Any], temp_dir: Path, kind: str) -> Path:
+        name = job.get(f"{kind}_temp_name")
+        if name:
+            path = temp_dir / str(name)
+            if path.parent != temp_dir or not path.is_file():
+                raise RuntimeError(f"lip-sync {kind} input is missing")
+            return path
+        try:
+            return next(temp_dir.glob(f"input-{kind}.*"))
+        except StopIteration as exc:
+            raise RuntimeError(f"lip-sync {kind} input is missing") from exc
 
     def _upload_result(self, job_id: str, result_path: Path) -> str:
         if self.result_publisher is None:
@@ -641,21 +733,20 @@ async def create_url_job(
     if request.face_restore and not jobs.gfpgan_enabled:
         raise HTTPException(status_code=503, detail="GFPGAN face restoration is disabled")
     job_id = str(uuid.uuid4())
-    job_dir = jobs.data_dir / job_id
-    job_dir.mkdir(parents=True)
+    temp_dir = allocate_work_directory(f"musetalk-{job_id}", root=jobs.temp_data_root)
     downloads = await asyncio.gather(
         download_public_media_async(
             request.video_url,
-            job_dir,
-            "input-video",
+            temp_dir,
+            f"{uuid.uuid4().hex}-input-video",
             VIDEO_MEDIA,
             jobs.max_upload_bytes,
             jobs.timeout,
         ),
         download_public_media_async(
             request.audio_url,
-            job_dir,
-            "input-audio",
+            temp_dir,
+            f"{uuid.uuid4().hex}-input-audio",
             AUDIO_MEDIA,
             jobs.max_upload_bytes,
             jobs.timeout,
@@ -664,19 +755,26 @@ async def create_url_job(
     )
     failure = next((item for item in downloads if isinstance(item, Exception)), None)
     if failure:
-        shutil.rmtree(job_dir, ignore_errors=True)
+        mark_failed(temp_dir, failure)
         if isinstance(failure, MediaFetchError):
             raise HTTPException(failure.status_code, failure.detail) from failure
         raise HTTPException(502, "unable to download lip-sync media") from failure
     video_result, audio_result = downloads
-    return jobs.submit(
-        job_id,
-        video_result.path.name,
-        audio_result.path.name,
-        video_result.size,
-        audio_result.size,
-        request.face_restore,
-    )
+    try:
+        return jobs.submit(
+            job_id,
+            video_result.path.name,
+            audio_result.path.name,
+            video_result.size,
+            audio_result.size,
+            request.face_restore,
+            temp_dir=temp_dir,
+            video_temp_name=video_result.path.name,
+            audio_temp_name=audio_result.path.name,
+        )
+    except Exception as exc:
+        mark_failed(temp_dir, exc)
+        raise
 
 
 @app.post(
@@ -691,33 +789,41 @@ async def create_upload_job(
 ) -> dict[str, Any]:
     if face_restore and not jobs.gfpgan_enabled:
         raise HTTPException(status_code=503, detail="GFPGAN face restoration is disabled")
-    video_suffix = checked_suffix(video.filename, VIDEO_SUFFIXES, "video")
-    audio_suffix = checked_suffix(audio.filename, AUDIO_SUFFIXES, "audio")
     job_id = str(uuid.uuid4())
-    job_dir = jobs.data_dir / job_id
-    job_dir.mkdir(parents=True)
+    temp_dir = allocate_work_directory(f"musetalk-{job_id}", root=jobs.temp_data_root)
     try:
-        video_bytes = await save_upload(
+        video_path, video_bytes = await save_typed_upload(
             video,
-            job_dir / f"input-video{video_suffix}",
+            temp_dir,
+            "video",
+            VIDEO_MEDIA,
             jobs.max_upload_bytes,
         )
-        audio_bytes = await save_upload(
+        audio_path, audio_bytes = await save_typed_upload(
             audio,
-            job_dir / f"input-audio{audio_suffix}",
+            temp_dir,
+            "audio",
+            AUDIO_MEDIA,
             jobs.max_upload_bytes,
         )
-    except Exception:
-        shutil.rmtree(job_dir, ignore_errors=True)
+    except Exception as exc:
+        mark_failed(temp_dir, exc)
         raise
-    return jobs.submit(
-        job_id,
-        video.filename or f"video{video_suffix}",
-        audio.filename or f"audio{audio_suffix}",
-        video_bytes,
-        audio_bytes,
-        face_restore,
-    )
+    try:
+        return jobs.submit(
+            job_id,
+            video.filename or video_path.name,
+            audio.filename or audio_path.name,
+            video_bytes,
+            audio_bytes,
+            face_restore,
+            temp_dir=temp_dir,
+            video_temp_name=video_path.name,
+            audio_temp_name=audio_path.name,
+        )
+    except Exception as exc:
+        mark_failed(temp_dir, exc)
+        raise
 
 
 @app.get(

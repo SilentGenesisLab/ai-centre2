@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from faster_whisper import BatchedInferencePipeline, WhisperModel
+
+from temp_media import cleanup_success, mark_failed, write_bytes
+from control_plane.media_fetch import ASR_MEDIA, sniff_media_suffix
 
 
 MODEL_NAME = os.getenv("FW_MODEL", "large-v3")
@@ -61,23 +63,29 @@ async def transcribe(
     language: str | None = Form(default=None),
     beam_size: int = Form(default=5, ge=1, le=10),
 ) -> dict[str, Any]:
-    suffix = Path(file.filename or "audio.wav").suffix or ".wav"
     content = await file.read()
-    temporary_path = ""
+    suffix = sniff_media_suffix(content[:64])
+    if suffix not in ASR_MEDIA.suffixes:
+        raise HTTPException(
+            status_code=415,
+            detail="uploaded file header is not a supported audio or video format",
+        )
+    temporary_path: Path | None = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temporary:
-            temporary.write(content)
-            temporary_path = temporary.name
+        temporary_path = write_bytes(file.filename or "audio.wav", content, suffix=suffix)
         async with _inference_lock:
-            return await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 _transcribe_sync,
-                temporary_path,
+                str(temporary_path),
                 language,
                 beam_size,
             )
-    finally:
-        if temporary_path:
-            Path(temporary_path).unlink(missing_ok=True)
+    except BaseException as exc:
+        if temporary_path is not None:
+            mark_failed(temporary_path, exc)
+        raise
+    cleanup_success(temporary_path)
+    return result
 
 
 def _transcribe_sync(
@@ -118,4 +126,3 @@ def _transcribe_sync(
         "duration": info.duration,
         "segments": segments,
     }
-

@@ -4,8 +4,11 @@ import shutil
 import time
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
+
+from temp_media import allocate_work_directory, cleanup_success, mark_failed
 
 from .celery_app import celery_app
 from .config import get_settings
@@ -65,17 +68,17 @@ def remove_video_watermark(self, request_data: dict[str, Any]) -> dict[str, Any]
         work_root,
         settings.watermark_intermediate_retention_seconds,
     )
-    work_dir = work_root / job_id
+    work_dir = allocate_work_directory(f"watermark-{job_id}", root=settings.temp_data_root)
     output_dir = work_dir / "output"
-    work_dir.mkdir(parents=True, exist_ok=True)
     keep_intermediates = bool(request_data.get("keep_intermediates", False))
     started = time.perf_counter()
+    failure: BaseException | None = None
     try:
         self.update_state(state="PROGRESS", meta={"stage": "downloading", "progress": 2})
         source = download_public_media(
             str(request_data["source_uri"]),
             work_dir,
-            "source",
+            f"{uuid4().hex}-source",
             VIDEO_MEDIA,
             settings.watermark_max_download_bytes,
             settings.watermark_download_timeout_seconds,
@@ -109,12 +112,17 @@ def remove_video_watermark(self, request_data: dict[str, Any]) -> dict[str, Any]
             "intermediates_retained": keep_intermediates,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
         }
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
         if keep_intermediates:
-            for path in work_dir.glob("source.*"):
+            for path in work_dir.glob("*-source.*"):
                 path.unlink(missing_ok=True)
-            for path in output_dir.glob("final_*.mp4"):
+            for path in output_dir.glob("*-final_*.mp4"):
                 path.unlink(missing_ok=True)
-            (work_dir / ".retained").touch()
+            mark_failed(work_dir, failure or "intermediates retained by request")
+        elif failure is None:
+            cleanup_success(work_dir)
         else:
-            shutil.rmtree(work_dir, ignore_errors=True)
+            mark_failed(work_dir, failure)

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import httpx
 import imageio_ffmpeg
+
+from temp_media import allocate_work_directory, cleanup_success, mark_failed
 
 from .celery_app import celery_app
 from .config import get_settings
@@ -126,15 +128,15 @@ def _upload_scene(target: Path, payload: dict[str, Any], index: int) -> str:
 def detect_and_split_scenes(self, request_data: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
-    work_dir = settings.scene_work_dir / job_id
-    work_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = allocate_work_directory(f"scene-{job_id}", root=settings.temp_data_root)
     started = time.perf_counter()
+    failure: BaseException | None = None
     try:
         self.update_state(state="PROGRESS", meta={"stage": "downloading", "progress": 5})
         source = download_public_media(
             str(request_data["source_uri"]),
             work_dir,
-            "source",
+            f"{uuid4().hex}-source",
             VIDEO_MEDIA,
             settings.scene_max_download_bytes,
             settings.scene_download_timeout_seconds,
@@ -161,7 +163,7 @@ def detect_and_split_scenes(self, request_data: dict[str, Any]) -> dict[str, Any
                     "scene_count": total,
                 },
             )
-            target = work_dir / f"scene_{index:03d}.mp4"
+            target = work_dir / f"{uuid4().hex}-scene_{index:03d}.mp4"
             _split_scene(
                 source,
                 target,
@@ -183,5 +185,11 @@ def detect_and_split_scenes(self, request_data: dict[str, Any]) -> dict[str, Any
             "scenes": results,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
         }
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
-        shutil.rmtree(work_dir, ignore_errors=True)
+        if failure is None:
+            cleanup_success(work_dir)
+        else:
+            mark_failed(work_dir, failure)

@@ -27,7 +27,7 @@ class FakeProcessor:
             temp_dir = self.output_dir / "temp"
             temp_dir.mkdir()
             (temp_dir / "step1.mp4").write_bytes(b"intermediate")
-        result = self.output_dir / f"final_{mode}.mp4"
+        result = self.output_dir / f"{'a' * 32}-final_{mode}.mp4"
         result.write_bytes(b"result")
         return result
 
@@ -38,6 +38,7 @@ class WatermarkTaskTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.settings = SimpleNamespace(
             watermark_work_dir=self.root,
+            temp_data_root=self.root,
             watermark_intermediate_retention_seconds=86400,
             watermark_max_download_bytes=1024,
             watermark_download_timeout_seconds=30,
@@ -48,9 +49,9 @@ class WatermarkTaskTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def _download(self, _url, directory, *_args, **_kwargs):
+    def _download(self, _url, directory, *args, **_kwargs):
         directory.mkdir(parents=True, exist_ok=True)
-        source = directory / "source.mp4"
+        source = directory / f"{args[0]}.mp4"
         source.write_bytes(b"source")
         return SimpleNamespace(path=source)
 
@@ -85,17 +86,19 @@ class WatermarkTaskTests(unittest.TestCase):
         result = self._run(False)
 
         self.assertEqual(result["status"], "succeeded")
-        self.assertFalse((self.root / JOB_ID).exists())
+        self.assertEqual(list(self.root.glob(f"*/*-watermark-{JOB_ID}")), [])
 
     def test_keep_intermediates_removes_source_and_final_only(self) -> None:
         result = self._run(True)
-        job_dir = self.root / JOB_ID
+        job_dirs = list(self.root.glob(f"*/*-watermark-{JOB_ID}"))
+        self.assertEqual(len(job_dirs), 1)
+        job_dir = job_dirs[0]
 
         self.assertTrue(result["intermediates_retained"])
-        self.assertTrue((job_dir / ".retained").is_file())
+        self.assertTrue(job_dir.with_name(f".{job_dir.name}.failed.json").is_file())
         self.assertTrue((job_dir / "output" / "temp" / "step1.mp4").is_file())
-        self.assertEqual(list(job_dir.glob("source.*")), [])
-        self.assertEqual(list((job_dir / "output").glob("final_*.mp4")), [])
+        self.assertEqual(list(job_dir.glob("*-source.*")), [])
+        self.assertEqual(list((job_dir / "output").glob("*-final_*.mp4")), [])
 
 
 if __name__ == "__main__":

@@ -254,88 +254,6 @@ def write_report(path: Path, cases: list[dict[str, Any]], summary: dict[str, Any
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_video_review(path: Path, cases: list[dict[str, Any]], summary: dict[str, Any]) -> None:
-    """Write a self-contained review page with inline, click-to-play OSS videos."""
-    labels = {"low": "低档", "medium": "中档", "high": "高档"}
-
-    def review_frame_src(frame: str) -> str:
-        normalized = str(frame).replace("\\", "/")
-        marker = "/review-frames/"
-        if marker in normalized:
-            return "review-frames/" + normalized.split(marker, 1)[1]
-        try:
-            return Path(frame).relative_to(path.parent).as_posix()
-        except ValueError:
-            return Path(frame).name
-
-    cards: list[str] = []
-    for case in cases:
-        timing = case.get("timing") or {}
-        media = case.get("media") or {}
-        frames = case.get("review_frames") or []
-        frame_urls = [
-            html.escape(review_frame_src(str(frame)), quote=True)
-            for frame in frames
-        ]
-        thumbnails = "".join(
-            f'<img src="{frame_url}" loading="lazy" alt="{html.escape(case["scenario_label"])}审核帧">'
-            for frame_url in frame_urls
-        )
-        result_url = html.escape(str(case.get("result_url") or ""), quote=True)
-        poster = f' poster="{frame_urls[0]}"' if frame_urls else ""
-        player = (
-            f'<video controls preload="metadata" playsinline{poster} '
-            f'aria-label="播放{html.escape(case["scenario_label"])}{labels[case["quality"]]}成片">'
-            f'<source src="{result_url}" type="video/mp4">'
-            "当前浏览器不支持视频播放，请使用下方备用链接。"
-            "</video>"
-            if result_url
-            else '<div class="empty">暂无成片</div>'
-        )
-        cards.append(f"""
-<article data-scenario="{case['scenario']}" data-quality="{case['quality']}">
-  <h2>{html.escape(case['scenario_label'])} · {labels[case['quality']]}</h2>
-  <div class="player">{player}</div>
-  <div class="frames">{thumbnails}</div>
-  <p>有效处理 <b>{timing.get('effective_processing_seconds')}s</b> · 端到端 {timing.get('end_to_end_seconds')}s · 完整解码 {media.get('complete_decode')}</p>
-  <p>黑帧段 {len(media.get('black_segments') or [])} · 冻结段 {len(media.get('freeze_starts') or [])}</p>
-  <a href="{result_url}" target="_blank" rel="noreferrer">新窗口打开 / 下载成片</a>
-</article>""")
-    document = f"""<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MiniMax H3 质量档位 A/B</title>
-  <style>
-    :root{{--bg:#eef8ff;--card:#fff;--text:#14283c;--accent:#1677ff;--line:#cce4f6;--muted:#52677b}}
-    *{{box-sizing:border-box}}
-    body{{margin:0;background:linear-gradient(145deg,#eaf6ff,#fbfdff);font:14px/1.55 system-ui,"Microsoft YaHei",sans-serif;color:var(--text)}}
-    header{{padding:24px clamp(16px,4vw,56px);border-bottom:1px solid var(--line)}}
-    h1{{margin:0 0 6px}} header p{{margin:0;color:var(--muted)}}
-    main{{padding:24px clamp(16px,4vw,56px);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}
-    article{{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px;box-shadow:0 10px 30px #3388bb14}}
-    h2{{margin:0 0 12px;font-size:17px}}
-    .player{{width:100%;aspect-ratio:16/9;background:#07111d;border-radius:12px;overflow:hidden}}
-    video{{display:block;width:100%;height:100%;object-fit:contain;background:#07111d}}
-    .frames{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-top:8px}}
-    img{{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:5px}}
-    .empty{{display:grid;place-items:center;height:100%;color:#d9e7f4}}
-    p{{color:var(--muted)}} b{{color:var(--text)}}
-    a{{display:inline-flex;min-height:44px;align-items:center;color:var(--accent);font-weight:700;text-decoration:none}}
-    a:focus-visible{{outline:3px solid #78b5ff;outline-offset:3px;border-radius:4px}}
-    @media(max-width:1100px){{main{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
-    @media(max-width:720px){{main{{grid-template-columns:1fr}}}}
-  </style>
-</head>
-<body>
-  <header><h1>MiniMax H3 low / medium / high 质量 A/B</h1><p>同 Prompt、同 Seed、720P、10 秒、16:9；成功 {summary.get('succeeded')}/{summary.get('jobs')}。点击播放器即可在当前页面观看。</p></header>
-  <main>{''.join(cards)}</main>
-</body>
-</html>"""
-    path.write_text(document, encoding="utf-8")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default=BASE_URL)
@@ -409,7 +327,7 @@ def main() -> int:
     atomic_json(run_dir / "results.json", cases)
     atomic_json(run_dir / "summary.json", summary)
     write_csv(run_dir / "results.csv", cases)
-    write_video_review(run_dir / "review.html", cases, summary)
+    write_review(run_dir / "review.html", cases, summary)
     write_report(Path("docs/reports/MINIMAX_H3_QUALITY_AB_20260908.md"), cases, summary)
     print(json.dumps(summary, ensure_ascii=False), flush=True)
     return 0 if summary["succeeded"] == summary["jobs"] else 2

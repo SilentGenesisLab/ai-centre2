@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import time
 import uuid
 from collections import Counter
@@ -18,6 +17,8 @@ from typing import Any, Iterable
 
 import cv2
 import numpy as np
+
+from temp_media import allocate_work_directory, cleanup_success, mark_failed
 
 from .engine import PaddleOcrEngine
 from .schemas import AsrSegment, ImageInput, Region, SubtitleDetectConfig
@@ -109,6 +110,40 @@ def detect_subtitle_events(
     config: SubtitleDetectConfig,
     asr_segments: list[AsrSegment],
 ) -> dict[str, Any]:
+    temp_dir = allocate_work_directory("precise-subtitle")
+    try:
+        result = _detect_subtitle_events_impl(
+            engine,
+            input_path,
+            output_dir,
+            source_lang_hint,
+            mode,
+            export_debug_video,
+            config,
+            asr_segments,
+            temp_dir,
+        )
+    except BaseException as exc:
+        mark_failed(temp_dir, exc)
+        raise
+    if result["status"] == "failed":
+        mark_failed(temp_dir, "OCR subtitle QA failed")
+    else:
+        cleanup_success(temp_dir)
+    return result
+
+
+def _detect_subtitle_events_impl(
+    engine: PaddleOcrEngine,
+    input_path: Path,
+    output_dir: Path,
+    source_lang_hint: str | None,
+    mode: str,
+    export_debug_video: bool,
+    config: SubtitleDetectConfig,
+    asr_segments: list[AsrSegment],
+    temp_dir: Path,
+) -> dict[str, Any]:
     started = time.perf_counter()
     input_path = input_path.resolve()
     output_dir = output_dir.resolve()
@@ -117,31 +152,29 @@ def detect_subtitle_events(
     interval_seconds = config.coarse_interval_seconds or MODE_INTERVALS[mode]
     interval_frames = max(1, round(info.fps * interval_seconds))
 
-    with tempfile.TemporaryDirectory(prefix="precise_subtitle_") as temp_name:
-        temp_dir = Path(temp_name)
-        samples, shots = _coarse_scan(
-            engine=engine,
-            info=info,
-            temp_dir=temp_dir,
-            interval_frames=interval_frames,
-            source_lang_hint=source_lang_hint,
-            config=config,
-        )
-        tracks = _build_tracks(samples, info, interval_frames, config)
-        events = _build_events(tracks, info, interval_frames, config, asr_segments)
-        events = _consolidate_events(events, info, config)
-        _refine_event_boundaries(
-            engine=engine,
-            info=info,
-            events=events,
-            temp_dir=temp_dir,
-            source_lang_hint=source_lang_hint,
-            interval_frames=interval_frames,
-            refine_step=2 if mode == "fast" else 1,
-            min_score=config.min_ocr_score,
-        )
-        events = _consolidate_events(events, info, config)
-        _attach_color_blocks(info, events)
+    samples, shots = _coarse_scan(
+        engine=engine,
+        info=info,
+        temp_dir=temp_dir,
+        interval_frames=interval_frames,
+        source_lang_hint=source_lang_hint,
+        config=config,
+    )
+    tracks = _build_tracks(samples, info, interval_frames, config)
+    events = _build_events(tracks, info, interval_frames, config, asr_segments)
+    events = _consolidate_events(events, info, config)
+    _refine_event_boundaries(
+        engine=engine,
+        info=info,
+        events=events,
+        temp_dir=temp_dir,
+        source_lang_hint=source_lang_hint,
+        interval_frames=interval_frames,
+        refine_step=2 if mode == "fast" else 1,
+        min_score=config.min_ocr_score,
+    )
+    events = _consolidate_events(events, info, config)
+    _attach_color_blocks(info, events)
 
     ignored_regions = _collect_ignored_regions(samples)
     event_payloads = [_event_payload(event, info) for event in events]
@@ -193,7 +226,7 @@ def detect_subtitle_events(
         "review_html": None,
     }
     if export_debug_video:
-        outputs = _render_debug_outputs(info, samples, events, output_dir)
+        outputs = _render_debug_outputs(info, samples, events, output_dir, temp_dir)
         review_path = _write_review_html(info.path, output_dir, outputs)
         outputs["review_html"] = str(review_path)
 
@@ -267,7 +300,7 @@ def _coarse_scan(
             ok, frame = capture.read()
             if not ok:
                 continue
-            image_path = temp_dir / f"coarse_{frame_index:06d}.jpg"
+            image_path = temp_dir / f"{uuid.uuid4().hex}-coarse_{frame_index:06d}.jpg"
             if not cv2.imwrite(str(image_path), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 94]):
                 raise RuntimeError(f"failed to write OCR frame: {image_path}")
             image_inputs.append(
@@ -828,7 +861,7 @@ def _refine_event_boundaries(
             ok, frame = capture.read()
             if not ok:
                 continue
-            image_path = temp_dir / f"refine_{batch_start + sequence:06d}.jpg"
+            image_path = temp_dir / f"{uuid.uuid4().hex}-refine_{batch_start + sequence:06d}.jpg"
             if not cv2.imwrite(str(image_path), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 94]):
                 continue
             image_id = str(batch_start + sequence)
@@ -1034,6 +1067,7 @@ def _render_debug_outputs(
     samples: list[Sample],
     events: list[Event],
     output_dir: Path,
+    temp_dir: Path,
 ) -> dict[str, str | None]:
     output_names = {
         "raw_ocr": output_dir / "raw_ocr.mp4",
@@ -1041,7 +1075,10 @@ def _render_debug_outputs(
         "white_mask": output_dir / "white_mask.mp4",
         "stable_bbox": output_dir / "stable_bbox.mp4",
     }
-    temp_paths = {key: output_dir / f".{key}_silent.mp4" for key in output_names}
+    temp_paths = {
+        key: temp_dir / f"{uuid.uuid4().hex}-{key}_silent.mp4"
+        for key in output_names
+    }
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writers = {
         key: cv2.VideoWriter(str(path), fourcc, info.fps, (info.width, info.height))

@@ -4,7 +4,12 @@ After=network-online.target
 
 [Service]
 Type=simple
+UMask=0007
 WorkingDirectory=/home/donxu/ai-centre
+Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=AI_CENTRE_TEMP_DATA_ROOT=/home/donxu/temp-data
+Environment=AI_CENTRE_TEMP_DATA_TIMEZONE=Asia/Shanghai
+Environment=AI_CENTRE_TEMP_FAILURE_RETENTION_SECONDS=86400
 EnvironmentFile=/home/donxu/ai-centre/.env
 Environment=CUDA_VISIBLE_DEVICES=0
 ExecStart=/home/donxu/ai-centre/.venv/bin/celery -A face_worker.celery_app:celery_app worker -Q face_mosaic -n face-gpu0@%%h --concurrency=1 --loglevel=INFO
@@ -15,4 +20,3 @@ KillSignal=SIGTERM
 
 [Install]
 WantedBy=default.target
-

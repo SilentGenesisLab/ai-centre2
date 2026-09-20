@@ -655,9 +655,6 @@ def main() -> int:
     atomic_json(run_dir / "results.json", cases)
     write_csv(run_dir / "results.csv", cases)
     write_review_html(run_dir / "review.html", cases, state["summary"])
-    from build_h3_consolidated_review import build as build_consolidated_review
-
-    build_consolidated_review()
     write_markdown_report(
         Path("docs/reports/MINIMAX_H3_TVC_BENCHMARK_20260908.md"), cases, state["summary"]
     )

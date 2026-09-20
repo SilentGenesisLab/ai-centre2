@@ -12,11 +12,13 @@ from pydantic import BaseModel, Field
 
 
 UPSTREAM_URL = os.getenv("VOXCPM2_OPENAI_URL", "http://127.0.0.1:8192").rstrip("/")
-ALLOWED_MEDIA_ROOT = Path(
-    os.getenv(
-        "VOXCPM2_ALLOWED_MEDIA_ROOT",
-        "/home/donxu/ai-centre/runtime/references",
-    )
+ALLOWED_MEDIA_ROOTS = tuple(
+    Path(value)
+    for value in os.getenv(
+        "VOXCPM2_ALLOWED_MEDIA_ROOTS",
+        "/home/donxu/temp-data,/home/donxu/ai-centre/runtime/references",
+    ).split(",")
+    if value.strip()
 )
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("VOXCPM2_REQUEST_TIMEOUT_SECONDS", "900"))
 VOICE_CLONING_ENABLED = os.getenv(
@@ -35,11 +37,12 @@ class LegacyTTSRequest(BaseModel):
     seed: int | None = Field(default=None, ge=0)
 
 
-def _reference_uri(raw_path: str, allowed_root: Path) -> str:
-    root = allowed_root.expanduser().resolve(strict=True)
+def _reference_uri(raw_path: str, allowed_roots: Path | tuple[Path, ...]) -> str:
+    roots = (allowed_roots,) if isinstance(allowed_roots, Path) else allowed_roots
+    resolved_roots = tuple(root.expanduser().resolve(strict=True) for root in roots)
     path = Path(raw_path).expanduser().resolve(strict=True)
-    if not path.is_relative_to(root):
-        raise ValueError(f"reference audio must be under {root}")
+    if not any(path.is_relative_to(root) for root in resolved_roots):
+        raise ValueError("reference audio must be under an allowed media root")
     if not path.is_file():
         raise ValueError("reference audio is not a file")
     return path.as_uri()
@@ -47,7 +50,7 @@ def _reference_uri(raw_path: str, allowed_root: Path) -> str:
 
 def build_openai_payload(
     request: LegacyTTSRequest,
-    allowed_root: Path = ALLOWED_MEDIA_ROOT,
+    allowed_root: Path | tuple[Path, ...] = ALLOWED_MEDIA_ROOTS,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "input": request.text,

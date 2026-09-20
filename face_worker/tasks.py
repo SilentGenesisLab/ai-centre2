@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -10,6 +9,7 @@ from uuid import uuid4
 import httpx
 import imageio_ffmpeg
 
+from temp_media import allocate_work_directory, cleanup_success, mark_failed
 from control_plane.media_fetch import VIDEO_MEDIA, download_public_media
 
 from .celery_app import celery_app
@@ -43,7 +43,7 @@ def _download(source_uri: str, directory: Path) -> Path:
     result = download_public_media(
         source_uri,
         directory,
-        "source",
+        f"{uuid4().hex}-source",
         VIDEO_MEDIA,
         settings.max_download_bytes,
         settings.download_timeout_sec,
@@ -92,10 +92,10 @@ def _callback(callback_url: str, result: dict[str, Any]) -> None:
 def process_face_mosaic(self, payload: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
-    work_dir = settings.work_dir / job_id
-    target = work_dir / "face_mosaic.mp4"
-    work_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = allocate_work_directory(f"face-{job_id}", root=settings.temp_data_root)
+    target = work_dir / f"{uuid4().hex}-face_mosaic.mp4"
     started = time.perf_counter()
+    failure_error: Exception | None = None
     try:
         self.update_state(state="PROGRESS", meta={"phase": "download", "progress": 5})
         source = _download(str(payload["source_uri"]), work_dir)
@@ -120,6 +120,7 @@ def process_face_mosaic(self, payload: dict[str, Any]) -> dict[str, Any]:
             _callback(str(payload["callback_url"]), result)
         return result
     except Exception as exc:
+        failure_error = exc
         failure = {
             "job_id": job_id,
             "status": "failed",
@@ -130,4 +131,7 @@ def process_face_mosaic(self, payload: dict[str, Any]) -> dict[str, Any]:
             _callback(str(payload["callback_url"]), failure)
         raise
     finally:
-        shutil.rmtree(work_dir, ignore_errors=True)
+        if failure_error is None:
+            cleanup_success(work_dir)
+        else:
+            mark_failed(work_dir, failure_error)

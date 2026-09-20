@@ -5,8 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+UMask=0007
 WorkingDirectory=/home/donxu/ai-centre
 Environment=PYTHONPATH=/home/donxu/ai-centre
+Environment=AI_CENTRE_TEMP_DATA_ROOT=/home/donxu/temp-data
+Environment=AI_CENTRE_TEMP_DATA_TIMEZONE=Asia/Shanghai
+Environment=AI_CENTRE_TEMP_FAILURE_RETENTION_SECONDS=86400
 Environment=CUDA_VISIBLE_DEVICES=0
 Environment=FW_MODEL=large-v3
 Environment=FW_MODEL_DIR=/home/donxu/ai-centre/models/faster-whisper-large-v3

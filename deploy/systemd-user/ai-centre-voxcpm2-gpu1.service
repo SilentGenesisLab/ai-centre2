@@ -14,7 +14,7 @@ Environment=VLLM_CACHE_ROOT=/home/donxu/ai-centre/runtime/vllm-v026
 Environment=VLLM_USE_FLASHINFER_SAMPLER=0
 Environment=LD_LIBRARY_PATH=/home/donxu/ai-centre/.venv-tts-v026/lib/python3.12/site-packages/nvidia/cu13/lib
 Environment=SPEAKER_SAMPLES_DIR=/home/donxu/ai-centre/runtime/control/tts-speakers
-ExecStart=/home/donxu/ai-centre/.venv-tts-v026/bin/vllm serve /home/donxu/ai-centre/models/VoxCPM2 --omni --host 127.0.0.1 --port 8192 --served-model-name voxcpm2 --allowed-local-media-path /home/donxu/ai-centre/runtime/references --deploy-config /home/donxu/ai-centre/deploy/voxcpm2-v026.yaml
+ExecStart=/home/donxu/ai-centre/.venv-tts-v026/bin/vllm serve /home/donxu/ai-centre/models/VoxCPM2 --omni --host 127.0.0.1 --port 8192 --served-model-name voxcpm2 --allowed-local-media-path /home/donxu --deploy-config /home/donxu/ai-centre/deploy/voxcpm2-v026.yaml
 Restart=always
 RestartSec=10
 TimeoutStartSec=900

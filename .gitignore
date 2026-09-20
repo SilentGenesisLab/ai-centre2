@@ -24,22 +24,3 @@ OCR/.venv/
 *.onnx
 *.safetensors
 
-# Local deployment bundles, benchmark outputs and the separately managed admin app.
-project-status-site/
-admin-video-review-*.tar
-.deploy-compare-video-fix/
-.tmp-npm-prettier-cache/
-runtime_*/
-docs/reports/**/*.json
-docs/reports/**/*.csv
-docs/reports/**/*.wav
-docs/reports/**/*.mp3
-docs/reports/**/*.m4a
-docs/reports/**/*.M4A
-docs/reports/**/*.mp4
-docs/reports/**/*.webm
-docs/reports/**/assets/
-docs/reports/**/*
-!docs/reports/**/*.md
-NUL
-runtime_*.tgz

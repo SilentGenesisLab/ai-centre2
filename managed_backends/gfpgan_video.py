@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 import cv2
 import torchvision.transforms.functional as torchvision_functional
+
+from temp_media import allocate_work_directory, cleanup_success, mark_failed
 
 
 # BasicSR 1.4 imports a torchvision module removed in torchvision 0.26.
@@ -36,7 +37,21 @@ def restore_video(
         channel_multiplier=2,
         bg_upsampler=None,
     )
-    temporary = Path(tempfile.mkdtemp(prefix=".gfpgan-", dir=output_path.parent))
+    temporary = allocate_work_directory("gfpgan-frames")
+    silent_video = temporary / f"{uuid4().hex}-restored-silent.mp4"
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    writer = cv2.VideoWriter(
+        str(silent_video),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width, height),
+    )
+    if width <= 0 or height <= 0 or not writer.isOpened():
+        capture.release()
+        cleanup_success(temporary)
+        raise RuntimeError("unable to create GFPGAN intermediate video")
+    failure: BaseException | None = None
     try:
         frame_count = 0
         while True:
@@ -51,21 +66,20 @@ def restore_video(
                 weight=weight,
             )
             frame_count += 1
-            destination = temporary / f"{frame_count:08d}.png"
-            if restored is None or not cv2.imwrite(str(destination), restored):
-                raise RuntimeError(f"unable to write restored frame {frame_count}")
+            if restored is None:
+                raise RuntimeError(f"unable to restore frame {frame_count}")
+            writer.write(restored)
         if frame_count == 0:
             raise RuntimeError("MuseTalk result video has no frames")
+        writer.release()
 
         command = [
             str(ffmpeg),
             "-y",
             "-v",
             "warning",
-            "-framerate",
-            f"{fps:.6f}",
             "-i",
-            str(temporary / "%08d.png"),
+            str(silent_video),
             "-i",
             str(input_path),
             "-map",
@@ -86,9 +100,16 @@ def restore_video(
         completed = subprocess.run(command, check=False)
         if completed.returncode != 0 or not output_path.is_file():
             raise RuntimeError(f"FFmpeg exited with code {completed.returncode}")
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
         capture.release()
-        shutil.rmtree(temporary, ignore_errors=True)
+        writer.release()
+        if failure is None:
+            cleanup_success(temporary)
+        else:
+            mark_failed(temporary, failure)
 
 
 def main() -> None:

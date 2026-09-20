@@ -6,6 +6,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
+from uuid import uuid4
 
 import imageio_ffmpeg
 
@@ -233,7 +234,7 @@ class VideoWatermarkProcessor:
         return output_path
 
     def transcode_h264(self, input_path: Path) -> Path:
-        output_path = self.output_dir / f"final_h264_{self.input_path.stem}.mp4"
+        output_path = self.output_dir / f"{uuid4().hex}-final_h264_{self.input_path.stem}.mp4"
         self._run_ffmpeg(
             "H.264 transcode",
             [
@@ -263,7 +264,7 @@ class VideoWatermarkProcessor:
             result = self.apply_gaussian_noise(intensity=4)
             self._notify(progress, "audio_noise", 55)
             result = self.add_audio_noise(result, noise_level=-35)
-            final_output = self.output_dir / f"final_light_{self.input_path.stem}.mp4"
+            final_output = self.output_dir / f"{uuid4().hex}-final_light_{self.input_path.stem}.mp4"
             result.replace(final_output)
             self._intermediate_files.discard(result)
             self._notify(progress, "complete", 100)
@@ -297,7 +298,7 @@ class VideoWatermarkProcessor:
 
     def _intermediate_path(self, filename: str) -> Path:
         self.temp_dir.mkdir(exist_ok=True)
-        path = self.temp_dir / filename
+        path = self.temp_dir / f"{uuid4().hex}-{filename}"
         self._intermediate_files.add(path)
         return path
 
