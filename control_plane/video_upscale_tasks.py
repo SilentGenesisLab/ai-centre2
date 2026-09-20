@@ -18,10 +18,17 @@ from .media_fetch import VIDEO_MEDIA, download_public_media
 # video_field 随节点类型而变：flashvsr 的视频节点是 LoadVideo（字段 file），
 # 另两个是 VHS_LoadVideo（字段 video）。节点号以 RunningHub 应用详情页的
 # nodeInfoList 为准，改应用后可能失效。
+#
+# instance_type 同理按 provider 定：flashvsr 两个工作流在小卡（default）上跑真实素材
+# 会稳定「工作流运行失败」（实测同一段 11.8s@1920：default 约 210s 必挂，plus 302s 成功），
+# 所以固定 plus。seedvr2 负载轻，整片 22s@最短边1080 在 default 上也能过（916s）。
 PROVIDERS: dict[str, dict[str, str]] = {
-    "flashvsr": {"app_id": "1996062530516795394", "video_node": "27", "video_field": "file", "size_node": "16"},
-    "flashvsr_v2": {"app_id": "1983119055743819777", "video_node": "24", "video_field": "video", "size_node": "16"},
-    "seedvr2": {"app_id": "1990029249488801793", "video_node": "16", "video_field": "video", "size_node": "71"},
+    "flashvsr": {"app_id": "1996062530516795394", "video_node": "27", "video_field": "file", "size_node": "16",
+                 "instance_type": "plus"},
+    "flashvsr_v2": {"app_id": "1983119055743819777", "video_node": "24", "video_field": "video", "size_node": "16",
+                    "instance_type": "plus"},
+    "seedvr2": {"app_id": "1990029249488801793", "video_node": "16", "video_field": "video", "size_node": "71",
+                "instance_type": "default"},
 }
 TERMINAL_SUCCESS = {"SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE", "FINISHED"}
 TERMINAL_FAILURE = {"FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED"}
@@ -41,6 +48,8 @@ def provider_order(requested: str, configured: str) -> list[str]:
 def build_payload(provider: str, source_uri: str, max_resolution: int) -> dict[str, Any]:
     spec = PROVIDERS[provider]
     size_description = "设置最短边" if provider == "seedvr2" else "最大分辨率设置"
+    # 超过 1920 一律上 plus；此外 provider 自己也能要求（见 PROVIDERS 上的注释）。
+    instance_type = "plus" if max_resolution > 1920 else spec["instance_type"]
     return {
         "nodeInfoList": [
             {"nodeId": spec["video_node"], "fieldName": spec["video_field"], "fieldValue": source_uri,
@@ -48,7 +57,7 @@ def build_payload(provider: str, source_uri: str, max_resolution: int) -> dict[s
             {"nodeId": spec["size_node"], "fieldName": "value", "fieldValue": str(max_resolution),
              "description": size_description},
         ],
-        "instanceType": "plus" if max_resolution > 1920 else "default",
+        "instanceType": instance_type,
         "usePersonalQueue": "false",
     }
 

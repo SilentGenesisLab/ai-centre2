@@ -31,6 +31,14 @@ class VideoUpscaleTests(unittest.TestCase):
         self.assertEqual(payload["nodeInfoList"][0]["nodeId"], "27")
         self.assertEqual(payload["nodeInfoList"][0]["fieldName"], "file")
 
+    def test_instance_type_follows_provider_load(self) -> None:
+        # flashvsr 系列在小卡上会「工作流运行失败」，必须走 plus。
+        self.assertEqual(build_payload("flashvsr", "https://cdn.example/a.mp4", 1920)["instanceType"], "plus")
+        self.assertEqual(build_payload("flashvsr_v2", "https://cdn.example/a.mp4", 1920)["instanceType"], "plus")
+        # seedvr2 负载轻，默认档即可；但超过 1920 仍然升档。
+        self.assertEqual(build_payload("seedvr2", "https://cdn.example/a.mp4", 1080)["instanceType"], "default")
+        self.assertEqual(build_payload("seedvr2", "https://cdn.example/a.mp4", 2000)["instanceType"], "plus")
+
     @patch("control_plane.video_upscale_tasks._run_ffmpeg")
     def test_splitter_uses_sub_twelve_second_boundary(self, run_ffmpeg) -> None:
         with TemporaryDirectory() as temporary:
