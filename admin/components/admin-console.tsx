@@ -6699,7 +6699,7 @@ function Concurrency({
                       </span>
                     )}
                     <span className="concurrency-facts">
-                      槽位 {item.live.slot}
+                      槽位 {item.slot}
                       {item.shared_with.length
                         ? ` · 与「${item.shared_with.map(labelOf).join("」「")}」共用`
                         : ""}
