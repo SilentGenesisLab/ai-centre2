@@ -1,4 +1,4 @@
-import { chromium } from "../project-status-site/node_modules/playwright/index.mjs";
+import { chromium } from "../admin/node_modules/playwright/index.mjs";
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });

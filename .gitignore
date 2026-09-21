@@ -24,7 +24,7 @@ OCR/.venv/
 *.onnx
 *.safetensors
 
-# --- Node/Next.js 前端（admin 管理台、project-status-site 旧版）---
+# --- Node/Next.js 前端（admin 管理台）---
 node_modules/
 .next/
 out/
