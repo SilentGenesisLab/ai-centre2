@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,6 +15,15 @@ from control_plane.depth_tasks import effective_input_size
 
 
 JOB_ID = "4c39cf01-9893-436e-9378-1be045d98f64"
+
+
+@contextmanager
+def _no_slot(*_args, **_kwargs):
+    """替掉并发闸门：本文件测的是任务体，闸门自己由 tests/test_concurrency.py 覆盖。
+
+    不替的话 `.apply()` 会真的去连 Redis，单测就变成依赖外部服务了。
+    """
+    yield {"limit": 1}
 
 
 class FakeModel:
@@ -45,7 +55,6 @@ class DepthTaskTests(unittest.TestCase):
             depth_work_dir=root,
             depth_max_download_bytes=1024,
             depth_download_timeout_seconds=30,
-            depth_gpu_lock_path=root / "gpu.lock",
             depth_da2_base_max_input_size=392,
         )
 
@@ -68,6 +77,7 @@ class DepthTaskTests(unittest.TestCase):
             patch("control_plane.depth_tasks.download_public_media", side_effect=download),
             patch("control_plane.depth_tasks._get_model", return_value=FakeModel()),
             patch("control_plane.depth_tasks._upload_result", return_value="https://oss.example/depth.mp4"),
+            patch("control_plane.depth_tasks.job_slot", _no_slot),
             patch.object(infer_video_depth, "update_state"),
         ):
             eager = infer_video_depth.apply(

@@ -11,6 +11,7 @@ import httpx
 from temp_media import allocate_work_directory, cleanup_success, mark_failed
 
 from .celery_app import celery_app
+from .concurrency import job_slot, slot_wait_reporter
 from .config import get_settings
 from .media_fetch import VIDEO_MEDIA, download_public_media
 from .watermark_processor import VideoWatermarkProcessor
@@ -61,6 +62,11 @@ def _upload_result(target: Path, payload: dict[str, Any], job_id: str) -> str:
     soft_time_limit=7140,
 )
 def remove_video_watermark(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    with job_slot("watermark_remove", on_wait=slot_wait_reporter(self)):
+        return _remove_video_watermark(self, request_data)
+
+
+def _remove_video_watermark(self, request_data: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
     work_root = settings.watermark_work_dir

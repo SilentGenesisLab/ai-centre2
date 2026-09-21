@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from .celery_app import celery_app
+from .concurrency import job_slot, slot_wait_reporter
 from .config import get_settings
 from .video_review_pipeline import run_video_review
 
@@ -21,4 +22,5 @@ def review_video(self, request_data: dict) -> dict:
     def update(stage: str, progress: int) -> None:
         self.update_state(state="PROGRESS", meta={"stage": stage, "progress": progress})
 
-    return run_video_review(request_data, settings, str(self.request.id), update)
+    with job_slot("video_review", on_wait=slot_wait_reporter(self)):
+        return run_video_review(request_data, settings, str(self.request.id), update)

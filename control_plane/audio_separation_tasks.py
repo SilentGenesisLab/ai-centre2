@@ -3,41 +3,17 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-import threading
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
 import imageio_ffmpeg
 
-try:
-    import fcntl
-except ImportError:  # Windows-only test environments
-    fcntl = None
-
 from .celery_app import celery_app
+from .concurrency import job_slot, segment_limit, slot_wait_reporter
 from .config import get_settings
 from .media_fetch import ASR_MEDIA, download_public_media
-
-
-_GPU_THREAD_LOCK = threading.Lock()
-
-
-@contextmanager
-def _gpu_slot(lock_path: Path):
-    with _GPU_THREAD_LOCK:
-        if fcntl is None:
-            yield
-            return
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("a+") as stream:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def _prepare_audio(source: Path, target: Path) -> None:
@@ -88,7 +64,7 @@ def _run_inference(source: Path, output_dir: Path, result_json: Path) -> dict[st
             "--result-json",
             str(result_json),
             "--batch-size",
-            str(settings.audio_separation_batch_size),
+            str(segment_limit("audio_separation")),
             "--peak-limit-dbfs",
             str(settings.audio_separation_peak_limit_dbfs),
         ],
@@ -148,6 +124,14 @@ def _upload_stem(
     soft_time_limit=7140,
 )
 def separate_audio_task(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    # 原先这里是 flock(settings.audio_separation_gpu_lock_path)，把 GPU 并发硬钉在 1。
+    # 槽位名是 "gpu"：它和「视频深度推理」原先把的是同一个锁文件，必须继续互斥。
+    # 本模块的池是 --pool=solo，任务级并发物理上仍是 1（控制台上只读）。
+    with job_slot("audio_separation", on_wait=slot_wait_reporter(self)):
+        return _separate_audio(self, request_data)
+
+
+def _separate_audio(self, request_data: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
     work_dir = settings.audio_separation_work_dir / job_id
@@ -167,14 +151,12 @@ def separate_audio_task(self, request_data: dict[str, Any]) -> dict[str, Any]:
         self.update_state(state="PROGRESS", meta={"stage": "preparing", "progress": 10})
         _prepare_audio(downloaded.path, prepared)
 
-        self.update_state(state="PROGRESS", meta={"stage": "waiting_gpu", "progress": 15})
-        with _gpu_slot(settings.audio_separation_gpu_lock_path):
-            self.update_state(state="PROGRESS", meta={"stage": "separating", "progress": 20})
-            metrics = _run_inference(
-                prepared,
-                work_dir / "outputs",
-                work_dir / "metrics.json",
-            )
+        self.update_state(state="PROGRESS", meta={"stage": "separating", "progress": 20})
+        metrics = _run_inference(
+            prepared,
+            work_dir / "outputs",
+            work_dir / "metrics.json",
+        )
 
         output_paths = {
             stem: Path(path) for stem, path in metrics.pop("output_paths").items()

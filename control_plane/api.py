@@ -62,6 +62,7 @@ from .h3_workflow import resolve_dimensions
 from .observability import ObservabilityMiddleware
 from .observability_api import get_observability_store, router as observability_router
 from .health_monitor_api import get_health_monitor, router as health_monitor_router
+from .concurrency_api import router as concurrency_router
 from .api_keys import ApiKeyStore
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient
@@ -161,6 +162,7 @@ app = FastAPI(
 app.add_middleware(ObservabilityMiddleware, store_factory=get_observability_store)
 app.include_router(observability_router)
 app.include_router(health_monitor_router)
+app.include_router(concurrency_router)
 app.openapi_tags.append(
     {
         "name": "视频深度推理",

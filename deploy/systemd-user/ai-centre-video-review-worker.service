@@ -9,7 +9,7 @@ WorkingDirectory=/home/donxu/ai-centre
 EnvironmentFile=/home/donxu/ai-centre/.env
 Environment=PYTHONPATH=/home/donxu/ai-centre
 Environment=CUDA_VISIBLE_DEVICES=
-ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker -Q video_review -n video-review@%%h --concurrency=1 --loglevel=INFO
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker -Q video_review -n video-review@%%h --concurrency=4 --loglevel=INFO
 Restart=always
 RestartSec=3
 TimeoutStopSec=7200

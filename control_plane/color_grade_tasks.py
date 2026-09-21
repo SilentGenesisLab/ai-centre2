@@ -11,6 +11,7 @@ import httpx
 import imageio_ffmpeg
 
 from .celery_app import celery_app
+from .concurrency import job_slot, slot_wait_reporter
 from .config import get_settings
 from .media_fetch import CUBE_MEDIA, VIDEO_MEDIA, download_public_media
 
@@ -96,6 +97,11 @@ def _upload_result(target: Path, payload: dict[str, Any], job_id: str) -> str:
 
 @celery_app.task(bind=True, name="control_plane.color_grade", time_limit=14400, soft_time_limit=14340)
 def color_grade_task(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    with job_slot("color_grade", on_wait=slot_wait_reporter(self)):
+        return _color_grade(self, request_data)
+
+
+def _color_grade(self, request_data: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
     work_root = Path(getattr(settings, "color_grade_work_dir", "/tmp/ai-centre-color-grade"))

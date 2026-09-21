@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     control_port: int = 8320
     control_runtime_dir: Path = Path("/home/donxu/ai-centre/runtime/control")
     api_keys_db_path: Path = Path("/home/donxu/ai-centre/runtime/control/api-keys.db")
+    runtime_settings_db_path: Path = Path("/home/donxu/ai-centre/runtime/control/runtime-settings.db")
     ai_capabilities_db_path: Path = Path("/home/donxu/ai-centre/runtime/ai-capabilities/capabilities.db")
     video_generation_blank_image_url: str = (
         "https://bucket-silge-internal-products.oss-cn-shenzhen.aliyuncs.com/"
@@ -111,7 +112,6 @@ class Settings(BaseSettings):
     depth_download_timeout_seconds: float = 900
     depth_upload_timeout_seconds: float = 300
     depth_result_expires_seconds: int = 604800
-    depth_gpu_lock_path: Path = Path("/home/donxu/ai-centre/runtime/video-depth/gpu.lock")
     audio_separation_wait_timeout_seconds: float = 3600
     audio_separation_work_dir: Path = Path(
         "/home/donxu/ai-centre/runtime/audio-separation"
@@ -132,9 +132,6 @@ class Settings(BaseSettings):
     audio_separation_ffmpeg_timeout_seconds: float = 3600
     audio_separation_upload_timeout_seconds: float = 300
     audio_separation_result_expires_seconds: int = 604800
-    audio_separation_gpu_lock_path: Path = Path(
-        "/home/donxu/ai-centre/runtime/video-depth/gpu.lock"
-    )
     color_grade_work_dir: Path = Path(
         "/home/donxu/ai-centre/runtime/color-grade"
     )
@@ -159,6 +156,7 @@ class Settings(BaseSettings):
     video_upscale_segment_seconds: float = 11.8
     video_upscale_segment_concurrency: int = 3
     video_upscale_segment_attempts: int = 3
+    concurrency_slot_wait_seconds: float = 7200
     video_upscale_max_download_bytes: int = 2 * 1024 * 1024 * 1024
     video_upscale_ffmpeg_timeout_seconds: float = 3600
     video_upscale_ffmpeg_bin: str = "auto"

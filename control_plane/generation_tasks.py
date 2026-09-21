@@ -14,6 +14,7 @@ import imageio_ffmpeg
 
 from .ai_capabilities import CapabilityStore
 from .celery_app import celery_app
+from .concurrency import job_slot
 from .config import get_settings
 from .media_fetch import VIDEO_MEDIA, download_public_media
 
@@ -343,6 +344,12 @@ def _finish_success(
 
 @celery_app.task(bind=True,name="control_plane.video_generation",time_limit=14400,soft_time_limit=14340)
 def generate(self,job_id:str)->dict[str,Any]:
+    # 进度记在自己的 store 里（不是 Celery state），所以排队状态也写那边。
+    with job_slot("video_generation", on_wait=lambda limit: _store().update_job(job_id, stage="waiting_slot")):
+        return _generate(self,job_id)
+
+
+def _generate(self,job_id:str)->dict[str,Any]:
     settings = get_settings()
     store=_store(); job=store.job(job_id,include_request=True); req=job["request"]; started=time.monotonic()
     requested=req.get("channel") or "jmapi"; order=[requested] if requested!="auto" else ["jmapi","libtv"]

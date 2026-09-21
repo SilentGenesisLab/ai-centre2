@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,6 +14,15 @@ from control_plane.watermark_tasks import remove_video_watermark
 
 
 JOB_ID = "4c39cf01-9893-436e-9378-1be045d98f64"
+
+
+@contextmanager
+def _no_slot(*_args, **_kwargs):
+    """替掉并发闸门：本文件测的是任务体，闸门自己由 tests/test_concurrency.py 覆盖。
+
+    不替的话 `.apply()` 会真的去连 Redis，单测就变成依赖外部服务了。
+    """
+    yield {"limit": 1}
 
 
 class FakeProcessor:
@@ -73,6 +83,7 @@ class WatermarkTaskTests(unittest.TestCase):
                 "control_plane.watermark_tasks._upload_result",
                 return_value="https://oss.example/result.mp4",
             ),
+            patch("control_plane.watermark_tasks.job_slot", _no_slot),
             patch.object(remove_video_watermark, "update_state"),
         ):
             eager = remove_video_watermark.apply(

@@ -9,7 +9,8 @@ export const SECTIONS = [
   { id: "upscale", label: "视频超分" },
   { id: "h3", label: "MiniMax H3 生成" }, { id: "image", label: "图像能力" },
   { id: "storage", label: "OSS 对象存储" },
-  { id: "resources", label: "GPU 与服务" }, { id: "models", label: "模型与音色" },
+  { id: "resources", label: "GPU 与服务" }, { id: "concurrency", label: "并发与调度" },
+  { id: "models", label: "模型与音色" },
   { id: "audit", label: "操作审计" }, { id: "project", label: "项目状态" },
   { id: "bugs", label: "遗留 Bug" }, { id: "roadmap", label: "下一阶段" },
   { id: "settings", label: "系统设置" }, { id: "logs", label: "任务日志（旧入口）" },
@@ -49,6 +50,7 @@ export const NAVIGATION: NavigationItem[] = [
     ] },
   ] },
   { id: "resources", label: "GPU 与服务", icon: "gpu", href: "resources" },
+  { id: "concurrency", label: "并发与调度", icon: "concurrency", href: "concurrency" },
   { id: "models", label: "模型与音色", icon: "models", href: "models" },
   { id: "audit", label: "操作审计", icon: "audit", href: "audit" },
   { id: "projects", label: "项目管理", icon: "project", children: [

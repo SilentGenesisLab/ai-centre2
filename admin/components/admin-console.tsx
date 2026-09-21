@@ -774,6 +774,14 @@ function NavIcon({ name }: { name: string }) {
         <path d="M8 4v3m4-3v3m4-3v3M8 17v3m4-3v3m4-3v3M1 10h3m-3 4h3m16-4h3m-3 4h3" />
       </>
     ),
+    concurrency: (
+      <>
+        <path d="M5 5v6m0 4v4M12 5v2m0 4v8M19 5v9m0 4v1" />
+        <circle cx="5" cy="13" r="2" />
+        <circle cx="12" cy="9" r="2" />
+        <circle cx="19" cy="16" r="2" />
+      </>
+    ),
     audit: (
       <>
         <path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6z" />
@@ -1220,6 +1228,9 @@ export function AdminConsole({
               setError={setError}
               showNotice={showNotice}
             />
+          )}
+          {section === "concurrency" && (
+            <Concurrency setError={setError} showNotice={showNotice} />
           )}
           {section === "models" && (
             <Models
@@ -6083,11 +6094,13 @@ function SceneDetect({
 function PasswordReauthModal({
   busy,
   error,
+  message,
   onCancel,
   onSubmit,
 }: {
   busy: boolean;
   error: string;
+  message?: string;
   onCancel: () => void;
   onSubmit: (password: string) => void;
 }) {
@@ -6121,7 +6134,8 @@ function PasswordReauthModal({
         }}
       >
         <p className="modal-message">
-          保存飞书Webhook或发送测试消息前，请重新输入管理员密码。验证结果10分钟内有效。
+          {message ||
+            "保存飞书Webhook或发送测试消息前，请重新输入管理员密码。验证结果10分钟内有效。"}
         </p>
         <label>
           管理员密码
@@ -6434,6 +6448,320 @@ function HealthMonitorPanel({
             if (reauthBusy) return;
             setReauthAction(null);
             setPendingConfig(null);
+            setReauthError("");
+          }}
+          onSubmit={(password) => void finishReauth(password)}
+        />
+      )}
+    </section>
+  );
+}
+
+type ConcurrencyLevel = {
+  key: string;
+  label?: string | null;
+  value: number;
+  default: number;
+  adjustable: boolean;
+  effective: boolean;
+};
+
+type ConcurrencyModule = {
+  module: string;
+  label: string;
+  queue: string;
+  service: string;
+  task: string;
+  slot: string;
+  shared_with: string[];
+  job: ConcurrencyLevel & {
+    ceiling: number | null;
+    ceiling_known: boolean;
+    pool: string | null;
+    note: string | null;
+  };
+  segment: ConcurrencyLevel | null;
+  wait: { configured: number; effective: number; task_soft_limit: number | null };
+  live: { active: number | null; limit: number; owners: string[]; error?: string };
+};
+
+type ConcurrencyPayload = { items: ConcurrencyModule[]; min: number; max: number };
+
+function durationLabel(seconds: number): string {
+  if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)} 小时`;
+  if (seconds >= 60) return `${Math.round(seconds / 60)} 分钟`;
+  return `${Math.round(seconds)} 秒`;
+}
+
+function Concurrency({
+  setError,
+  showNotice,
+}: {
+  setError: (value: string) => void;
+  showNotice: (value: string) => void;
+}) {
+  const [payload, setPayload] = useState<ConcurrencyPayload | null>(null);
+  const [draft, setDraft] = useState<Record<string, number>>({});
+  const [pending, setPending] = useState<
+    { kind: "save" } | { kind: "reset"; keys: string[] } | null
+  >(null);
+  const [busy, setBusy] = useState(false);
+  const [reauthError, setReauthError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setPayload(
+        await apiRequest<ConcurrencyPayload>(
+          "control",
+          "/internal/admin/concurrency",
+        ),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "并发配置加载失败");
+    }
+  }, [setError]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const levels = (item: ConcurrencyModule) =>
+    item.segment ? [item.job, item.segment] : [item.job];
+  const labelOf = (module: string) =>
+    payload?.items.find((entry) => entry.module === module)?.label ?? module;
+  // 只提交改动过的键：没动的键留给服务端默认值，免得把别的页面的改动一起覆盖掉。
+  function edited(): Record<string, number> {
+    const values: Record<string, number> = {};
+    for (const item of payload?.items ?? []) {
+      for (const level of levels(item)) {
+        const next = draft[level.key];
+        if (next !== undefined && next !== level.value) values[level.key] = next;
+      }
+    }
+    return values;
+  }
+  async function finishReauth(password: string) {
+    const action = pending;
+    if (!action) return;
+    setBusy(true);
+    setReauthError("");
+    try {
+      const verified = await fetch(`${BASE_PATH}/api/auth/reauth`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (!verified.ok) throw new Error("管理员密码验证失败");
+      const response = await fetch(
+        `${BASE_PATH}/api/concurrency`,
+        action.kind === "reset"
+          ? {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ keys: action.keys }),
+            }
+          : {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ values: edited() }),
+            },
+      );
+      if (!response.ok)
+        throw new Error((await response.json()).detail || "并发配置保存失败");
+      showNotice(
+        action.kind === "reset"
+          ? "已恢复默认并发值"
+          : "并发配置已保存，正在跑的任务不受影响",
+      );
+      setPending(null);
+      setDraft({});
+      await load();
+    } catch (reason) {
+      setReauthError(reason instanceof Error ? reason.message : "并发配置保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function save() {
+    if (!Object.keys(edited()).length) {
+      showNotice("没有需要保存的改动");
+      return;
+    }
+    setReauthError("");
+    setPending({ kind: "save" });
+  }
+  function reset(keys: string[]) {
+    setReauthError("");
+    setPending({ kind: "reset", keys });
+  }
+  const changed = Object.keys(edited()).length;
+  return (
+    <section className="concurrency">
+      <div className="concurrency-heading">
+        <div>
+          <span>CONCURRENCY &amp; SCHEDULING</span>
+          <h2>并发与调度</h2>
+          <p>
+            任务级并发改完即时生效（不重启worker、不打断在跑的任务）；段级并发对之后新开的任务生效。
+          </p>
+        </div>
+        <div className="page-actions">
+          <button className="secondary-button" onClick={() => void load()}>
+            刷新
+          </button>
+          <button className="primary-button" disabled={busy} onClick={save}>
+            保存改动{changed ? `（${changed}）` : ""}
+          </button>
+        </div>
+      </div>
+      <Panel title="模块并发" eyebrow={`${payload?.items.length ?? 0} MODULES`}>
+        <div className="table-shell">
+          <table className="concurrency-table">
+            <thead>
+              <tr>
+                <th>模块</th>
+                <th>任务级并发</th>
+                <th>段级并发</th>
+                <th>实时占槽</th>
+                <th>排队上限</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(payload?.items ?? []).map((item) => {
+                const segment = item.segment;
+                return (
+                <tr key={item.module}>
+                  <td>
+                    <strong>{item.label}</strong>
+                    <small>{item.module}</small>
+                    <span className="concurrency-facts">队列 {item.queue}</span>
+                    {item.job.note && (
+                      <span className="concurrency-facts">{item.job.note}</span>
+                    )}
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      min={payload?.min}
+                      max={payload?.max}
+                      disabled={!item.job.adjustable}
+                      aria-label={`${item.label}任务级并发`}
+                      value={draft[item.job.key] ?? item.job.value}
+                      onChange={(event) =>
+                        setDraft((items) => ({
+                          ...items,
+                          [item.job.key]: Number(event.target.value),
+                        }))
+                      }
+                    />
+                    <span className="concurrency-facts">
+                      默认 {item.job.default} · 单元上限{" "}
+                      {item.job.ceiling_known
+                        ? `${item.job.ceiling}（${item.job.pool}）`
+                        : "读不到"}
+                    </span>
+                    {!item.job.effective && (
+                      <span className="concurrency-warning">
+                        高于单元上限，不会生效
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {segment ? (
+                      <>
+                        <input
+                          type="number"
+                          min={payload?.min}
+                          max={payload?.max}
+                          aria-label={`${item.label}${segment.label || "段级并发"}`}
+                          value={draft[segment.key] ?? segment.value}
+                          onChange={(event) =>
+                            setDraft((items) => ({
+                              ...items,
+                              [segment.key]: Number(event.target.value),
+                            }))
+                          }
+                        />
+                        <span className="concurrency-facts">
+                          {segment.label} · 默认 {segment.default}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="concurrency-facts">该模块没有段级参数</span>
+                    )}
+                  </td>
+                  <td>
+                    {item.live.active === null ? (
+                      <span className="concurrency-warning">
+                        读不到实时占槽
+                      </span>
+                    ) : (
+                      <span className="concurrency-live">
+                        {item.live.active} / {item.live.limit}
+                      </span>
+                    )}
+                    <span className="concurrency-facts">
+                      槽位 {item.live.slot}
+                      {item.shared_with.length
+                        ? ` · 与「${item.shared_with.map(labelOf).join("」「")}」共用`
+                        : ""}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="concurrency-live">
+                      {durationLabel(item.wait.effective)}
+                    </span>
+                    <span className="concurrency-facts">
+                      配置 {durationLabel(item.wait.configured)}
+                      {item.wait.task_soft_limit !== null
+                        ? ` · 任务软超时 ${durationLabel(item.wait.task_soft_limit)}`
+                        : ""}
+                    </span>
+                    {item.wait.task_soft_limit !== null &&
+                      item.wait.effective < item.wait.configured && (
+                        <span className="concurrency-facts">
+                          已按任务软超时封顶
+                        </span>
+                      )}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={busy}
+                      onClick={() => reset(levels(item).map((level) => level.key))}
+                    >
+                      恢复默认
+                    </button>
+                  </td>
+                </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {!payload && <p className="empty-note">正在读取并发配置…</p>}
+      </Panel>
+      <Panel title="怎么读这一页" eyebrow="READING THIS PAGE">
+        <p className="concurrency-note">
+          单元上限（读自 systemd 单元的池大小）是部署值，控制台只读显示：池子决定了最多能跑几个，
+          闸门再按上面的配置值卡住实际并发。目标值大于上限时不会生效，页面上会红字标出来。
+        </p>
+        <p className="concurrency-note">
+          调大任务级并发，等于让同一台机器同时跑更多路转码与更多第三方请求：CPU、网络带宽与上游限流
+          会一起成为新瓶颈。段级并发是单个任务内部的并行度，改完对之后新提交的任务生效。
+        </p>
+        <p className="concurrency-note">
+          实时占槽是闸门此刻的占用（近似值，等待中的任务可能被短暂计入）。Redis 不可用时这里读不到，
+          但配置值仍然可改。
+        </p>
+      </Panel>
+      {pending && (
+        <PasswordReauthModal
+          busy={busy}
+          error={reauthError}
+          message="修改生产并发参数前，请重新输入管理员密码。验证结果10分钟内有效。"
+          onCancel={() => {
+            if (busy) return;
+            setPending(null);
             setReauthError("");
           }}
           onSubmit={(password) => void finishReauth(password)}

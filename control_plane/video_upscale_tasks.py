@@ -11,6 +11,7 @@ import httpx
 import imageio_ffmpeg
 
 from .celery_app import celery_app
+from .concurrency import job_slot, segment_limit, slot_wait_reporter
 from .config import get_settings
 from .media_fetch import VIDEO_MEDIA, download_public_media
 
@@ -274,6 +275,11 @@ def merge_segments(
 
 @celery_app.task(bind=True, name="control_plane.video_upscale", time_limit=14400, soft_time_limit=14340)
 def upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    with job_slot("video_upscale", on_wait=slot_wait_reporter(self)):
+        return _upscale_video(self, request_data)
+
+
+def _upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
     started = time.perf_counter()
@@ -296,7 +302,7 @@ def upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
             "stage": "upscaling_segments", "progress": 12, "segment_count": len(segments), "completed_segments": 0,
         })
         results: dict[int, dict[str, Any]] = {}
-        concurrency = max(1, min(settings.video_upscale_segment_concurrency, len(segments)))
+        concurrency = max(1, min(segment_limit("video_upscale"), len(segments)))
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
             futures = {
                 executor.submit(

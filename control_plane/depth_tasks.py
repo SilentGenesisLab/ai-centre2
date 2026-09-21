@@ -3,18 +3,13 @@ from __future__ import annotations
 import shutil
 import threading
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
-try:
-    import fcntl
-except ImportError:  # Windows-only test environments
-    fcntl = None
-
 from .celery_app import celery_app
+from .concurrency import job_slot, slot_wait_reporter
 from .config import get_settings
 from .media_fetch import VIDEO_MEDIA, download_public_media
 
@@ -22,7 +17,6 @@ if TYPE_CHECKING:
     from .depth_inference import VideoDepthInference
 
 
-_GPU_THREAD_LOCK = threading.Lock()
 _MODEL_CACHE_LOCK = threading.Lock()
 _MODEL_CACHE: tuple[tuple[str, str], VideoDepthInference] | None = None
 
@@ -110,21 +104,6 @@ def _upload_result(target: Path, payload: dict[str, Any], job_id: str) -> str:
     return video_url
 
 
-@contextmanager
-def _gpu_slot(lock_path: Path):
-    with _GPU_THREAD_LOCK:
-        if fcntl is None:
-            yield
-            return
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("a+") as stream:
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
-
-
 @celery_app.task(
     bind=True,
     name="control_plane.video_depth",
@@ -132,6 +111,14 @@ def _gpu_slot(lock_path: Path):
     soft_time_limit=7140,
 )
 def infer_video_depth(self, request_data: dict[str, Any]) -> dict[str, Any]:
+    # 原先这里是 flock(settings.depth_gpu_lock_path)，把 GPU 并发硬钉在 1。
+    # 换成闸门后语义不变（默认值就是 1），但并发变成控制台可调的参数；
+    # 槽位名是 "gpu"：它和「音频分离」原先把的是同一个锁文件，必须继续互斥。
+    with job_slot("video_depth", on_wait=slot_wait_reporter(self)):
+        return _infer_video_depth(self, request_data)
+
+
+def _infer_video_depth(self, request_data: dict[str, Any]) -> dict[str, Any]:
     settings = get_settings()
     job_id = str(self.request.id)
     work_dir = settings.depth_work_dir / job_id
@@ -155,26 +142,24 @@ def infer_video_depth(self, request_data: dict[str, Any]) -> dict[str, Any]:
                 meta={"stage": stage, "progress": progress},
             )
 
-        self.update_state(state="PROGRESS", meta={"stage": "waiting_gpu", "progress": 15})
-        with _gpu_slot(settings.depth_gpu_lock_path):
-            version = str(request_data["version"])
-            model_size = str(request_data["model"])
-            requested_input_size = int(request_data["input_size"])
-            actual_input_size = effective_input_size(
-                version,
-                model_size,
-                requested_input_size,
-                settings.depth_da2_base_max_input_size,
-            )
-            depth_model = _get_model(version, model_size)
-            metrics = depth_model.process(
-                source,
-                target,
-                input_size=actual_input_size,
-                max_resolution=int(request_data["max_resolution"]),
-                target_fps=float(request_data["target_fps"]),
-                progress=update_progress,
-            )
+        version = str(request_data["version"])
+        model_size = str(request_data["model"])
+        requested_input_size = int(request_data["input_size"])
+        actual_input_size = effective_input_size(
+            version,
+            model_size,
+            requested_input_size,
+            settings.depth_da2_base_max_input_size,
+        )
+        depth_model = _get_model(version, model_size)
+        metrics = depth_model.process(
+            source,
+            target,
+            input_size=actual_input_size,
+            max_resolution=int(request_data["max_resolution"]),
+            target_fps=float(request_data["target_fps"]),
+            progress=update_progress,
+        )
         self.update_state(state="PROGRESS", meta={"stage": "uploading", "progress": 95})
         video_url = _upload_result(target, request_data, job_id)
         return {

@@ -34,6 +34,7 @@ const POLICIES: Record<BackendName, Array<{ methods: string[]; pattern: RegExp }
     { methods: ["GET", "POST"], pattern: /^\/internal\/admin\/observability\/(?:health|overview|analytics\/(?:summary|timeseries|stages|h3-duration)|calls(?:\/[0-9a-f-]+)?|tasks(?:\/[A-Za-z0-9_-]+)?|pricing-rules|export\.csv|maintenance\/cleanup)$/ },
     { methods: ["GET"], pattern: /^\/internal\/admin\/health-monitor\/(?:targets|status|history|incidents|config)$/ },
     { methods: ["POST"], pattern: /^\/internal\/admin\/health-monitor\/run-check$/ },
+    { methods: ["GET"], pattern: /^\/internal\/admin\/concurrency$/ },
     { methods: ["GET"], pattern: /^\/v1\/admin\/gpus$/ },
     { methods: ["POST"], pattern: /^\/v1\/admin\/gpus\/[01]\/(?:drain|disable|enable)$/ },
   ],
