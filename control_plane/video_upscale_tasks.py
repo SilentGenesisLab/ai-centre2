@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -438,19 +439,30 @@ def _media_metadata(path: Path) -> dict[str, Any]:
         reader.close()
 
 
+def _output_size(results: list[dict[str, Any]], max_resolution: int) -> tuple[int, int]:
+    """成片几何跟着上游结果的几何等比缩放，最长边 = max_resolution。不补黑边。
+
+    以前是按**源片**宽高比算一个框、再把上游结果 pad 进去，于是 FlashVSR 系自己
+    上下各裁掉约 19 行后输出的 1920x1024（1.875:1）塞进 16:9 的框里就多出
+    上下各 28px 纯黑。改成取**多数段**的几何：同一家 provider 的各段几何必然相同，
+    只有某段换家重试才可能不一致，取多数就不会因为一段回退而让全片跟着裁。
+    """
+    sizes = [tuple(_media_metadata(Path(result["path"]))["size"]) for result in results]
+    (width, height), _ = Counter(sizes).most_common(1)[0]
+    scale = max_resolution / max(width, height)
+    return max(2, round(width * scale / 2) * 2), max(2, round(height * scale / 2) * 2)
+
+
 def merge_segments(
     results: list[dict[str, Any]],
     segments: list[Segment],
     source: Path,
     work_dir: Path,
     max_resolution: int,
-) -> tuple[Path, int]:
-    """把上游结果按帧号拼回源片。返回（成片, 成片视频帧数）。"""
+) -> tuple[Path, int, tuple[int, int]]:
+    """把上游结果按帧号拼回源片。返回（成片, 成片视频帧数, 成片宽高）。"""
     source_meta = _media_metadata(source)
-    source_width, source_height = source_meta["size"]
-    scale = max_resolution / max(source_width, source_height)
-    width = max(2, round(source_width * scale / 2) * 2)
-    height = max(2, round(source_height * scale / 2) * 2)
+    width, height = _output_size(results, max_resolution)
     fps = float(source_meta.get("fps") or 30)
     normalized_dir = work_dir / "normalized"
     normalized_dir.mkdir(parents=True, exist_ok=True)
@@ -462,8 +474,11 @@ def merge_segments(
                 f"segment {segment.index}: provider has {provider_frames} frames, need {segment.min_frames}"
             )
         filters = [
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1"
+            # 等比缩放 + 居中裁掉溢出，不 pad —— 成片里就不会有黑边。目标几何就是多数段
+            # 自己的几何，所以正常情况这两步都是恒等变换；只有某段几何与多数段不同
+            # （换 provider 重试成功）时，才会为对齐尺寸裁掉边缘几个百分点。
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},setsar=1"
         ]
         if float(result["provider_fps"]) > fps * (1 + PROVIDER_FPS_TOLERANCE):
             # 上游给回来的帧比源片密：降帧率只会丢帧，不会造帧，所以这里可以安全地
@@ -511,7 +526,7 @@ def merge_segments(
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart", str(final),
     ])
-    return final, merged_frames
+    return final, merged_frames, (width, height)
 
 
 @celery_app.task(bind=True, name="control_plane.video_upscale", time_limit=14400, soft_time_limit=14340)
@@ -569,7 +584,7 @@ def _upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
                 })
         ordered = [results[index] for index in range(1, len(segments) + 1)]
         self.update_state(state="PROGRESS", meta={"stage": "merging", "progress": 88})
-        final, output_frames = merge_segments(
+        final, output_frames, output_size = merge_segments(
             ordered, segments, source, work_dir, int(request_data["max_resolution"]),
         )
         self.update_state(state="PROGRESS", meta={"stage": "uploading", "progress": 95})
@@ -580,7 +595,7 @@ def _upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
             "provider": "mixed" if len({item["provider"] for item in ordered}) > 1 else ordered[0]["provider"],
             "fallback_used": any(item["attempt_count"] > 1 for item in ordered),
             "segment_count": len(ordered), "segment_seconds_limit": settings.video_upscale_segment_seconds,
-            "fps": source_fps,
+            "fps": source_fps, "output_size": f"{output_size[0]}x{output_size[1]}",
             "source_frames": source_frames, "output_frames": output_frames,
             "lossless_frames": output_frames == source_frames,
             "context_frames": {

@@ -240,10 +240,55 @@ class VideoUpscaleTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             with patch("control_plane.video_upscale_tasks.imageio_ffmpeg.count_frames_and_secs",
                        return_value=(334, 334 / 30)):
-                final, frames = merge_segments(results, segments, Path("source.mp4"), Path(temporary), 1920)
+                final, frames = merge_segments(results, segments, Path("source.mp4"), Path(temporary), 1920)[:2]
         self.assertEqual(frames, 334)
         self.assertEqual(final.name, "upscaled.mp4")
         self.assertNotIn("-shortest", run_ffmpeg.call_args_list[-1].args[0])
+
+    @patch("control_plane.video_upscale_tasks._run_ffmpeg")
+    @patch("control_plane.video_upscale_tasks._media_metadata")
+    def test_merge_keeps_the_provider_geometry_and_never_pads(self, media_metadata, run_ffmpeg) -> None:
+        # 源片是 16:9，而 FlashVSR 系自己的产出是 1.875:1（它上下各裁掉约 19 行）。
+        # 旧代码按**源片**宽高比 pad，于是每段上下各多出 28px 纯黑；现在跟上游几何走。
+        media_metadata.side_effect = lambda path: (
+            {"size": (1280, 720), "fps": 24.0} if Path(path).name == "source.mp4"
+            else {"size": (1920, 1024), "fps": 24.0}
+        )
+        segments = [fake_segment(body_frames=255, tail_real_frames=0)]
+        results = [{"provider_frames": 283, "provider_fps": 24.0, "path": "result.mp4"}]
+        with TemporaryDirectory() as temporary:
+            with patch("control_plane.video_upscale_tasks.imageio_ffmpeg.count_frames_and_secs",
+                       return_value=(255, 255 / 24)):
+                final, frames, size = merge_segments(results, segments, Path("source.mp4"), Path(temporary), 1920)
+        self.assertEqual(size, (1920, 1024))
+        self.assertEqual(frames, 255)
+        filters = run_ffmpeg.call_args_list[0].args[0]
+        self.assertIn("scale=1920:1024:force_original_aspect_ratio=increase,crop=1920:1024,setsar=1",
+                      " ".join(filters))
+        self.assertNotIn("pad=", " ".join(filters))
+
+    @patch("control_plane.video_upscale_tasks._run_ffmpeg")
+    @patch("control_plane.video_upscale_tasks._media_metadata")
+    def test_merge_takes_the_majority_geometry_when_one_segment_falls_back(
+            self, media_metadata, run_ffmpeg) -> None:
+        # 换家重试成功的那一段几何会不一样。成片尺寸取多数段，不因为一段回退让全片跟着裁。
+        sizes = {"a.mp4": (1920, 1024), "b.mp4": (1920, 1024), "c.mp4": (1280, 720)}
+        media_metadata.side_effect = lambda path: (
+            {"size": (1280, 720), "fps": 24.0} if Path(path).name == "source.mp4"
+            else {"size": sizes[Path(path).name], "fps": 24.0}
+        )
+        segments = [fake_segment(index=index, body_frames=100, tail_real_frames=0) for index in (1, 2, 3)]
+        results = [{"provider_frames": 108, "provider_fps": 24.0, "path": name} for name in sizes]
+        with TemporaryDirectory() as temporary:
+            with patch("control_plane.video_upscale_tasks.imageio_ffmpeg.count_frames_and_secs",
+                       return_value=(300, 300 / 24)):
+                _, _, size = merge_segments(results, segments, Path("source.mp4"), Path(temporary), 1920)
+        self.assertEqual(size, (1920, 1024))
+        normalized = [call.args[0][call.args[0].index("-vf") + 1] for call in run_ffmpeg.call_args_list[:3]]
+        self.assertEqual(len(set(normalized)), 1, normalized)
+        self.assertTrue(all(item.startswith(
+            "scale=1920:1024:force_original_aspect_ratio=increase,crop=1920:1024,setsar=1,"
+            "trim=start_frame=8:end_frame=108,setpts=N/(24.0*TB)") for item in normalized), normalized)
 
     def test_route_is_observable(self) -> None:
         info = route_info("POST", "/v1/video-upscale/jobs")
