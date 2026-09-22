@@ -90,6 +90,7 @@ class CapabilityStore:
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
             ("seedance-2.0", "Seedance 2.0", "video_generation", ["text","image","video"], "video"),
+            ("seedance-2.5", "Seedance 2.5", "video_generation", ["text","image","video"], "video"),
             ("gpt-image-2", "GPT Image 2", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5", "GPT Image 2.5", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "image_generation", ["text","image"], "image"),
@@ -105,8 +106,15 @@ class CapabilityStore:
         mids = {r["code"]:r["id"] for r in db.execute("SELECT id,code FROM models")}
         bindings = [
           ("minimax-h3","local","minimax-h3","/v1/video-generations/minimax-h3/jobs","/v1/video-generations/minimax-h3/jobs/{task_id}",{"images":9,"videos":3,"audios":3},1,10),
-          ("seedance-2.0","jmapi","seedance2.0_vip","/jmapi/v1/multimodal2video","/jmapi/v1/query",{"images":9,"videos":3,"audios":3},1,20),
-          ("seedance-2.0","libtv","Seedance 2.0 VIP","/libtv/api/v1/video/publish","/api/v1/video/query/{task_id}",{"images":9,"videos":3,"audios":0},1,30),
+          ("seedance-2.0","jmapi","seedance2.0_vip","/jmapi/v1/multimodal2video","/jmapi/v1/query",{"images":9,"videos":3,"audios":3,"duration_max":15},1,20),
+          ("seedance-2.0","libtv","Seedance 2.0 VIP","/libtv/api/v1/video/publish","/api/v1/video/query/{task_id}",{"images":9,"videos":3,"audios":0,"duration_max":15},1,30),
+          # Seedance 2.5 的 model_version 是 seedance2.5（不是 seedance2.5_vip），2026-09-22 实测自上游返回的
+          # 版本白名单。上游另有两条硬约束在 generation_tasks._compatible 里拦：jmapi 只有 480p/720p。
+          # 参考素材上限：jmapi 30 图实测（image_resource_id_list ≤ 30）；视频/音频取自渠道文档的 10，
+          # 上游真正的闸门是「参考视频/音频总时长 ≤30s」（实测 11×4.9s 被拒）。libtv 侧不声明参考音频，
+          # 沿用 2.0 的实测结论；需要参考音频时走 jmapi。
+          ("seedance-2.5","jmapi","seedance2.5","/jmapi/v1/multimodal2video","/jmapi/v1/query",{"images":30,"videos":10,"audios":10,"duration_max":30},1,20),
+          ("seedance-2.5","libtv","star-video2.5","/libtv/api/v1/video/publish","/libtv/api/v1/video/query/{task_id}",{"images":30,"videos":10,"audios":0,"duration_max":30},1,30),
           ("gpt-image-2","grsai","gpt-image-2","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5","grsai","gpt-image-2.5","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
@@ -117,12 +125,12 @@ class CapabilityStore:
             db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid4()),mids[model],ids[channel],upstream,submit,query,None,json.dumps(caps),"{}",enabled,priority,stamp,stamp))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
-                   (json.dumps({"images":9,"videos":3,"audios":3}),stamp,mids["seedance-2.0"],ids["jmapi"]))
+                   (json.dumps({"images":9,"videos":3,"audios":3,"duration_max":15}),stamp,mids["seedance-2.0"],ids["jmapi"]))
         db.execute(
             "UPDATE model_channels SET query_path=?,capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
             (
                 "/libtv/api/v1/video/query/{task_id}",
-                json.dumps({"images":9,"videos":3,"audios":0}),
+                json.dumps({"images":9,"videos":3,"audios":0,"duration_max":15}),
                 stamp,
                 mids["seedance-2.0"],
                 ids["libtv"],

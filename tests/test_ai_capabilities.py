@@ -31,7 +31,7 @@ class CapabilityTests(unittest.TestCase):
         channels={x["code"]:x for x in self.store.channels()}
         self.assertFalse(channels["jmapi"]["enabled"]); self.assertFalse(channels["libtv"]["enabled"])
         self.assertEqual(channels["libtv"]["auth_type"],"none")
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","seedance-2.0","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2"})
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -61,6 +61,102 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(
             _compatible(self.store.binding("seedance-2.0", "libtv"), request)
         )
+
+    def test_seedance_25_bindings_and_payloads(self):
+        request = {
+            "prompt": "原样提示词",
+            "reference_image_urls": ["https://x/a.png"],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "duration_seconds": 20,
+            "aspect_ratio": "16:9",
+            "resolution": "720p",
+            "sound": False,
+        }
+        jm = self.store.binding("seedance-2.5", "jmapi")
+        self.assertEqual(jm["upstream_model"], "seedance2.5")
+        self.assertEqual(
+            jm["submit_path"], "/jmapi/v1/multimodal2video"
+        )
+        self.assertTrue(_compatible(jm, request))
+        self.assertEqual(_payload(jm, request)["model_version"], "seedance2.5")
+        tv = self.store.binding("seedance-2.5", "libtv")
+        self.assertEqual(tv["upstream_model"], "star-video2.5")
+        self.assertEqual(
+            tv["query_path"], "/libtv/api/v1/video/query/{task_id}"
+        )
+        self.assertTrue(_compatible(tv, request))
+        self.assertEqual(_payload(tv, request)["model"], "star-video2.5")
+
+    def test_seedance_25_resolution_split_between_channels(self):
+        def resolution_request(resolution, duration=5):
+            return {
+                "reference_image_urls": [],
+                "reference_video_urls": [],
+                "reference_audio_urls": [],
+                "duration_seconds": duration,
+                "resolution": resolution,
+            }
+
+        jm = self.store.binding("seedance-2.5", "jmapi")
+        tv = self.store.binding("seedance-2.5", "libtv")
+        # 480p 只有 2.5 能做，jmapi 的 2.5 可以，jmapi 的 2.0 不行。
+        self.assertTrue(_compatible(jm, resolution_request("480p")))
+        self.assertFalse(
+            _compatible(
+                self.store.binding("seedance-2.0", "jmapi"),
+                resolution_request("480p"),
+            )
+        )
+        # 1080p 上游只认 libtv。
+        self.assertFalse(_compatible(jm, resolution_request("1080p")))
+        self.assertTrue(_compatible(tv, resolution_request("1080p")))
+
+    def test_duration_ceiling_is_per_binding(self):
+        def duration_request(duration):
+            return {
+                "reference_image_urls": [],
+                "reference_video_urls": [],
+                "reference_audio_urls": [],
+                "duration_seconds": duration,
+                "resolution": "720p",
+            }
+
+        for channel in ("jmapi", "libtv"):
+            self.assertTrue(
+                _compatible(
+                    self.store.binding("seedance-2.0", channel),
+                    duration_request(15),
+                )
+            )
+            self.assertFalse(
+                _compatible(
+                    self.store.binding("seedance-2.0", channel),
+                    duration_request(16),
+                )
+            )
+            self.assertTrue(
+                _compatible(
+                    self.store.binding("seedance-2.5", channel),
+                    duration_request(30),
+                )
+            )
+
+    def test_reference_image_cap_is_per_binding(self):
+        request = {
+            "reference_image_urls": [f"https://x/{i}.png" for i in range(12)],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "duration_seconds": 5,
+            "resolution": "720p",
+        }
+        for channel in ("jmapi", "libtv"):
+            self.assertFalse(
+                _compatible(self.store.binding("seedance-2.0", channel), request)
+            )
+            self.assertTrue(
+                _compatible(self.store.binding("seedance-2.5", channel), request)
+            )
 
     def test_text_only_seedance_injects_blank_reference_image(self):
         request = {

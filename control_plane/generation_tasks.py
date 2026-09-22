@@ -185,12 +185,24 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     )
     if not media_supported:
         return False
+    # 各绑定的时长上限不同（Seedance 2.0 是 15s，2.5 是 30s），超出即换渠道而不是让上游拒。
+    duration_max = c.get("duration_max")
+    if duration_max and int(r.get("duration_seconds") or 0) > int(duration_max):
+        return False
     # jmapi's Seedance 2.0 VIP contract rejects 480p and requires its
     # Seedance 2.5 model for that resolution. `auto` can select libtv instead.
     if (
         binding.get("adapter") == "jmapi"
         and binding.get("upstream_model") == "seedance2.0_vip"
         and str(r.get("resolution") or "").lower() == "480p"
+    ):
+        return False
+    # jmapi's Seedance 2.5 only serves 480p/720p ("video_resolution must be one
+    # of 480p, 720p for model_version seedance2.5"); 1080p has to go to libtv.
+    if (
+        binding.get("adapter") == "jmapi"
+        and binding.get("upstream_model") == "seedance2.5"
+        and str(r.get("resolution") or "").lower() == "1080p"
     ):
         return False
     return True
@@ -324,7 +336,7 @@ def _finish_success(
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
         return store.job(job_id)
-    if request.get("model") == "seedance-2.0":
+    if request.get("model") in {"seedance-2.0", "seedance-2.5"}:
         store.update_job(job_id, stage="uploading_oss")
         urls = _persist_video_results(urls, request, job_id)
     elapsed = round(time.monotonic() - started, 3)

@@ -639,10 +639,10 @@ class VideoGenerationRequest(BaseModel):
     model: str = Field(default="seedance-2.0", min_length=1, max_length=128)
     channel: Literal["jmapi", "libtv", "auto"] = "jmapi"
     prompt: str = Field(min_length=1, max_length=10000)
-    reference_image_urls: list[str] = Field(default_factory=list, max_length=9)
-    reference_video_urls: list[str] = Field(default_factory=list, max_length=3)
-    reference_audio_urls: list[str] = Field(default_factory=list, max_length=3)
-    duration_seconds: int = Field(default=5, ge=2, le=15)
+    reference_image_urls: list[str] = Field(default_factory=list, max_length=30)
+    reference_video_urls: list[str] = Field(default_factory=list, max_length=10)
+    reference_audio_urls: list[str] = Field(default_factory=list, max_length=10)
+    duration_seconds: int = Field(default=5, ge=2, le=30)
     resolution: Literal["480p", "720p", "1080p", "2K"] = "720p"
     aspect_ratio: Literal["9:16", "16:9", "1:1", "4:3", "3:4"] = "9:16"
     sound: bool = False

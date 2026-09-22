@@ -741,6 +741,7 @@ curl -X POST "$BASE/v1/video-generations/jobs" \
 - `channel`省略时默认`jmapi`；传`auto`时才允许在可重试故障后切换到libtv。
 - 明确传`jmapi`或`libtv`时不切换渠道。
 - jmapi首版支持图片参考；libtv首版支持视频参考。渠道未配置或未通过健康检查时不会受理任务。
+- `model`也接受`seedance-2.5`：时长4～30秒（超过15秒只有它接），参考素材上限30图/10视频且参考视频音频合计≤30秒；分辨率上jmapi只有480p/720p（1080p会自动落到libtv），480p只有2.5能做。
 
 ```http
 GET  /v1/video-generations/jobs/{job_id}

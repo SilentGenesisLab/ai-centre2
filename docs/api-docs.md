@@ -302,7 +302,7 @@ curl -sS -X POST \
 
 `POST /v1/video-generations/jobs`
 
-可同时传多张图片、多个视频和多段音频。具体支持数量取决于渠道；当前 `jmapi` 最多9图、3视频、3音频，`libtv` 最多9图、3视频且不接收独立音频。
+可同时传多张图片、多个视频和多段音频。具体支持数量取决于渠道与模型：`seedance-2.0` 是 `jmapi` 最多9图、3视频、3音频，`libtv` 最多9图、3视频且不接收独立音频；`seedance-2.5` 是两个渠道都最多30图、10视频（参考视频/音频总时长上限 30 秒），独立音频只有 `jmapi` 接收。
 
 纯文本请求可以不传任何参考素材。由于上游 Seedance 渠道要求至少存在一个媒体节点，AI Centre 会在服务端自动注入一张中性空白参考图；调用方不需要准备空白图，任务记录也仍按“纯文本生成”统计。只要显式提供了任一图片、视频或音频，系统就不会注入空白图。
 
@@ -347,13 +347,13 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | 当前使用 `seedance-2.0` | `seedance-2.0` |
+| `model` | 否 | `seedance-2.0`、`seedance-2.5` | `seedance-2.0` |
 | `channel` | 否 | `jmapi`、`libtv`、`auto` | `jmapi` |
 | `prompt` | 是 | 1～10000字符 | — |
-| `reference_image_urls` | 否 | jmapi、libtv最多9张 | `[]` |
-| `reference_video_urls` | 否 | 最多3个 | `[]` |
-| `reference_audio_urls` | 否 | jmapi最多3个；libtv不支持 | `[]` |
-| `duration_seconds` | 否 | 2～15秒 | 5 |
+| `reference_image_urls` | 否 | 2.0最多9张；2.5最多30张 | `[]` |
+| `reference_video_urls` | 否 | 2.0最多3个；2.5最多10个 | `[]` |
+| `reference_audio_urls` | 否 | jmapi最多3个（2.5最多10个）；libtv不支持 | `[]` |
+| `duration_seconds` | 否 | 2～30秒；`seedance-2.0` 上限15秒 | 5 |
 | `resolution` | 否 | `480p`、`720p`、`1080p`、`2K` | `720p` |
 | `aspect_ratio` | 否 | `9:16`、`16:9`、`1:1`、`4:3`、`3:4` | `9:16` |
 | `sound` | 否 | `true`保留上游音轨；`false`在OSS转存前确定性移除音轨 | `false` |
@@ -361,6 +361,21 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 | `metadata` | 否 | JSON对象 | `{}` |
 
 渠道分辨率说明：当前 jmapi 的 `seedance2.0_vip` 不接受 `480p`，明确指定 `channel: "jmapi"` 且请求480P时接口会在提交前返回422。需要480P时请使用 `channel: "auto"`（自动选择 libtv）或明确指定 `libtv`；720P已在两个渠道完成生产验证。
+
+### 5.1.1 Seedance 2.5
+
+`model` 传 `seedance-2.5` 即可，两个渠道都提供：
+
+| 渠道 | 上游模型 | 时长 | 分辨率 | 参考素材 |
+|---|---|---|---|---|
+| `jmapi` | `model_version=seedance2.5` | 4～30秒 | `480p`、`720p` | 最多30图、10视频、10音频；视频/音频**合计**时长 ≤30秒 |
+| `libtv` | `star-video2.5` | 4～30秒 | `480p`、`720p`、`1080p` | 最多30图、10视频；不接收独立音频 |
+
+- `480p` 只有 2.5 能做：jmapi 侧 2.0 会被上游拒绝，2.5 可以。
+- `1080p` 在 jmapi 侧不可用（上游只认 480p/720p），`channel: "auto"` 会自动落到 libtv；显式指定 `jmapi` 时接口在提交前返回422。
+- 时长超过 15 秒的请求只有 2.5 能接，显式指定 `seedance-2.0` 时同样在提交前返回422，不会把必然被上游拒绝的请求发出去。
+- 上游还支持 `21:9` 和 `adaptive` 画幅，当前接口的 `aspect_ratio` 尚未开放这两个值。
+- 结果与 2.0 一样先转存到 AI Centre 的 OSS 再返回 `result_urls`。
 
 ### 5.2 查询与取消通用视频任务
 
