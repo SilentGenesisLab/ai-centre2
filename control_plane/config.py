@@ -154,6 +154,12 @@ class Settings(BaseSettings):
     video_upscale_result_expires_seconds: int = 604800
     video_upscale_work_dir: Path = Path("/home/donxu/ai-centre/runtime/video-upscale")
     video_upscale_segment_seconds: float = 11.8
+    # 每段请求多带的真实帧数：head 供上游预热（治首帧崩坏），tail 兜上游丢尾帧（治每段停滞）。
+    # 两者都从源片自己的相邻段里取，合并时丢弃，不进正片。单位是帧，不是秒。
+    # tail 取 20 是因为实测丢尾帧在 8~13 帧之间浮动（且可能是 8 的倍数、出现 16），
+    # 余量必须比最坏情况宽，否则那一段会因为「凑不齐正片」被判失败重试。
+    video_upscale_head_context_frames: int = 8
+    video_upscale_tail_margin_frames: int = 20
     video_upscale_segment_concurrency: int = 3
     video_upscale_segment_attempts: int = 3
     concurrency_slot_wait_seconds: float = 7200
