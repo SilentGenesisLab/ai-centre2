@@ -1,7 +1,7 @@
 # AI Centre 2 对外 API 使用手册
 
-版本：3.0  
-更新日期：2026-09-09  
+版本：3.1  
+更新日期：2026-09-22  
 生产地址：`https://aicentre2.sligenai.cn:8443`
 
 > 本文档仅列出当前生产环境已经开放的公网接口。复制示例后，替换 `API_KEY` 和素材 URL 即可调用。
@@ -54,11 +54,40 @@ curl -sS "$BASE_URL/health"
 ### 1.3 素材 URL 规则
 
 - 公网接口只接受公网 `HTTPS` URL，不接受 `C:\...`、`K:\...`、`/home/...` 等本地路径。
-- 可以使用带签名查询参数的 OSS/S3 URL。
+- 本地素材可以先用中台的 `/v1/uploads` 上传换取直链，见 §1.4；也可以自带带签名查询参数的 OSS/S3 URL。
 - 禁止 localhost、内网地址、云元数据地址、URL 用户名密码和非 HTTPS 协议。
 - 重定向后的每个地址都会重新进行安全检查。
 - 音视频通常最大 512 MiB；OCR 单图最大 20 MiB、单批最多20张。
 - 签名 URL 只需在中台下载素材期间有效，建议至少保留30分钟有效期。
+
+### 1.4 上传本地素材
+
+本地文件不必先传到外部对象存储。中台自带上传接口，上传成功后返回的公网 HTTPS 直链，
+可以直接填进任何接口的 `*_url` / `source_uri` 字段。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/uploads" \
+  -H "Authorization: Bearer $API_KEY" \
+  -F "file=@./key-visual.png"
+```
+
+返回 `201`：
+
+```json
+{
+  "key": "ai-centre/uploads/2026/09/22/fff270c6d88247eca9cfbe41006920bf.png",
+  "url": "https://bucket-silge-internal-products.oss-cn-shenzhen.aliyuncs.com/ai-centre/uploads/2026/09/22/fff270c6d88247eca9cfbe41006920bf.png",
+  "content_type": "image/png",
+  "bytes": 12335,
+  "filename": "key-visual.png"
+}
+```
+
+- 请求为 `multipart/form-data`，字段名固定为 `file`，单文件最大 512 MiB。
+- 空文件返回 `422`；中台未配置对象存储时返回 `503`。
+- 前缀由服务端决定，调用方不能指定；每次上传生成新的随机文件名，不会覆盖已有对象。
+- 返回的 `url` 是对象的公网直链，无需再签名，可直接使用。
+- 上传的素材同样受 §11 的保密要求约束：不要放进浏览器前端或公开仓库。
 
 ## 2. 接口总览
 
