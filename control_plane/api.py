@@ -139,6 +139,7 @@ app = FastAPI(
     version="2.0.0",
     openapi_tags=[
         {"name": "系统状态", "description": "中台及上游服务健康状态。"},
+        {"name": "文件上传", "description": "把本地素材上传到中台自有 OSS 暂存区，换取公网 HTTPS 直链。"},
         {"name": "唇形驱动", "description": "MuseTalk 唇形驱动与可选 GFPGAN 人脸修复。"},
         {"name": "语音识别", "description": "音频或视频的中文语音识别与时间分段。"},
         {"name": "语音合成", "description": "普通 TTS、VoxCPM2 深度语音克隆及异步任务。"},
@@ -4599,23 +4600,57 @@ async def admin_storage_status()->dict[str,Any]:
     except RuntimeError as exc:return {"configured":False,"error":str(exc)}
 
 
-@app.post("/internal/admin/storage/upload",include_in_schema=False,dependencies=[Depends(require_service_token)])
-async def admin_storage_upload(file:UploadFile=File(...),prefix:str|None=Form(default=None,max_length=128))->dict[str,Any]:
+MAX_UPLOAD_BYTES = 512 * 1024 * 1024
+
+
+async def _store_uploaded_file(file: UploadFile, prefix: str | None) -> dict[str, Any]:
+    """把上传流落盘到临时文件再转投 OSS，返回含公网直链的结果。"""
     try:
-        storage=OssStorage.from_env(); storage.normalize_prefix(prefix)
-    except RuntimeError as exc:raise HTTPException(503,str(exc)) from exc
-    except ValueError as exc:raise HTTPException(422,str(exc)) from exc
-    upload_dir=get_settings().control_runtime_dir/"oss-uploads"; upload_dir.mkdir(parents=True,exist_ok=True)
-    temporary=upload_dir/f"{uuid4().hex}.upload"; size=0
+        storage = OssStorage.from_env()
+        storage.normalize_prefix(prefix)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    upload_dir = get_settings().control_runtime_dir / "oss-uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    temporary = upload_dir / f"{uuid4().hex}.upload"
+    size = 0
     try:
         with temporary.open("wb") as output:
-            while chunk:=await file.read(4*1024*1024):
-                size+=len(chunk)
-                if size>512*1024*1024:raise HTTPException(413,"文件不能超过512MiB")
+            while chunk := await file.read(4 * 1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "文件不能超过512MiB")
                 output.write(chunk)
-        if size==0:raise HTTPException(422,"文件不能为空")
-        return await asyncio.to_thread(storage.upload,temporary,file.filename or "upload.bin",file.content_type,prefix)
-    finally:temporary.unlink(missing_ok=True)
+        if size == 0:
+            raise HTTPException(422, "文件不能为空")
+        return await asyncio.to_thread(
+            storage.upload, temporary, file.filename or "upload.bin", file.content_type, prefix
+        )
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+@app.post(
+    "/v1/uploads",
+    tags=["文件上传"],
+    summary="上传本地素材并取得公网直链",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_service_token)],
+)
+async def create_upload(file: UploadFile = File(...)) -> dict[str, Any]:
+    """把本地文件存进中台自有 OSS，返回可直接作为其它能力输入的公网 HTTPS URL。
+
+    调用方不能自选对象前缀：这是公网端点，开放前缀等于允许写入桶里任意目录
+    （包括供应商结果所在的 ai-video-kernel/）。落点由 OSS_ADMIN_UPLOAD_PREFIX 决定。
+    """
+    return await _store_uploaded_file(file, None)
+
+
+@app.post("/internal/admin/storage/upload",include_in_schema=False,dependencies=[Depends(require_service_token)])
+async def admin_storage_upload(file:UploadFile=File(...),prefix:str|None=Form(default=None,max_length=128))->dict[str,Any]:
+    return await _store_uploaded_file(file,prefix)
 
 
 @app.get("/internal/admin/ai-capabilities/channels",include_in_schema=False,dependencies=[Depends(require_service_token)])

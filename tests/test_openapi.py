@@ -22,6 +22,13 @@ class OpenApiTests(unittest.TestCase):
         self.assertEqual(set(lipsync_content), {"application/json"})
         self.assertEqual(set(asr_content), {"application/json"})
         self.assertIn("/v1/ocr/batch", paths)
+        self.assertIn("/v1/uploads", paths)
+        upload_content = paths["/v1/uploads"]["post"]["requestBody"]["content"]
+        self.assertEqual(set(upload_content), {"multipart/form-data"})
+        upload_schema = upload_content["multipart/form-data"]["schema"]["$ref"].rsplit("/", 1)[-1]
+        self.assertEqual(
+            schema["components"]["schemas"][upload_schema]["required"], ["file"]
+        )
         self.assertIn("/v1/face-mosaic/jobs", paths)
         self.assertIn("/v1/face-mosaic/jobs/wait", paths)
         self.assertIn("/v1/video-scenes/jobs", paths)
@@ -62,17 +69,20 @@ class OpenApiTests(unittest.TestCase):
             tag_names,
             [
                 "系统状态",
+                "文件上传",
                 "唇形驱动",
                 "语音识别",
                 "语音合成",
                 "OCR 文字识别",
                 "人脸处理",
                 "视频切片",
+                "AI 视频拉片",
                 "水印处理",
                 "视频深度推理",
                 "通用视频生成",
                 "图像生成",
                 "音频分离",
+                "视频调色",
                 "视频超分",
                 "MiniMax H3视频生成",
             ],
