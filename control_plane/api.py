@@ -4600,9 +4600,6 @@ async def admin_storage_status()->dict[str,Any]:
     except RuntimeError as exc:return {"configured":False,"error":str(exc)}
 
 
-MAX_UPLOAD_BYTES = 512 * 1024 * 1024
-
-
 async def _store_uploaded_file(file: UploadFile, prefix: str | None) -> dict[str, Any]:
     """把上传流落盘到临时文件再转投 OSS，返回含公网直链的结果。"""
     try:
