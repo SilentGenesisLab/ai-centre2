@@ -8,6 +8,7 @@ export const SECTIONS = [
   { id: "scene", label: "视频切片" }, { id: "depth", label: "视频深度推理" },
   { id: "upscale", label: "视频超分" },
   { id: "h3", label: "MiniMax H3 生成" }, { id: "image", label: "图像能力" },
+  { id: "music", label: "音乐生成" },
   { id: "storage", label: "OSS 对象存储" },
   { id: "resources", label: "GPU 与服务" }, { id: "concurrency", label: "并发与调度" },
   { id: "models", label: "模型与音色" },
@@ -35,6 +36,7 @@ export const NAVIGATION: NavigationItem[] = [
     { id: "audio", label: "音频", icon: "audio", children: [
       { id: "tts", label: "语音合成", icon: "tts", href: "tts" },
       { id: "separation", label: "音频分离", icon: "separation", href: "separation" },
+      { id: "music", label: "音乐生成", icon: "audio", href: "music" },
     ] },
     { id: "video", label: "视频", icon: "video", children: [
       { id: "lipsync", label: "唇形驱动", icon: "lipsync", href: "lipsync" },

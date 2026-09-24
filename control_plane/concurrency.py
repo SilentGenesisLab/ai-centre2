@@ -109,6 +109,13 @@ MODULES: tuple[ConcurrencyModule, ...] = (
         job_default=4,
     ),
     ConcurrencyModule(
+        module="audio_generation", label="音乐生成", queue="audio_generation",
+        service="ai-centre-audio-generation-worker.service", task="control_plane.audio_generation",
+        job_default=2,
+        job_note="一次提交在上游是两条 task（两首歌），但这里数的是作业数；"
+                 "生成期间几乎只是在轮询，2 个作业并行足够",
+    ),
+    ConcurrencyModule(
         module="watermark_remove", label="视频去水印", queue="watermark_remove",
         service="ai-centre-watermark-worker.service", task="control_plane.watermark_remove",
         job_default=1,

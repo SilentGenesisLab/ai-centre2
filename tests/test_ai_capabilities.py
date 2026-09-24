@@ -31,7 +31,11 @@ class CapabilityTests(unittest.TestCase):
         channels={x["code"]:x for x in self.store.channels()}
         self.assertFalse(channels["jmapi"]["enabled"]); self.assertFalse(channels["libtv"]["enabled"])
         self.assertEqual(channels["libtv"]["auth_type"],"none")
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2"})
+        # mxapi 是预设渠道：默认关闭、默认 bearer（token 只能从管理端塞，不进仓库）
+        self.assertFalse(channels["mxapi"]["enabled"])
+        self.assertEqual(channels["mxapi"]["auth_type"],"bearer")
+        self.assertFalse(channels["mxapi"]["credential_configured"])
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","suno-v6","suno-sound"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)

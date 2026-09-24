@@ -462,6 +462,7 @@ const BUSINESS_SECTIONS: Partial<Record<SectionId, string>> = {
   depth: "depth",
   separation: "separation",
   h3: "h3",
+  music: "audio_generation",
 };
 
 function dateInput(value: Date): string {
@@ -1215,6 +1216,7 @@ export function AdminConsole({
             <MiniMaxH3 setError={setError} showNotice={showNotice} />
           )}
           {section === "image" && <ImageCapabilities />}
+          {section === "music" && <MusicCapabilities />}
           {section === "storage" && <OssStorage setError={setError} showNotice={showNotice} />}
           {section === "separation" && (
             <AudioSeparation setError={setError} showNotice={showNotice} />
@@ -1278,13 +1280,13 @@ function ChannelManagement({setError,showNotice}:{setError:(v:string)=>void;show
   useEffect(()=>{void load()},[load]);
   async function save(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);const fd=new FormData(event.currentTarget);const credential=String(fd.get("credential")||"");const body={name:String(fd.get("name")),...(editing?{}:{code:String(fd.get("code"))}),deployment_type:String(fd.get("deployment_type")),adapter:String(fd.get("adapter")),base_url:String(fd.get("base_url")),...(credential?{credential}:{}),auth_type:String(fd.get("auth_type")),priority:Number(fd.get("priority")),timeout_seconds:Number(fd.get("timeout_seconds"))};try{await apiRequest("control",editing?`/internal/admin/ai-capabilities/channels/${editing.id}`:"/internal/admin/ai-capabilities/channels",{method:editing?"PATCH":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});showNotice("渠道配置已保存");setEditing(null);setCreating(false);await load()}catch(e){setError(uiError(e))}finally{setBusy(false)}}
   async function action(item:AiChannel,action:"test"|"toggle"|"delete"){setBusy(true);try{if(action==="test")await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}/test`,{method:"POST"});else if(action==="toggle")await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:!item.enabled})});else await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}`,{method:"DELETE"});showNotice(action==="test"?"连接检测完成":"渠道状态已更新");await load()}catch(e){setError(uiError(e))}finally{setBusy(false)}}
-  return <><div className="page-title-row"><div><span className="eyebrow">AI CAPABILITIES</span><h2>渠道管理</h2><p>统一管理本地部署和第三方接口。密钥加密保存且仅显示尾部。</p></div><button className="primary-button" onClick={()=>setCreating(true)}>新增渠道</button></div><Panel title="模型与生成渠道" eyebrow={`${items.length} CHANNELS`}><div className="table-shell"><table><thead><tr><th>渠道</th><th>类型</th><th>连接配置</th><th>状态</th><th>优先级</th><th>操作</th></tr></thead><tbody>{items.map(item=><tr key={item.id}><td><strong>{item.name}</strong><small>{item.code}</small></td><td>{item.deployment_type==="local"?"本地部署":"第三方接口"}</td><td><span>{item.base_url||"未配置地址"}</span><small>{item.credential_configured?`密钥 ····${item.credential_tail||""}`:"未配置密钥"}</small></td><td><StatusBadge status={item.enabled?item.health_status:"disabled"}/>{item.last_error&&<small>{item.last_error}</small>}</td><td>{item.priority}</td><td><div className="button-row"><button disabled={busy} onClick={()=>void action(item,"test")}>测试连接</button><button onClick={()=>setEditing(item)}>编辑</button><button disabled={busy} onClick={()=>void action(item,"toggle")}>{item.enabled?"停用":"启用"}</button>{!["local","jmapi","libtv","grsai"].includes(item.code)&&<button className="danger-button" onClick={()=>void action(item,"delete")}>删除</button>}</div></td></tr>)}</tbody></table></div></Panel>{(creating||editing)&&<Modal title={editing?`编辑 ${editing.name}`:"新增渠道"} onClose={()=>{setCreating(false);setEditing(null)}}><form className="form-grid" onSubmit={save}><label>名称<input name="name" required defaultValue={editing?.name}/></label>{!editing&&<label>唯一编码<input name="code" required pattern="[a-z][a-z0-9_-]+"/></label>}<label>部署类型<Select name="deployment_type" defaultValue={editing?.deployment_type||"third_party"}><option value="third_party">第三方接口</option><option value="local">本地部署</option></Select></label><label>协议适配器<Select name="adapter" defaultValue={editing?.adapter||"jmapi"}><option value="jmapi">jmapi</option><option value="libtv">libtv</option><option value="grsai">GRSAI</option><option value="local_h3">本地 MiniMax H3</option></Select></label><label className="full-span">Base URL<input name="base_url" type="url" defaultValue={editing?.base_url}/></label><label>鉴权方式<Select name="auth_type" defaultValue="none"><option value="none">无</option><option value="bearer">Bearer</option><option value="x-api-key">X-API-Key</option></Select></label><label>密钥<input name="credential" type="password" placeholder={editing?.credential_configured?"留空则保持原密钥":"可选"}/></label><label>优先级<input name="priority" type="number" min="1" max="1000" defaultValue={editing?.priority||100}/></label><label>超时（秒）<input name="timeout_seconds" type="number" min="5" max="14400" defaultValue={editing?.timeout_seconds||1800}/></label><div className="button-row full-span"><button type="button" onClick={()=>{setCreating(false);setEditing(null)}}>取消</button><button className="primary-button" disabled={busy}>{busy?"保存中…":"保存"}</button></div></form></Modal>}</>
+  return <><div className="page-title-row"><div><span className="eyebrow">AI CAPABILITIES</span><h2>渠道管理</h2><p>统一管理本地部署和第三方接口。密钥加密保存且仅显示尾部。</p></div><button className="primary-button" onClick={()=>setCreating(true)}>新增渠道</button></div><Panel title="模型与生成渠道" eyebrow={`${items.length} CHANNELS`}><div className="table-shell"><table><thead><tr><th>渠道</th><th>类型</th><th>连接配置</th><th>状态</th><th>优先级</th><th>操作</th></tr></thead><tbody>{items.map(item=><tr key={item.id}><td><strong>{item.name}</strong><small>{item.code}</small></td><td>{item.deployment_type==="local"?"本地部署":"第三方接口"}</td><td><span>{item.base_url||"未配置地址"}</span><small>{item.credential_configured?`密钥 ····${item.credential_tail||""}`:"未配置密钥"}</small></td><td><StatusBadge status={item.enabled?item.health_status:"disabled"}/>{item.last_error&&<small>{item.last_error}</small>}</td><td>{item.priority}</td><td><div className="button-row"><button disabled={busy} onClick={()=>void action(item,"test")}>测试连接</button><button onClick={()=>setEditing(item)}>编辑</button><button disabled={busy} onClick={()=>void action(item,"toggle")}>{item.enabled?"停用":"启用"}</button>{!["local","jmapi","libtv","grsai","mxapi"].includes(item.code)&&<button className="danger-button" onClick={()=>void action(item,"delete")}>删除</button>}</div></td></tr>)}</tbody></table></div></Panel>{(creating||editing)&&<Modal title={editing?`编辑 ${editing.name}`:"新增渠道"} onClose={()=>{setCreating(false);setEditing(null)}}><form className="form-grid" onSubmit={save}><label>名称<input name="name" required defaultValue={editing?.name}/></label>{!editing&&<label>唯一编码<input name="code" required pattern="[a-z][a-z0-9_-]+"/></label>}<label>部署类型<Select name="deployment_type" defaultValue={editing?.deployment_type||"third_party"}><option value="third_party">第三方接口</option><option value="local">本地部署</option></Select></label><label>协议适配器<Select name="adapter" defaultValue={editing?.adapter||"jmapi"}><option value="jmapi">jmapi</option><option value="libtv">libtv</option><option value="grsai">GRSAI</option><option value="mxapi">mxapi（Suno 音乐）</option><option value="local_h3">本地 MiniMax H3</option></Select></label><label className="full-span">Base URL<input name="base_url" type="url" defaultValue={editing?.base_url}/></label><label>鉴权方式<Select name="auth_type" defaultValue="none"><option value="none">无</option><option value="bearer">Bearer</option><option value="x-api-key">X-API-Key</option></Select></label><label>密钥<input name="credential" type="password" placeholder={editing?.credential_configured?"留空则保持原密钥":"可选"}/></label><label>优先级<input name="priority" type="number" min="1" max="1000" defaultValue={editing?.priority||100}/></label><label>超时（秒）<input name="timeout_seconds" type="number" min="5" max="14400" defaultValue={editing?.timeout_seconds||1800}/></label><div className="button-row full-span"><button type="button" onClick={()=>{setCreating(false);setEditing(null)}}>取消</button><button className="primary-button" disabled={busy}>{busy?"保存中…":"保存"}</button></div></form></Modal>}</>
 }
 
 function AiModelManagement({setError}:{setError:(v:string)=>void}) {
   const [items,setItems]=useState<AiModel[]>([]);
   useEffect(()=>{apiRequest<{items:AiModel[]}>("control","/internal/admin/ai-capabilities/models").then(r=>setItems(r.items)).catch(e=>setError(uiError(e)))},[setError]);
-  return <><div className="page-title-row"><div><span className="eyebrow">AI CAPABILITIES</span><h2>模型管理</h2><p>一个逻辑模型可以绑定多个本地或第三方渠道。</p></div></div><div className="card-grid">{items.map(model=><Panel key={model.id} title={model.name} eyebrow={model.code}><div className="summary-grid"><div><small>能力类型</small><strong>{model.capability_type==="video_generation"?"视频生成":model.capability_type}</strong></div><div><small>输入 / 输出</small><strong>{model.input_modalities.join("、")} → {model.output_modality}</strong></div></div><div className="provider-list">{model.channels.map(channel=><article key={channel.id}><div><strong>{channel.channel_name}</strong><small>{channel.deployment_type==="local"?"本地部署":"第三方接口"} · {channel.upstream_model}</small></div><StatusBadge status={channel.channel_enabled&&channel.enabled?channel.health_status:"disabled"}/><pre>{`图片 ${channel.capabilities.images||0} · 视频 ${channel.capabilities.videos||0} · 音频 ${channel.capabilities.audios||0}`}</pre></article>)}</div></Panel>)}</div></>
+  return <><div className="page-title-row"><div><span className="eyebrow">AI CAPABILITIES</span><h2>模型管理</h2><p>一个逻辑模型可以绑定多个本地或第三方渠道。</p></div></div><div className="card-grid">{items.map(model=><Panel key={model.id} title={model.name} eyebrow={model.code}><div className="summary-grid"><div><small>能力类型</small><strong>{model.capability_type==="video_generation"?"视频生成":model.capability_type==="audio_generation"?"音乐生成":model.capability_type}</strong></div><div><small>输入 / 输出</small><strong>{model.input_modalities.join("、")} → {model.output_modality}</strong></div></div><div className="provider-list">{model.channels.map(channel=><article key={channel.id}><div><strong>{channel.channel_name}</strong><small>{channel.deployment_type==="local"?"本地部署":"第三方接口"} · {channel.upstream_model}</small></div><StatusBadge status={channel.channel_enabled&&channel.enabled?channel.health_status:"disabled"}/><pre>{`图片 ${channel.capabilities.images||0} · 视频 ${channel.capabilities.videos||0} · 音频 ${channel.capabilities.audios||0}`}</pre></article>)}</div></Panel>)}</div></>
 }
 
 const SERVICE_NAMES: Record<string, string> = {
@@ -1300,6 +1302,7 @@ const SERVICE_NAMES: Record<string, string> = {
   separation: "音频分离",
   h3: "MiniMax H3",
   watermark: "水印处理",
+  audio_generation: "音乐生成",
 };
 const OPERATION_NAMES: Record<string, string> = {
   transcribe: "识别",
@@ -1692,6 +1695,7 @@ function Analytics({
               "upscale",
               "separation",
               "h3",
+              "audio_generation",
             ].map((item) => (
               <option key={item} value={item}>
                 {serviceName(item)}
@@ -7141,6 +7145,68 @@ function ImageCapabilities() {
         description="通过GPT Image 2生成图片，支持纯文本和参考图片。"
       />
       <div className="two-column wide-left"><Panel title="GRSAI 图像生成" eyebrow="ASYNC IMAGE GENERATION"><form className="stack-form" onSubmit={submit}><label>模型<Select name="model" defaultValue="gpt-image-2"><option value="gpt-image-2">GPT Image 2</option><option value="gpt-image-2.5">GPT Image 2.5</option><option value="gpt-image-2.5-sunburst">GPT Image 2.5 Sunburst</option><option value="gpt-image-2.5-flare">GPT Image 2.5 Flare</option><option value="nano-banana-2">Nano Banana 2</option></Select></label><label>提示词<textarea name="prompt" rows={5} required placeholder="描述要生成的图片"/></label><label>参考图片URL（每行一个，可选）<textarea name="urls" rows={4} placeholder="https://storage.example.com/reference.png"/></label><label>画面比例<Select name="aspect_ratio" defaultValue="1:1"><option value="1:1">1:1</option><option value="2:3">2:3</option><option value="3:2">3:2</option><option value="3:4">3:4</option><option value="4:3">4:3</option><option value="9:16">9:16</option><option value="16:9">16:9</option></Select></label><label>图片尺寸<Select name="image_size" defaultValue="1K"><option value="1K">1K</option><option value="2K">2K</option><option value="4K">4K</option></Select></label><button className="primary-button" disabled={busy}>{busy?"提交中…":"提交异步任务"}</button></form></Panel><Panel title="提交结果" eyebrow="RESULT"><ResultBox value={result} empty="提交后显示任务ID和查询地址。"/></Panel></div>
+    </>
+  );
+}
+
+function MusicCapabilities() {
+  const [model,setModel]=useState("suno-v6");
+  const [mode,setMode]=useState("inspiration");
+  const [result,setResult]=useState<Record<string,unknown>|null>(null);
+  const [query,setQuery]=useState<Record<string,unknown>|null>(null);
+  const [busy,setBusy]=useState(false);
+  async function submit(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();setBusy(true);
+    const data=new FormData(event.currentTarget);
+    const payload:Record<string,unknown>={model,channel:"mxapi",title:String(data.get("title")||"")};
+    if(model==="suno-sound"){
+      payload.sound_model=data.get("sound_model");payload.tags=String(data.get("tags")||"");payload.loop=data.get("loop")==="true";
+    }else{
+      payload.tags=String(data.get("tags")||"");
+      if(mode==="lyrics")payload.lyrics=String(data.get("lyrics")||"");
+      else{payload.prompt=String(data.get("prompt")||"");payload.instrumental=data.get("instrumental")==="true"}
+      const gender=String(data.get("vocal_gender")||"");if(gender)payload.vocal_gender=gender;
+    }
+    try{setResult(await apiRequest<Record<string,unknown>>("control","/v1/audio-generations/jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)}))}
+    catch(reason){setResult({error:uiError(reason)})}finally{setBusy(false)}
+  }
+  async function fetchJob(event:FormEvent<HTMLFormElement>){
+    event.preventDefault();setBusy(true);
+    const jobId=String(new FormData(event.currentTarget).get("job_id")||"").trim();
+    try{setQuery(await apiRequest<Record<string,unknown>>("control",`/v1/audio-generations/jobs/${encodeURIComponent(jobId)}`))}
+    catch(reason){setQuery({error:uiError(reason)})}finally{setBusy(false)}
+  }
+  return (
+    <>
+      <PageHeading
+        eyebrow="MUSIC CAPABILITIES"
+        title="音乐生成"
+        description="通过 mxapi（Suno）生成歌曲与音效，一次提交产出两首成品，成品落库为可直接剪辑的 mp3。"
+      />
+      <div className="two-column wide-left">
+        <Panel title="Suno 音乐与音效" eyebrow="ASYNC AUDIO GENERATION"><form className="stack-form" onSubmit={submit}>
+          <label>模型<Select name="model" value={model} onChange={event=>setModel(event.target.value)}><option value="suno-v6">Suno v6 音乐（一次两首）</option><option value="suno-sound">Suno 音效（可循环）</option></Select></label>
+          {model==="suno-v6"&&<label>创作方式<Select name="mode" value={mode} onChange={event=>setMode(event.target.value)}><option value="inspiration">灵感模式（给一句话描述）</option><option value="lyrics">自定义模式（自己给歌词）</option></Select></label>}
+          <label>{model==="suno-sound"?"音效名称":"歌名"}<input name="title" required placeholder={model==="suno-sound"?"Rain":"长安谣"}/></label>
+          {model==="suno-v6"&&mode==="inspiration"&&<label>风格描述<textarea name="prompt" rows={4} required placeholder="一首关于长安的国风民谣，古筝与箫，苍凉但有力，男声"/></label>}
+          {model==="suno-v6"&&mode==="lyrics"&&<label>歌词<textarea name="lyrics" rows={6} required placeholder="[Verse] 长安月，照我旧时衣 [Chorus] 一叶孤舟，万里向天涯"/></label>}
+          <label>{model==="suno-sound"?"音效描述":"风格标签"}<textarea name="tags" rows={2} placeholder={model==="suno-sound"?"steady rain on a wooden roof":"cinematic chinese folk, guzheng, erhu"}/></label>
+          {model==="suno-sound"&&<label>音效模型<Select name="sound_model" defaultValue="chirp-crow"><option value="chirp-crow">chirp-crow</option><option value="chirp-fenix">chirp-fenix</option></Select></label>}
+          {model==="suno-v6"&&<label>人声<Select name="vocal_gender" defaultValue=""><option value="">不指定</option><option value="m">男声</option><option value="f">女声</option></Select></label>}
+          {model==="suno-sound"&&<label className="toggle-row"><span><strong>无缝循环</strong><small>让音效首尾可衔接，适合做背景循环</small></span><input name="loop" type="checkbox" value="true"/></label>}
+          {model==="suno-v6"&&mode==="inspiration"&&<label className="toggle-row"><span><strong>纯音乐</strong><small>不要人声，只要编曲</small></span><input name="instrumental" type="checkbox" value="true"/></label>}
+          <p className="helper-text">{model==="suno-sound"?"音效只需名称与描述，描述写清声音本身，别写画面。":"灵感模式与自定义模式互斥：写歌词就别写风格描述。"}任务完成后 result_urls 里有两条 mp3。</p>
+          <button className="primary-button" disabled={busy}>{busy?"提交中…":"提交异步任务"}</button>
+        </form></Panel>
+        <Panel title="提交结果" eyebrow="RESULT"><ResultBox value={result} empty="提交后显示任务ID和查询地址。"/></Panel>
+      </div>
+      <div className="two-column wide-left">
+        <Panel title="查询成品" eyebrow="QUERY"><form className="stack-form" onSubmit={fetchJob}>
+          <label>任务ID<input name="job_id" required placeholder="提交返回的 job_id"/></label>
+          <button className="primary-button" disabled={busy}>{busy?"查询中…":"查询任务"}</button>
+        </form></Panel>
+        <Panel title="任务详情" eyebrow="JOB"><ResultBox value={query} empty="查询后在这里显示两首成品的地址与时长。"/></Panel>
+      </div>
     </>
   );
 }

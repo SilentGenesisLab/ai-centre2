@@ -208,11 +208,19 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     return True
 def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
     if not channel.get("base_url"): return False,None,"Base URL未配置"
-    path={"jmapi":"/jmapi/status","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health"}.get(channel["adapter"],"/health")
+    path={"jmapi":"/jmapi/status","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
             else: response=client.get(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel))
+        if channel["adapter"]=="mxapi":
+            # 这个渠道连「查一个不存在的任务」都要过鉴权，所以 401/403 是「token 不认」的指纹；
+            # 400/404 之类的 JSON 错误体反而说明网关通、鉴权过了（上游用 code 字段报应用层错误，
+            # 不一定要用 HTTP 状态码）。5xx 与超时按离线处理——2026-09-24 上游 /api/v2/music/*
+            # 全路径 nginx 502（营销首页正常），这里就会如实报「HTTP 502」。
+            if response.status_code in {401,403,500,502,503,504}: return False,None,f"HTTP {response.status_code}"
+            try: return True,response.json(),None
+            except ValueError: return True,{"status_code":response.status_code},None
         if response.status_code>=400:return False,None,f"HTTP {response.status_code}"
         return True,response.json(),None
     except Exception as exc:return False,None,type(exc).__name__

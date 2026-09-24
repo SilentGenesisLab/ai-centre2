@@ -7,10 +7,13 @@ TASK_NAME="control_plane.video_generation"
 QUEUE_NAME="video_generation"
 
 class GenerationJobClient:
+    # 子类换掉这两个名字就能复用整条提交/查询/取消链路（见 audio_generation_jobs）。
+    task_name=TASK_NAME
+    queue_name=QUEUE_NAME
     def __init__(self,settings:Settings,store:Any): self.settings,self.store=settings,store
     def submit(self,data:dict[str,Any])->str:
         jid=self.store.create_job(data["model"],data.get("channel") or "jmapi",data)
-        try: self._app().send_task(TASK_NAME,kwargs={"job_id":jid},task_id=jid,queue=QUEUE_NAME)
+        try: self._app().send_task(self.task_name,kwargs={"job_id":jid},task_id=jid,queue=self.queue_name)
         except Exception:
             self.store.update_job(jid,status="failed",stage="enqueue_failed",error="unable to enqueue generation job")
             raise

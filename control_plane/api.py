@@ -66,6 +66,7 @@ from .concurrency_api import router as concurrency_router
 from .api_keys import ApiKeyStore
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient
+from .audio_generation_jobs import AudioGenerationJobClient
 from .generation_tasks import _compatible as generation_request_compatible
 from .generation_tasks import probe_channel
 from .oss_storage import OssStorage
@@ -172,6 +173,7 @@ app.openapi_tags.append(
 )
 app.openapi_tags.append({"name":"通用视频生成","description":"按模型和渠道提交原子视频生成任务。"})
 app.openapi_tags.append({"name":"图像生成","description":"通过已注册渠道提交原子图像生成任务。"})
+app.openapi_tags.append({"name":"音乐生成","description":"通过 mxapi(Suno) 生成歌曲与音效，一次生成产出两首成品。"})
 app.openapi_tags.append(
     {
         "name": "音频分离",
@@ -662,12 +664,32 @@ class ImageGenerationRequest(BaseModel):
     metadata: dict[str,Any] = Field(default_factory=dict)
 
 
+class AudioGenerationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["suno-v6","suno-sound"] = "suno-v6"
+    channel: Literal["mxapi","auto"] = "mxapi"
+    # 灵感模式给一句话，自定义模式给歌词，两者互斥（见 _validate_audio_generation_request）。
+    prompt: str = Field(default="", max_length=2000, description="灵感模式：风格/情绪/场景的一句话描述，上游据此自己写词编曲。")
+    lyrics: str = Field(default="", max_length=5000, description="自定义模式：带 [Verse]/[Chorus] 结构标签的歌词。")
+    tags: str = Field(default="", max_length=600, description="风格标签。自定义模式下建议给；音效模式下写声音本身（如 steady rain on a wooden roof）。")
+    title: str = Field(default="", max_length=100, description="歌名；音效模式必填。")
+    instrumental: bool = Field(default=False, description="纯音乐（不唱歌）。")
+    vocal_gender: Literal["m","f"] | None = Field(default=None, description="人声性别偏好。")
+    style_weight: float | None = Field(default=None, ge=0.0, le=1.0, description="风格权重，越高越贴 tags。")
+    weirdness_constraint: float | None = Field(default=None, ge=0.0, le=1.0, description="偏离常规的程度。")
+    music_model: Literal["chirp-hawk","chirp-hawk-wild","chirp-goose"] = Field(default="chirp-hawk", description="音乐的 mv：hawk 通用、hawk-wild 更跳脱、goose 更轻。")
+    sound_model: Literal["chirp-crow","chirp-fenix"] = Field(default="chirp-crow", description="音效的 mv（上游只收这两个）。")
+    loop: bool = Field(default=False, description="音效是否做成可无缝循环。")
+    external_ref: str | None = Field(default=None, max_length=256)
+    metadata: dict[str,Any] = Field(default_factory=dict)
+
+
 class ChannelCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1,max_length=100)
     code: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     deployment_type: Literal["local","third_party"]
-    adapter: Literal["jmapi","libtv","grsai","local_h3"]
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi"]
     base_url: str = Field(default="",max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key"] = "none"
@@ -679,7 +701,7 @@ class ChannelUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None,min_length=1,max_length=100)
     deployment_type: Literal["local","third_party"] | None = None
-    adapter: Literal["jmapi","libtv","grsai","local_h3"] | None = None
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi"] | None = None
     base_url: str | None = Field(default=None,max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key"] | None = None
@@ -913,6 +935,11 @@ def get_generation_jobs() -> GenerationJobClient:
     return GenerationJobClient(get_settings(),get_capability_store())
 
 
+@lru_cache(maxsize=1)
+def get_audio_generation_jobs() -> AudioGenerationJobClient:
+    return AudioGenerationJobClient(get_settings(),get_capability_store())
+
+
 def require_service_token(authorization: str = Header(default="")) -> None:
     if not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -1056,6 +1083,10 @@ async def _reconcile_observability_task(task: dict[str, Any]) -> None:
         payload = await asyncio.to_thread(get_h3_jobs().status, external_id)
     elif service in {"video_generation","image_generation"}:
         payload = await asyncio.to_thread(get_generation_jobs().status, external_id)
+    elif service == "audio_generation":
+        payload = await asyncio.to_thread(
+            get_audio_generation_jobs().status, external_id
+        )
     else:
         return
     await asyncio.to_thread(
@@ -4592,6 +4623,47 @@ async def get_image_generation_job(job_id:UUID)->dict[str,Any]:
 async def cancel_image_generation_job(job_id:UUID)->dict[str,Any]:
     try:return await asyncio.to_thread(get_generation_jobs().cancel,str(job_id))
     except CapabilityNotFound as exc:raise HTTPException(404,"image generation job not found") from exc
+
+
+async def _validate_audio_generation_request(request:AudioGenerationRequest)->None:
+    """先把「模式」这类本地能判的错拦掉——它们在上游也是零花费的，但错误信息没我们清楚。"""
+    if request.model=="suno-sound":
+        # title 必填是实测出来的（上游 errors.title）。tags 的必填性没能实测（2026-09-24 上游
+        # /api/v2/music/* 全路径 502），所以只做提示不做拦截，免得把上游本来收的请求挡在门外。
+        if not request.title.strip(): raise HTTPException(422,"suno-sound requires a title")
+    else:
+        if request.lyrics.strip() and request.prompt.strip(): raise HTTPException(422,"prompt and lyrics are mutually exclusive")
+        if request.instrumental and request.lyrics.strip(): raise HTTPException(422,"instrumental music cannot carry lyrics")
+        if not request.lyrics.strip() and not request.prompt.strip(): raise HTTPException(422,"prompt or lyrics is required")
+    store=get_capability_store()
+    candidates=[request.channel] if request.channel!="auto" else ["mxapi"]
+    compatible=False
+    for code in candidates:
+        try: binding=await asyncio.to_thread(store.binding,request.model,code)
+        except CapabilityNotFound: continue
+        if generation_request_compatible(binding,request.model_dump()) and binding["enabled"] and binding["channel_enabled"] and binding["health_status"]=="online": compatible=True; break
+    if not compatible:
+        raise HTTPException(422,"no enabled, healthy channel supports this model and input combination")
+
+
+@app.post("/v1/audio-generations/jobs",tags=["音乐生成"],summary="创建音乐/音效生成任务",status_code=202,dependencies=[Depends(require_service_token)])
+async def create_audio_generation_job(request:AudioGenerationRequest)->dict[str,Any]:
+    await _validate_audio_generation_request(request)
+    try: jid=await asyncio.to_thread(get_audio_generation_jobs().submit,request.model_dump())
+    except Exception as exc: raise HTTPException(503,"unable to enqueue audio generation job") from exc
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/audio-generations/jobs/{jid}"}
+
+
+@app.get("/v1/audio-generations/jobs/{job_id}",tags=["音乐生成"],summary="查询音乐/音效生成任务",dependencies=[Depends(require_service_token)])
+async def get_audio_generation_job(job_id:UUID)->dict[str,Any]:
+    try:return await asyncio.to_thread(get_audio_generation_jobs().status,str(job_id))
+    except CapabilityNotFound as exc:raise HTTPException(404,"audio generation job not found") from exc
+
+
+@app.post("/v1/audio-generations/jobs/{job_id}/cancel",tags=["音乐生成"],summary="取消音乐/音效生成任务",dependencies=[Depends(require_service_token)])
+async def cancel_audio_generation_job(job_id:UUID)->dict[str,Any]:
+    try:return await asyncio.to_thread(get_audio_generation_jobs().cancel,str(job_id))
+    except CapabilityNotFound as exc:raise HTTPException(404,"audio generation job not found") from exc
 
 
 @app.get("/internal/admin/storage/status",include_in_schema=False,dependencies=[Depends(require_service_token)])

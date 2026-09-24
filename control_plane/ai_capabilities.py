@@ -78,6 +78,7 @@ class CapabilityStore:
             ("jmapi", "jmapi", "third_party", "jmapi", "", 0, 20),
             ("libtv", "libtv", "third_party", "libtv", "", 0, 30),
             ("grsai", "GRSAI", "third_party", "grsai", "https://grsai.dakka.com.cn", 0, 40),
+            ("mxapi", "mxapi", "third_party", "mxapi", "https://open.mxapi.org", 0, 50),
         ]
         for code, name, kind, adapter, url, enabled, priority in presets:
             db.execute("INSERT OR IGNORE INTO channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -87,6 +88,8 @@ class CapabilityStore:
                    ("https://chorify3.sligenai.cn",stamp))
         # The current libtv reverse proxy does not require authentication.
         db.execute("UPDATE channels SET auth_type='none',credential_enc=NULL,credential_tail=NULL,updated_at=? WHERE code='libtv' AND credential_tail IS NULL",(stamp,))
+        # mxapi 认的是 Authorization: Bearer <token>（文档里的 curl 就是这么带的）。
+        db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='mxapi' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
             ("seedance-2.0", "Seedance 2.0", "video_generation", ["text","image","video"], "video"),
@@ -96,12 +99,17 @@ class CapabilityStore:
             ("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-flare", "GPT Image 2.5 Flare", "image_generation", ["text","image"], "image"),
             ("nano-banana-2", "Nano Banana 2", "image_generation", ["text","image"], "image"),
+            # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
+            ("suno-v6", "Suno v6 音乐", "audio_generation", ["text"], "audio"),
+            ("suno-sound", "Suno 音效", "audio_generation", ["text"], "audio"),
         ]
         schema = {"duration_seconds":{"type":"integer"},"resolution":{"type":"string"},"aspect_ratio":{"type":"string"}}
         for code,name,capability_type,inputs,output in models:
             db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        (str(uuid4()),name,code,capability_type,json.dumps(inputs),output,json.dumps(schema),1,None,stamp,stamp))
         db.execute("UPDATE models SET capability_type='image_generation',output_modality='image',updated_at=? WHERE code IN ('gpt-image-2','gpt-image-2.5','gpt-image-2.5-sunburst','gpt-image-2.5-flare','nano-banana-2')",(stamp,))
+        audio_schema = {"prompt":{"type":"string"},"lyrics":{"type":"string"},"tags":{"type":"string"},"title":{"type":"string"},"instrumental":{"type":"boolean"},"loop":{"type":"boolean"}}
+        db.execute("UPDATE models SET parameter_schema_json=?,updated_at=? WHERE code IN ('suno-v6','suno-sound')",(json.dumps(audio_schema),stamp))
         ids = {r["code"]:r["id"] for r in db.execute("SELECT id,code FROM channels")}
         mids = {r["code"]:r["id"] for r in db.execute("SELECT id,code FROM models")}
         bindings = [
@@ -120,6 +128,10 @@ class CapabilityStore:
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-flare","grsai","gpt-image-2.5-flare","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("nano-banana-2","grsai","nano-banana-2","/v1/draw/nano-banana","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
+          # Suno 的生成接口一次提交返回两个 task_id；两条绑定都查同一个 /api/v2/music/task。
+          # 上游型号名就是文档里的 mv（灵感/自定义模式与音效的 mv 白名单不同，见 audio_generation_tasks）。
+          ("suno-v6","mxapi","chirp-hawk","/api/v2/music/generate","/api/v2/music/task?id={task_id}",{"images":0,"videos":0,"audios":0},1,50),
+          ("suno-sound","mxapi","chirp-crow","/api/v2/music/sound","/api/v2/music/task?id={task_id}",{"images":0,"videos":0,"audios":0},1,50),
         ]
         for model,channel,upstream,submit,query,caps,enabled,priority in bindings:
             db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -186,7 +198,7 @@ class CapabilityStore:
         return self.channel(channel_id)
 
     def delete_channel(self, channel_id:str)->None:
-        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai"}: raise ValueError("preset channel cannot be deleted; disable it instead")
+        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi"}: raise ValueError("preset channel cannot be deleted; disable it instead")
         with self._db() as db: db.execute("UPDATE channels SET enabled=0,deleted_at=?,updated_at=? WHERE id=?",(now(),now(),channel_id))
 
     def models(self)->list[dict[str,Any]]:

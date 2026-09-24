@@ -21,6 +21,7 @@ celery_app = Celery(
         "control_plane.video_upscale_tasks",
         "control_plane.h3_tasks",
         "control_plane.generation_tasks",
+        "control_plane.audio_generation_tasks",
         "control_plane.video_review_tasks",
     ],
 )

@@ -398,6 +398,7 @@ class UnitReaderTests(StoreTestCase):
                 "scene_detect",
                 "video_depth",
                 "video_generation",
+                "audio_generation",
                 "watermark_remove",
                 "audio_separation",
                 "color_grade",
@@ -414,6 +415,7 @@ class TaskBudgetTests(StoreTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         # 任务名要能在 Celery 注册表里解析出来，先按 celery_app.include 的名单导入。
+        import control_plane.audio_generation_tasks  # noqa: F401
         import control_plane.audio_separation_tasks  # noqa: F401
         import control_plane.color_grade_tasks  # noqa: F401
         import control_plane.depth_tasks  # noqa: F401

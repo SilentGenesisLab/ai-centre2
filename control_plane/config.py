@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     video_generation_result_max_bytes: int = 2 * 1024 * 1024 * 1024
     video_generation_download_timeout_seconds: float = 900
     video_generation_upload_timeout_seconds: float = 900
+    audio_generation_work_dir: Path = Path(
+        "/home/donxu/ai-centre/runtime/audio-generation"
+    )
+    audio_generation_result_max_bytes: int = 512 * 1024 * 1024
+    audio_generation_download_timeout_seconds: float = 600
+    audio_generation_transcode_timeout_seconds: float = 900
+    audio_generation_upload_timeout_seconds: float = 600
     observability_db_path: Path = Path(
         "/home/donxu/ai-centre/runtime/observability/observability.db"
     )
@@ -248,6 +255,7 @@ def get_settings() -> Settings:
     settings.api_keys_db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.ai_capabilities_db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.video_generation_work_dir.mkdir(parents=True, exist_ok=True)
+    settings.audio_generation_work_dir.mkdir(parents=True, exist_ok=True)
     settings.observability_db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.health_monitor_db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.tts_voice_registry_path.parent.mkdir(parents=True, exist_ok=True)

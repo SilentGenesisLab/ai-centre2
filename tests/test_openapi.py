@@ -81,6 +81,7 @@ class OpenApiTests(unittest.TestCase):
                 "视频深度推理",
                 "通用视频生成",
                 "图像生成",
+                "音乐生成",
                 "音频分离",
                 "视频调色",
                 "视频超分",

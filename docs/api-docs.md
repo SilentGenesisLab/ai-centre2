@@ -121,7 +121,17 @@ curl -sS -X POST "$BASE_URL/v1/uploads" \
 | 查询 H3 Worker 容量 | GET | `/v1/video-generations/minimax-h3/workers/status` | JSON |
 | 取消 H3 视频任务 | POST | `/v1/video-generations/minimax-h3/jobs/{job_id}/cancel` | JSON |
 
-### 2.4 语音能力
+### 2.4 生音乐与音效
+
+| 中文接口名 | 方法 | 路径 | 返回方式 |
+|---|---|---|---|
+| 创建音乐/音效生成任务 | POST | `/v1/audio-generations/jobs` | 异步任务 |
+| 查询音乐/音效生成任务 | GET | `/v1/audio-generations/jobs/{job_id}` | JSON |
+| 取消音乐/音效生成任务 | POST | `/v1/audio-generations/jobs/{job_id}/cancel` | JSON |
+
+**一次生成产出两首成品**（上游返回两条 task），`result_urls` 里有两条 mp3。详见第 6 节。
+
+### 2.5 语音能力
 
 | 中文接口名 | 方法 | 路径 | 返回方式 |
 |---|---|---|---|
@@ -134,7 +144,7 @@ curl -sS -X POST "$BASE_URL/v1/uploads" \
 | 查询可用音色 | GET | `/v2/tts/voices` | JSON |
 | 查询语音服务状态 | GET | `/v2/tts/providers` | JSON |
 
-### 2.5 视频、音频与图像处理
+### 2.6 视频、音频与图像处理
 
 | 中文接口名 | 创建异步任务 | 创建并等待 | 查询任务 | 取消任务 |
 |---|---|---|---|---|
@@ -497,9 +507,111 @@ curl -sS -H "Authorization: Bearer $API_KEY" \
 
 成功任务的 `status` 为 `succeeded`，`result_url` 是可直接访问的 OSS 成片。
 
-## 6. 语音合成与语音克隆
+## 6. 音乐与音效生成
 
-### 6.1 同步普通语音合成
+渠道：`mxapi`（Suno）。两种能力共用一组接口，靠 `model` 区分：
+
+| `model` | 用途 | 上游关键参数 |
+|---|---|---|
+| `suno-v6` | 歌曲（有人声或纯音乐） | `mv` 取 `chirp-hawk` / `chirp-hawk-wild` / `chirp-goose` |
+| `suno-sound` | 音效（可循环） | `mv` 取 `chirp-crow` / `chirp-fenix` |
+
+**一次提交产出两首成品。** 上游每次生成返回两条 task，各自成歌（同一份歌词/描述的两个版本，
+时长可能不同）。任务成功时 `result_urls` 里是**两条** mp3 地址，按 task 顺序排列。
+
+成品在上游是 opus 编码的 `.m4a`，中台落库前统一转成 192kbps mp3 再传 OSS，所以拿到的
+一定是可直接进剪辑软件的 mp3。
+
+### 6.1 灵感模式：给一句话
+
+`POST /v1/audio-generations/jobs`
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/audio-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "suno-v6",
+    "channel": "mxapi",
+    "prompt": "一首关于长安的国风民谣，古筝与箫，苍凉但有力，男声",
+    "title": "长安谣",
+    "vocal_gender": "m",
+    "external_ref": "music-order-001"
+  }'
+```
+
+### 6.2 自定义模式：自己给歌词
+
+把歌词写进 `lyrics`（用 `[Verse]`、`[Chorus]` 一类结构标签分段），**此时不要再给 `prompt`**，
+两者互斥（同时给会返回 422）。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/audio-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "suno-v6",
+    "lyrics": "[Verse]\n长安月，照我旧时衣\n[Chorus]\n一叶孤舟，万里向天涯",
+    "tags": "cinematic chinese folk, guzheng, erhu, male tenor",
+    "title": "长安谣",
+    "style_weight": 0.7
+  }'
+```
+
+纯音乐：给 `prompt`（风格描述）并置 `instrumental: true`，不要给 `lyrics`。
+
+### 6.3 音效
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/audio-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "suno-sound",
+    "sound_model": "chirp-crow",
+    "title": "Rain",
+    "tags": "steady rain on a wooden roof, no thunder",
+    "loop": true
+  }'
+```
+
+参数：
+
+| 字段 | 必填 | 可选值/限制 | 默认 |
+|---|---:|---|---|
+| `model` | 否 | `suno-v6`、`suno-sound` | `suno-v6` |
+| `channel` | 否 | `mxapi`、`auto` | `mxapi` |
+| `prompt` | 灵感模式必填 | 1～2000字符 | `""` |
+| `lyrics` | 自定义模式必填 | 1～5000字符，带 `[Verse]` 等结构标签 | `""` |
+| `tags` | 否 | 风格/声音描述，最多600字符 | `""` |
+| `title` | 音效必填 | 最多100字符 | `""` |
+| `instrumental` | 否 | `true` 为纯音乐 | `false` |
+| `vocal_gender` | 否 | `m`、`f` | `null` |
+| `style_weight` | 否 | 0～1，越高越贴 `tags` | `null` |
+| `weirdness_constraint` | 否 | 0～1，越大越跳脱 | `null` |
+| `music_model` | 否 | `chirp-hawk`、`chirp-hawk-wild`、`chirp-goose` | `chirp-hawk` |
+| `sound_model` | 否 | `chirp-crow`、`chirp-fenix` | `chirp-crow` |
+| `loop` | 否 | 音效是否做成可无缝循环 | `false` |
+| `external_ref` | 否 | 最多256字符 | `null` |
+| `metadata` | 否 | JSON对象 | `{}` |
+
+### 6.4 查询结果
+
+```bash
+JOB_ID='替换为提交返回的job_id'
+
+curl -sS -H "Authorization: Bearer $API_KEY" \
+  "$BASE_URL/v1/audio-generations/jobs/$JOB_ID"
+```
+
+成功后 `result_urls` 是两首 mp3；`upstream_response.songs` 里带着每首的
+`title`、`duration_seconds`、`cover_url`（专辑图）、`model_name`、`tags` 与 `lyrics`
+（上游自作词时回的最终歌词）。若一条 task 失败而另一条成歌，任务仍然算成功：
+`result_urls` 只有成功那一首，失败原因记在 `upstream_response.task_errors` 里。
+
+## 7. 语音合成与语音克隆
+
+### 7.1 同步普通语音合成
 
 `POST /v2/tts/speech`
 
@@ -519,7 +631,7 @@ curl -sS -X POST "$BASE_URL/v2/tts/speech" \
 
 同步正文最多5000字符。更长文本请使用异步接口。
 
-### 6.2 深度语音克隆
+### 7.2 深度语音克隆
 
 提供 `reference_audio_url` 即启用 VoxCPM2 深度克隆。`prompt_text` 最好填写参考音频的准确文本；为空时会先进行 ASR。
 
@@ -550,7 +662,7 @@ curl -sS -D tts-headers.txt -X POST "$BASE_URL/v2/tts/speech" \
 - `quality_mode`：`standard`、`strict`；流式接口不支持 `strict`。
 - `prosody.speed`：0.5～2.0；`volume`：0.1～2.0；`pitch`：0.5～2.0。
 
-### 6.3 实时 PCM 流
+### 7.3 实时 PCM 流
 
 `POST /v2/tts/speech/stream`
 
@@ -570,7 +682,7 @@ ffmpeg -f s16le -ar 48000 -ac 1 -i speech.pcm speech.wav
 
 响应格式：48kHz、16-bit、单声道、little-endian PCM。请求ID位于 `X-TTS-Request-ID` 响应头。
 
-### 6.4 异步长文本语音
+### 7.4 异步长文本语音
 
 `POST /v2/tts/jobs`，正文最多20000字符，适合8000字符等长内容。
 
@@ -600,9 +712,9 @@ curl -sS -H "Authorization: Bearer $API_KEY" \
   --output long-speech.wav
 ```
 
-## 7. 视频与音频处理示例
+## 8. 视频与音频处理示例
 
-### 7.1 唇形驱动与可选 GFPGAN
+### 8.1 唇形驱动与可选 GFPGAN
 
 ```bash
 curl -sS -X POST "$BASE_URL/v1/lipsync/jobs" \
@@ -617,7 +729,7 @@ curl -sS -X POST "$BASE_URL/v1/lipsync/jobs" \
 
 查询：`GET /v1/lipsync/jobs/{job_id}`。完成响应中的 `result_url` 为 OSS 地址。日志接口为 `GET /v1/lipsync/jobs/{job_id}/logs?stage=musetalk&tail=200`。
 
-### 7.2 人脸处理
+### 8.2 人脸处理
 
 ```bash
 curl -sS -X POST "$BASE_URL/v1/face-mosaic/jobs" \
@@ -633,7 +745,7 @@ curl -sS -X POST "$BASE_URL/v1/face-mosaic/jobs" \
 
 希望连接保持到OSS结果完成时，将路径改为 `/v1/face-mosaic/jobs/wait`。长视频建议使用异步路径。
 
-### 7.3 SceneDetect 视频切片
+### 8.3 SceneDetect 视频切片
 
 ```bash
 curl -sS -X POST "$BASE_URL/v1/video-scenes/jobs" \
@@ -652,7 +764,7 @@ curl -sS -X POST "$BASE_URL/v1/video-scenes/jobs" \
 - `min_scene_len`：最短场景帧数，不是秒数。
 - 需要同步等待时使用 `/v1/video-scenes/jobs/wait`。
 
-### 7.4 DA2/DA3 视频深度推理
+### 8.4 DA2/DA3 视频深度推理
 
 ```bash
 curl -sS -X POST "$BASE_URL/v1/video-depth/jobs" \
@@ -678,7 +790,7 @@ curl -sS -X POST "$BASE_URL/v1/video-depth/jobs" \
 
 需要同步等待时使用 `/v1/video-depth/jobs/wait`。
 
-### 7.5 视频超分
+### 8.5 视频超分
 
 ```bash
 curl -sS -X POST "$BASE_URL/v1/video-upscale/jobs" \
@@ -695,7 +807,7 @@ curl -sS -X POST "$BASE_URL/v1/video-upscale/jobs" \
 
 `provider` 可为 `auto`、`flashvsr`、`flashvsr_v2`、`seedvr2`；建议使用 `auto`。`max_resolution` 范围480～3840。
 
-### 7.6 对白、音乐、音效和背景四轨分离
+### 8.6 对白、音乐、音效和背景四轨分离
 
 ```bash
 curl -sS -X POST "$BASE_URL/v1/audio-separation/jobs" \
@@ -712,7 +824,7 @@ curl -sS -X POST "$BASE_URL/v1/audio-separation/jobs" \
 
 完成任务返回对白、音乐、音效和背景四个 OSS WAV 地址。需要同步等待时使用 `/v1/audio-separation/jobs/wait`。
 
-### 7.7 授权素材水印处理
+### 8.7 授权素材水印处理
 
 该接口仅用于调用方拥有处理权的素材和可见水印，不用于规避平台合法溯源标识。
 
@@ -731,9 +843,9 @@ curl -sS -X POST "$BASE_URL/v1/watermark-removal/jobs" \
 
 `mode` 可为 `light` 或 `intensive`。需要同步等待时使用 `/v1/watermark-removal/jobs/wait`。
 
-## 8. 异步任务通用处理
+## 9. 异步任务通用处理
 
-### 8.1 状态
+### 9.1 状态
 
 不同服务的字段名称可能略有差别，调用方应兼容以下常见状态：
 
@@ -747,7 +859,7 @@ curl -sS -X POST "$BASE_URL/v1/watermark-removal/jobs" \
 
 轮询建议：前1分钟每3秒一次，之后每10秒一次；不要每秒高频查询。
 
-### 8.2 通用 Shell 轮询示例
+### 9.2 通用 Shell 轮询示例
 
 ```bash
 JOB_ID='替换为job_id'
@@ -765,13 +877,13 @@ while true; do
 done
 ```
 
-### 8.3 幂等与业务关联
+### 9.3 幂等与业务关联
 
 - TTS异步接口使用必填的 `idempotency_key`。
 - 其他接口建议设置唯一 `external_ref`，但它不一定阻止重复提交。
 - 网络超时后先查询已有任务或使用业务侧去重，再决定是否重试。
 
-## 9. HTTP 状态码与排错
+## 10. HTTP 状态码与排错
 
 | HTTP状态码 | 含义 | 建议 |
 |---:|---|---|
@@ -796,14 +908,14 @@ done
 4. JSON 中字段名被转义成 `voice\_profile\_id`。
 5. 用 `curl` 访问同步音频接口却没有 `--output`，导致二进制内容打印到终端。
 
-## 10. 在线资源
+## 11. 在线资源
 
 - 本文档：`https://aicentre2.sligenai.cn:8443/api-docs.md`
 - Swagger：`https://aicentre2.sligenai.cn:8443/docs`
 - OpenAPI JSON：`https://aicentre2.sligenai.cn:8443/openapi.json`
 - 管理后台中文说明：`https://aicentre2.sligenai.cn:8443/admin/external-api.html`
 
-## 11. 安全说明
+## 12. 安全说明
 
 - API Key 泄露后应立即停用并重新签发。
 - 不要在工单、群聊或公开文档中粘贴完整 API Key 和 OSS 签名 URL。
