@@ -639,13 +639,15 @@ class ColorGradeUrlJobRequest(BaseModel):
 class VideoGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str = Field(default="seedance-2.0", min_length=1, max_length=128)
-    channel: Literal["jmapi", "libtv", "auto"] = "jmapi"
+    channel: Literal["jmapi", "libtv", "runninghub", "auto"] = "jmapi"
     prompt: str = Field(min_length=1, max_length=10000)
     reference_image_urls: list[str] = Field(default_factory=list, max_length=30)
     reference_video_urls: list[str] = Field(default_factory=list, max_length=10)
     reference_audio_urls: list[str] = Field(default_factory=list, max_length=10)
     duration_seconds: int = Field(default=5, ge=2, le=30)
-    resolution: Literal["480p", "720p", "1080p", "2K"] = "720p"
+    # 768p 是 RunningHub 那档 H3 的原生分辨率（也只有它接受，见 generation_tasks._compatible）；
+    # 2K 目前没有任何视频绑定支持，是历史遗留的取值。
+    resolution: Literal["480p", "720p", "768p", "1080p", "2K"] = "720p"
     aspect_ratio: Literal["9:16", "16:9", "1:1", "4:3", "3:4"] = "9:16"
     sound: bool = False
     external_ref: str | None = Field(default=None, max_length=256)
@@ -689,7 +691,7 @@ class ChannelCreateRequest(BaseModel):
     name: str = Field(min_length=1,max_length=100)
     code: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     deployment_type: Literal["local","third_party"]
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi"]
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub"]
     base_url: str = Field(default="",max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key"] = "none"
@@ -701,7 +703,7 @@ class ChannelUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None,min_length=1,max_length=100)
     deployment_type: Literal["local","third_party"] | None = None
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi"] | None = None
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub"] | None = None
     base_url: str | None = Field(default=None,max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key"] | None = None
@@ -4562,7 +4564,7 @@ async def _validate_generation_request(request: VideoGenerationRequest) -> None:
     except MediaFetchError as exc:
         raise HTTPException(exc.status_code,exc.detail) from exc
     store=get_capability_store()
-    candidates=[request.channel] if request.channel!="auto" else ["jmapi","libtv"]
+    candidates=[request.channel] if request.channel!="auto" else store.binding_channels(request.model)
     compatible=False
     for code in candidates:
         try: binding=await asyncio.to_thread(store.binding,request.model,code)

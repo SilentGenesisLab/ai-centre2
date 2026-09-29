@@ -312,7 +312,7 @@ curl -sS -X POST \
 
 `POST /v1/video-generations/jobs`
 
-可同时传多张图片、多个视频和多段音频。具体支持数量取决于渠道与模型：`seedance-2.0` 是 `jmapi` 最多9图、3视频、3音频，`libtv` 最多9图、3视频且不接收独立音频；`seedance-2.5` 是两个渠道都最多30图、10视频（参考视频/音频总时长上限 30 秒），独立音频只有 `jmapi` 接收。
+可同时传多张图片、多个视频和多段音频。具体支持数量取决于渠道与模型：`seedance-2.0` 是 `jmapi` 最多9图、3视频、3音频，`libtv` 最多9图、3视频且不接收独立音频；`seedance-2.5` 是两个渠道都最多30图、10视频（参考视频/音频总时长上限 30 秒），独立音频只有 `jmapi` 接收；`minimax-h3-rh-enhanced` 走 `runninghub`，最多9图、3视频、3音频（见 5.1.2）。
 
 纯文本请求可以不传任何参考素材。由于上游 Seedance 渠道要求至少存在一个媒体节点，AI Centre 会在服务端自动注入一张中性空白参考图；调用方不需要准备空白图，任务记录也仍按“纯文本生成”统计。只要显式提供了任一图片、视频或音频，系统就不会注入空白图。
 
@@ -357,18 +357,20 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `seedance-2.0`、`seedance-2.5` | `seedance-2.0` |
-| `channel` | 否 | `jmapi`、`libtv`、`auto` | `jmapi` |
+| `model` | 否 | `seedance-2.0`、`seedance-2.5`、`minimax-h3-rh-enhanced` | `seedance-2.0` |
+| `channel` | 否 | `jmapi`、`libtv`、`runninghub`、`auto` | `jmapi` |
 | `prompt` | 是 | 1～10000字符 | — |
-| `reference_image_urls` | 否 | 2.0最多9张；2.5最多30张 | `[]` |
-| `reference_video_urls` | 否 | 2.0最多3个；2.5最多10个 | `[]` |
-| `reference_audio_urls` | 否 | jmapi最多3个（2.5最多10个）；libtv不支持 | `[]` |
-| `duration_seconds` | 否 | 2～30秒；`seedance-2.0` 上限15秒 | 5 |
-| `resolution` | 否 | `480p`、`720p`、`1080p`、`2K` | `720p` |
+| `reference_image_urls` | 否 | 2.0最多9张；2.5最多30张；H3最多9张 | `[]` |
+| `reference_video_urls` | 否 | 2.0最多3个；2.5最多10个；H3最多3个 | `[]` |
+| `reference_audio_urls` | 否 | jmapi最多3个（2.5最多10个）；libtv不支持；H3最多3个 | `[]` |
+| `duration_seconds` | 否 | 2～30秒；`seedance-2.0` 上限15秒，H3 是 4～15秒 | 5 |
+| `resolution` | 否 | `480p`、`720p`、`768p`、`1080p`、`2K`；`768p` 只有 H3 接受 | `720p` |
 | `aspect_ratio` | 否 | `9:16`、`16:9`、`1:1`、`4:3`、`3:4` | `9:16` |
 | `sound` | 否 | `true`保留上游音轨；`false`在OSS转存前确定性移除音轨 | `false` |
 | `external_ref` | 否 | 最多256字符 | `null` |
 | `metadata` | 否 | JSON对象 | `{}` |
+
+`channel` 省略时默认 `jmapi`。传 `auto` 时按该模型绑定表的优先级依次尝试（`seedance-2.0`/`seedance-2.5` 是 `jmapi` → `libtv`，`minimax-h3-rh-enhanced` 只有 `runninghub` 一条），只在「上游明确失败」或「没提交成功」时才换下一条；换渠道会体现在任务的 `fallback_count` 上。
 
 渠道分辨率说明：当前 jmapi 的 `seedance2.0_vip` 不接受 `480p`，明确指定 `channel: "jmapi"` 且请求480P时接口会在提交前返回422。需要480P时请使用 `channel: "auto"`（自动选择 libtv）或明确指定 `libtv`；720P已在两个渠道完成生产验证。
 
@@ -386,6 +388,38 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 - 时长超过 15 秒的请求只有 2.5 能接，显式指定 `seedance-2.0` 时同样在提交前返回422，不会把必然被上游拒绝的请求发出去。
 - 上游还支持 `21:9` 和 `adaptive` 画幅，当前接口的 `aspect_ratio` 尚未开放这两个值。
 - 结果与 2.0 一样先转存到 AI Centre 的 OSS 再返回 `result_urls`。
+
+### 5.1.2 MiniMax H3（RunningHub 增强版）
+
+`model` 传 `minimax-h3-rh-enhanced`，走 `runninghub` 渠道：
+
+| 渠道 | 上游模型 | 时长 | 分辨率 | 参考素材 |
+|---|---|---|---|---|
+| `runninghub` | `minimax-h3-rh-enhanced` | 4～15秒（整数） | `480p`、`768p`、`1080p` | 最多9图、3视频、3音频 |
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "minimax-h3-rh-enhanced",
+    "channel": "runninghub",
+    "prompt": "故事主题:甜酷女团主题，节奏明快，自信飒爽，舞台感强……",
+    "reference_image_urls": ["https://storage.example.com/images/ref1.png"],
+    "duration_seconds": 10,
+    "resolution": "768p",
+    "aspect_ratio": "9:16",
+    "sound": false
+  }'
+```
+
+- **`768p` 只有这个模型接受**，它正是 H3 的原生档；`720p` 反过来只有 Seedance 接。两者配错组合会在提交前返回422，不会把必然被上游拒的请求发出去。
+- 时长是 **4～15 秒的整数**，2～3 秒会在提交前返回422。
+- 画幅只开放 `9:16`、`16:9`、`1:1`、`4:3`、`3:4` 五个值；上游白名单比这更宽（另有 `2:3`、`3:2`、`21:9`），当前接口未开放。
+- 上游的 `audioMode` 固定用 `native`（模型自己生成音轨）。上游另有 `lock_source`、`remix_source`、`reference_only` 三档，语义没有实测过，因此没有开放。`sound: false` 仍然被尊重：它由转存那一步确定性摘掉音轨（和 Seedance 同一条路径），不是靠上游静音。
+- 结果同样先转存到 AI Centre 的 OSS 再返回 `result_urls`。
+- 渠道密钥走部署级环境变量 `RUNNINGHUB_API_TOKEN`（与视频超分共用一份），不落能力库；需要覆盖时在管理端给该渠道单独填一次凭据。
+- **上游的查询接口只校验 `Authorization` 头在不在，不校验它对不对**（2026-09-29 实测：错的 token 与对的 token 返回逐字相同）。所以「连接测试通过」只说明网关通、头带了，不代表密钥有效；密钥错了会在真正提交生成时才暴露。
 
 ### 5.2 查询与取消通用视频任务
 

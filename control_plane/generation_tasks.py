@@ -21,6 +21,13 @@ from .media_fetch import VIDEO_MEDIA, download_public_media
 RETRYABLE={408,429,500,502,503,504}
 SUCCESS_STATES = {"completed", "succeeded", "success"}
 FAILURE_STATES = {"fail", "failed", "error", "cancelled", "canceled"}
+# 结果先转存到 AI Centre 的 OSS 再回给调用方的模型。两个理由，任一个成立就该在这里：
+#  1. 上游给的是**临时**结果地址，直接回给调用方会过期；
+#  2. sound=false 要求确定性摘掉音轨 —— 那一步只在转存时做（_prepare_video_for_upload），
+#     而 RunningHub 的 H3 没有「静音生成」这个参数（audioMode 里没有静音档），
+#     所以它的 sound=false 只能靠转存时摘。
+# kernel_upload_url 没配置时 _persist_video_results 直接原样返回，所以这里是低风险的。
+OSS_PERSISTED_MODELS = {"seedance-2.0", "seedance-2.5", "minimax-h3-rh-enhanced"}
 PIXEL_ASPECTS={
     "1K":{"1:1":"1024x1024","2:3":"832x1248","3:2":"1248x832","3:4":"768x1024","4:3":"1024x768","9:16":"768x1344","16:9":"1344x768"},
     "2K":{"1:1":"2048x2048","2:3":"1664x2496","3:2":"2496x1664","3:4":"1536x2048","4:3":"2048x1536","9:16":"1152x2048","16:9":"2048x1152"},
@@ -35,6 +42,11 @@ def _store():
     s=get_settings(); return CapabilityStore(s.ai_capabilities_db_path,s.service_token)
 def _headers(binding:dict[str,Any])->dict[str,str]:
     key=binding.get("credential",""); kind=binding.get("auth_type","none")
+    if not key and binding.get("adapter")=="runninghub":
+        # RunningHub 的 token 是部署级环境变量（超分子系统在用同一个），**不落能力库**：
+        # 复制第二份等于两处轮换、迟早对不上。渠道自己填了凭据就以渠道为准。
+        settings=get_settings()
+        key=settings.runninghub_api_token.get_secret_value() if settings.runninghub_api_token else ""
     if not key:return {}
     if kind=="x-api-key":return {"X-API-Key":key}
     if kind=="bearer":return {"Authorization":f"Bearer {key}"}
@@ -60,6 +72,21 @@ def _payload(
             aspect=PIXEL_ASPECTS[request.get("image_size","1K")][aspect]
         payload={"model":model,"prompt":request["prompt"],"aspectRatio":aspect,"urls":request.get("reference_image_urls",[]),"shutProgress":True}
         if binding["upstream_model"]=="nano-banana-2": payload["imageSize"]=request.get("image_size","1K")
+        return payload
+    if binding["adapter"]=="runninghub":
+        # RunningHub 的参考素材是**逐张编号的平铺字段**（refImage1..9、refVideo1..3、
+        # refAudio1..3），不是数组，所以只能这样按序铺开；上游没给的槽位不写，
+        # 不主动填 null（占位 null 是文档 curl 的写法，实测不写也一样）。
+        payload={"prompt":request["prompt"],"resolution":request["resolution"],
+                 "duration":request["duration_seconds"],"aspectRatio":request["aspect_ratio"],
+                 # audioMode 我们不开放：上游另有 lock_source / remix_source / reference_only
+                 # 三个值，语义没有实测过，猜错是静默的（出来的是别人要的声音）。固定 native
+                 # 让模型自己生成音轨；调用方的 sound=false 仍被尊重 —— 它由 OSS 转存那一步
+                 # 确定性摘掉音轨（这就是 sound 在本 API 里的定义），不是靠上游静音。
+                 "audioMode":"native"}
+        for index,url in enumerate(images[:9],start=1): payload[f"refImage{index}"]=url
+        for index,url in enumerate(videos[:3],start=1): payload[f"refVideo{index}"]=url
+        for index,url in enumerate(audios[:3],start=1): payload[f"refAudio{index}"]=url
         return payload
     raise ValueError("unsupported generation channel adapter")
 def _unwrap(body:dict[str,Any])->dict[str,Any]:
@@ -105,7 +132,7 @@ def _urls_from_container(value: Any) -> list[str]:
             if isinstance(item, str):
                 output.extend(_urls_from_container(item))
             elif isinstance(item, dict):
-                for key in ("url", "video_url", "image_url"):
+                for key in ("url", "video_url", "image_url", "fileUrl", "file_url", "videoUrl"):
                     if item.get(key):
                         output.extend(_urls_from_container(item[key]))
                         break
@@ -189,6 +216,20 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     duration_max = c.get("duration_max")
     if duration_max and int(r.get("duration_seconds") or 0) > int(duration_max):
         return False
+    # 下界同理：RunningHub 的 H3 只收 4～15 秒，2～3 秒在提交前就该被拦掉。
+    duration_min = c.get("duration_min")
+    if duration_min and int(r.get("duration_seconds") or 0) < int(duration_min):
+        return False
+    # 分辨率白名单只在绑定显式声明 resolutions 时才校验 —— Seedance 各档的上游白名单
+    # 我们没有完整实测过，不替它们断言。但 768p 是本次为新模型新开的取值，必须挡住它
+    # 从新入口漏到老渠道：没声明白名单的绑定一律不接 768p。
+    resolution = str(r.get("resolution") or "").lower()
+    declared = c.get("resolutions")
+    if declared is not None:
+        if resolution not in declared:
+            return False
+    elif resolution == "768p":
+        return False
     # jmapi's Seedance 2.0 VIP contract rejects 480p and requires its
     # Seedance 2.5 model for that resolution. `auto` can select libtv instead.
     if (
@@ -208,11 +249,24 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     return True
 def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
     if not channel.get("base_url"): return False,None,"Base URL未配置"
-    path={"jmapi":"/jmapi/status","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0"}.get(channel["adapter"],"/health")
+    path={"jmapi":"/jmapi/status","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
+            elif channel["adapter"]=="runninghub": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"taskId":"0"})
             else: response=client.get(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel))
+        if channel["adapter"]=="runninghub":
+            # 探针查一个不存在的 taskId：这是上游唯一「必定被拒、必定零花费」的入口
+            # （字段校验先于建任务），响应体恒为 HTTP 200 的扁平 JSON。
+            # 2026-09-29 实测这个入口**只校验 Authorization 头在不在，不校验它对不对** ——
+            # 错 token 与对 token 返回逐字相同。所以能读出来的只有「网关通 + 头带了」，
+            # 读不出「token 有效」；缺头时上游回 {"code":1602,"msg":"HEADER_API_KEY_NOT_FOUND"}。
+            # 这是已知的弱判据，跟 mxapi 那条一个道理：能证伪，不能证实。
+            try: body=response.json()
+            except ValueError: body={}
+            if isinstance(body,dict) and int(body.get("code") or 0)==1602: return False,body,"HEADER_API_KEY_NOT_FOUND"
+            if response.status_code>=400: return False,None,f"HTTP {response.status_code}"
+            return True,body,None
         if channel["adapter"]=="mxapi":
             # 这个渠道连「查一个不存在的任务」都要过鉴权，所以 401/403 是「token 不认」的指纹；
             # 400/404 之类的 JSON 错误体反而说明网关通、鉴权过了（上游用 code 字段报应用层错误，
@@ -344,7 +398,7 @@ def _finish_success(
             elapsed_seconds=round(time.monotonic() - started, 3),
         )
         return store.job(job_id)
-    if request.get("model") in {"seedance-2.0", "seedance-2.5"}:
+    if request.get("model") in OSS_PERSISTED_MODELS:
         store.update_job(job_id, stage="uploading_oss")
         urls = _persist_video_results(urls, request, job_id)
     elapsed = round(time.monotonic() - started, 3)
@@ -372,7 +426,7 @@ def generate(self,job_id:str)->dict[str,Any]:
 def _generate(self,job_id:str)->dict[str,Any]:
     settings = get_settings()
     store=_store(); job=store.job(job_id,include_request=True); req=job["request"]; started=time.monotonic()
-    requested=req.get("channel") or "jmapi"; order=[requested] if requested!="auto" else ["jmapi","libtv"]
+    requested=req.get("channel") or "jmapi"; order=[requested] if requested!="auto" else store.binding_channels(req["model"])
     store.update_job(job_id,status="running",stage="selecting_channel",started_at=datetime.now(timezone.utc).isoformat())
     failures=[]
     for index,code in enumerate(order):
@@ -431,6 +485,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     with httpx.Client(timeout=30,follow_redirects=False) as client:
                         if binding["adapter"]=="jmapi": q=client.post(urljoin(binding["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(binding),json={"submit_id":tid})
                         elif binding["adapter"]=="grsai": q=client.post(urljoin(binding["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(binding),json={"id":tid})
+                        elif binding["adapter"]=="runninghub": q=client.post(urljoin(binding["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(binding),json={"taskId":tid})
                         else:q=client.get(urljoin(binding["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(binding))
                     if q.status_code in RETRYABLE:
                         continue

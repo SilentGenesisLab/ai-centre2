@@ -79,6 +79,7 @@ class CapabilityStore:
             ("libtv", "libtv", "third_party", "libtv", "", 0, 30),
             ("grsai", "GRSAI", "third_party", "grsai", "https://grsai.dakka.com.cn", 0, 40),
             ("mxapi", "mxapi", "third_party", "mxapi", "https://open.mxapi.org", 0, 50),
+            ("runninghub", "RunningHub", "third_party", "runninghub", "https://www.runninghub.cn", 0, 60),
         ]
         for code, name, kind, adapter, url, enabled, priority in presets:
             db.execute("INSERT OR IGNORE INTO channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -90,8 +91,14 @@ class CapabilityStore:
         db.execute("UPDATE channels SET auth_type='none',credential_enc=NULL,credential_tail=NULL,updated_at=? WHERE code='libtv' AND credential_tail IS NULL",(stamp,))
         # mxapi 认的是 Authorization: Bearer <token>（文档里的 curl 就是这么带的）。
         db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='mxapi' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
+        # RunningHub 同样只认 Authorization: Bearer。它的 token 已经是部署级环境变量
+        # （RUNNINGHUB_API_TOKEN，超分子系统在用同一个），所以这里**故意不落库**：
+        # 不往能力库里复制第二份密钥，轮换只有一处。generation_tasks._headers 在
+        # 渠道没有自己的凭据时回落到那个环境变量。管理员若要覆盖，在控制台填一次即可。
+        db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='runninghub' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
+            ("minimax-h3-rh-enhanced", "MiniMax H3 RunningHub 增强版", "video_generation", ["text","image","video","audio"], "video"),
             ("seedance-2.0", "Seedance 2.0", "video_generation", ["text","image","video"], "video"),
             ("seedance-2.5", "Seedance 2.5", "video_generation", ["text","image","video"], "video"),
             ("gpt-image-2", "GPT Image 2", "image_generation", ["text","image"], "image"),
@@ -123,6 +130,13 @@ class CapabilityStore:
           # 沿用 2.0 的实测结论；需要参考音频时走 jmapi。
           ("seedance-2.5","jmapi","seedance2.5","/jmapi/v1/multimodal2video","/jmapi/v1/query",{"images":30,"videos":10,"audios":10,"duration_max":30},1,20),
           ("seedance-2.5","libtv","star-video2.5","/libtv/api/v1/video/publish","/libtv/api/v1/video/query/{task_id}",{"images":30,"videos":10,"audios":0,"duration_max":30},1,30),
+          # RunningHub 的 MiniMax H3 增强版（ref2va = 参考素材 → 视频 + 音频）。上游字段是
+          # 逐张编号的 refImage1..9 / refVideo1..3 / refAudio1..3，不是数组，映射在 _payload。
+          # 三条硬约束都是 2026-09-29 用**空转探针**问上游要出来的（提交必被参数校验拒、
+          # 不会建任务）：resolution 白名单是 480p/768p/1080p（**没有 720p**，但有 768p，
+          # 正是 H3 的原生档）；duration 是 4～15 的整数；aspectRatio 白名单比我们开放的宽
+          # （多 2:3/3:2/21:9），我们这边的五个值全在它白名单里，所以不构成缺口。
+          ("minimax-h3-rh-enhanced","runninghub","minimax-h3-rh-enhanced","/openapi/v2/rhart-video/minimax-h3-rh-enhanced/ref2va","/openapi/v2/query",{"images":9,"videos":3,"audios":3,"duration_min":4,"duration_max":15,"resolutions":["480p","768p","1080p"]},1,60),
           ("gpt-image-2","grsai","gpt-image-2","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5","grsai","gpt-image-2.5","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
@@ -198,7 +212,7 @@ class CapabilityStore:
         return self.channel(channel_id)
 
     def delete_channel(self, channel_id:str)->None:
-        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi"}: raise ValueError("preset channel cannot be deleted; disable it instead")
+        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub"}: raise ValueError("preset channel cannot be deleted; disable it instead")
         with self._db() as db: db.execute("UPDATE channels SET enabled=0,deleted_at=?,updated_at=? WHERE id=?",(now(),now(),channel_id))
 
     def models(self)->list[dict[str,Any]]:
@@ -219,6 +233,13 @@ class CapabilityStore:
         with self._db() as db: row=db.execute("SELECT mc.*,m.code model_code,c.code channel_code,c.name channel_name,c.deployment_type,c.adapter,c.base_url,c.credential_enc,c.auth_type,c.timeout_seconds,c.health_status,c.enabled channel_enabled FROM model_channels mc JOIN models m ON m.id=mc.model_id JOIN channels c ON c.id=mc.channel_id WHERE m.code=? AND c.code=? AND m.deleted_at IS NULL AND c.deleted_at IS NULL",(model_code,channel_code)).fetchone()
         if not row: raise CapabilityNotFound(f"{model_code}:{channel_code}")
         out=dict(row); out["capabilities"]=json.loads(out.pop("capabilities_json")); out["parameter_map"]=json.loads(out.pop("parameter_map_json")); out["credential"]=self.decrypt(out.pop("credential_enc",None)); return out
+
+    def binding_channels(self, model_code:str)->list[str]:
+        """一个模型登记过的渠道，按绑定的 priority 排 —— 这就是 channel="auto" 的候选顺序。
+        写死渠道名会让新模型进不了 auto，所以由绑定表本身说了算。"""
+        with self._db() as db:
+            rows=db.execute("SELECT c.code FROM model_channels mc JOIN models m ON m.id=mc.model_id JOIN channels c ON c.id=mc.channel_id WHERE m.code=? AND m.deleted_at IS NULL AND c.deleted_at IS NULL ORDER BY mc.priority",(model_code,)).fetchall()
+        return [row[0] for row in rows]
 
     def create_job(self, model_code:str, requested_channel:str, request:dict[str,Any])->str:
         models={m["code"]:m for m in self.models()}

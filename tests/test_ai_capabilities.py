@@ -35,7 +35,12 @@ class CapabilityTests(unittest.TestCase):
         self.assertFalse(channels["mxapi"]["enabled"])
         self.assertEqual(channels["mxapi"]["auth_type"],"bearer")
         self.assertFalse(channels["mxapi"]["credential_configured"])
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","suno-v6","suno-sound"})
+        # runninghub 同样是预设渠道：默认关闭、默认 bearer、**故意不落凭据**
+        # （token 走 RUNNINGHUB_API_TOKEN 环境变量，跟超分子系统共用一份）
+        self.assertFalse(channels["runninghub"]["enabled"])
+        self.assertEqual(channels["runninghub"]["auth_type"],"bearer")
+        self.assertFalse(channels["runninghub"]["credential_configured"])
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","suno-v6","suno-sound"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -145,6 +150,84 @@ class CapabilityTests(unittest.TestCase):
                     duration_request(30),
                 )
             )
+
+    def test_runninghub_binding_payload_uses_numbered_reference_fields(self):
+        """RunningHub 的参考素材是逐张编号的平铺字段，不是数组；上游只收 480p/768p/1080p。"""
+        binding = self.store.binding("minimax-h3-rh-enhanced", "runninghub")
+        self.assertEqual(binding["upstream_model"], "minimax-h3-rh-enhanced")
+        self.assertEqual(binding["channel_code"], "runninghub")
+        request = {
+            "prompt": "原样提示词",
+            "reference_image_urls": ["https://x/a.png", "https://x/b.png"],
+            "reference_video_urls": ["https://x/a.mp4"],
+            "reference_audio_urls": ["https://x/a.mp3"],
+            "duration_seconds": 10,
+            "aspect_ratio": "9:16",
+            "resolution": "768p",
+            "sound": True,
+        }
+        self.assertTrue(_compatible(binding, request))
+        payload = _payload(binding, request)
+        self.assertEqual(payload["prompt"], "原样提示词")
+        self.assertEqual(payload["refImage1"], "https://x/a.png")
+        self.assertEqual(payload["refImage2"], "https://x/b.png")
+        self.assertNotIn("refImage3", payload)
+        self.assertEqual(payload["refVideo1"], "https://x/a.mp4")
+        self.assertEqual(payload["refAudio1"], "https://x/a.mp3")
+        self.assertEqual(payload["duration"], 10)
+        self.assertEqual(payload["aspectRatio"], "9:16")
+        self.assertEqual(payload["resolution"], "768p")
+        self.assertEqual(payload["audioMode"], "native")
+
+    def test_runninghub_resolution_and_duration_whitelist(self):
+        def request(resolution, duration=10):
+            return {
+                "reference_image_urls": [],
+                "reference_video_urls": [],
+                "reference_audio_urls": [],
+                "duration_seconds": duration,
+                "resolution": resolution,
+            }
+
+        binding = self.store.binding("minimax-h3-rh-enhanced", "runninghub")
+        for resolution in ("480p", "768p", "1080p"):
+            self.assertTrue(_compatible(binding, request(resolution)), resolution)
+        # 上游的白名单里没有 720p（实测的原话：allowed values: 480p, 768p, 1080p）
+        self.assertFalse(_compatible(binding, request("720p")))
+        # 时长是 4～15 的整数
+        self.assertFalse(_compatible(binding, request("1080p", duration=3)))
+        self.assertTrue(_compatible(binding, request("1080p", duration=4)))
+        self.assertTrue(_compatible(binding, request("1080p", duration=15)))
+        self.assertFalse(_compatible(binding, request("1080p", duration=16)))
+
+    def test_768p_does_not_leak_to_bindings_without_a_declared_whitelist(self):
+        """768p 是本次为新模型新开的取值；没声明白名单的绑定一律不接，
+        免得它从新入口漏到 Seedance 上去（那边上游会拒，错误还比我们晚一步）。"""
+        request = {
+            "reference_image_urls": [],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "duration_seconds": 5,
+            "resolution": "768p",
+        }
+        for channel in ("jmapi", "libtv"):
+            for model in ("seedance-2.0", "seedance-2.5"):
+                self.assertFalse(
+                    _compatible(self.store.binding(model, channel), request),
+                    f"{model}:{channel}",
+                )
+
+    def test_auto_candidates_come_from_bindings(self):
+        """channel="auto" 的候选顺序由绑定表按 priority 给出，不再写死 jmapi/libtv。"""
+        self.assertEqual(
+            self.store.binding_channels("seedance-2.0"), ["jmapi", "libtv"]
+        )
+        self.assertEqual(
+            self.store.binding_channels("seedance-2.5"), ["jmapi", "libtv"]
+        )
+        self.assertEqual(
+            self.store.binding_channels("minimax-h3-rh-enhanced"), ["runninghub"]
+        )
 
     def test_reference_image_cap_is_per_binding(self):
         request = {
