@@ -58,6 +58,12 @@ aicentre2.sligenai.cn {
 		}
 	}
 
+	@jmapi_admin path /jmapi-admin /jmapi-admin/*
+	handle @jmapi_admin {
+		root * /home/donxu/ai-centre/runtime
+		file_server
+	}
+
 	handle {
 		reverse_proxy 127.0.0.1:8320 {
 			transport http {
