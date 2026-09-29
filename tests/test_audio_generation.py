@@ -200,7 +200,9 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(second["clip_id"], "9f4c2e50-40ec-4d47-a25d-4b5e8ce63e95")
         # 照 extend 的先后顺序取，两条 task 会回报同一首（就是 SIBLING_B 那一支反例）。
         self.assertNotEqual(first["url"], second["url"])
-        self.assertEqual(first["url"], "https://d2lwuy8qc234o3.cloudfront.net/1/clip/46595f83.m4a")
+        # 有 proxy_url 时必须用它：media_urls[0] 那条 CloudFront 直链是加密正文，
+        # 下载器会以「header is not recognized」415 拒掉（2026-09-26 实测）。
+        self.assertTrue(first["url"].startswith("https://open.mxapi.org/api/v2/proxy/resource"), first["url"])
         self.assertEqual(first["duration_seconds"], 262.0)
         self.assertEqual(first["title"], "长安谣")
         self.assertEqual(first["cover_url"], "https://cdn2.suno.ai/image_46595f83.jpeg")
@@ -219,15 +221,12 @@ class ParserTests(unittest.TestCase):
 
         self.assertIsNone(_song(body))
 
-    def test_song_falls_back_to_the_https_proxy_when_media_urls_are_missing(self) -> None:
+    def test_song_falls_back_to_media_urls_when_the_proxy_is_missing(self) -> None:
         body = json.loads(json.dumps(SIBLING_A))
-        entries = json.loads(body["data"]["result"]["extend"])
-        for entry in entries:
-            entry.pop("media_urls")
-        body["data"]["result"]["extend"] = json.dumps(entries)
+        del body["data"]["result"]["proxy_url"]
 
         url = _song(body)["url"]
-        self.assertTrue(url.startswith("https://open.mxapi.org/api/v2/proxy/resource"), url)
+        self.assertEqual(url, "https://d2lwuy8qc234o3.cloudfront.net/1/clip/46595f83.m4a")
 
 
 class FakeResponse:

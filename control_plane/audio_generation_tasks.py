@@ -7,9 +7,11 @@
    会把**两首**都列出来（两个响应里都是两首，不是各列各的）。所以：
    认领要靠 `result.custom_id` 去 extend 里对 id，按顺序取会拿到别人的歌。
 2. **成品是 opus-in-mp4 的 .m4a，且 http。** 中台的下载器只收 https（`mp3Url` 是 http，
-   被 `media_fetch` 的校验拒掉），而 https 的那份是 `extend[i].media_urls[0].url`
-   （CloudFront，`content_type: m4a-opus`）。下载用 ASR_MEDIA（它的签名嗅探认 ftyp isom），
-   再转成 mp3 后回传内核——顺带解决「opus 装在 mp4 容器里，剪辑软件不认」这件事。
+   被 `media_fetch` 的校验拒掉），https 的那份取 `result.proxy_url`（mxapi 自己包的一层
+   代理，响应带 `ftyp isom`）。注意**不要**改用 `extend[i].media_urls[0].url` 那条
+   CloudFront 直链——它返回的是加密正文，签名嗅探会 415 拒掉，见 `_song_url`。
+   下载用 ASR_MEDIA，再转成 mp3 后回传内核——顺带解决「opus 装在 mp4 容器里，
+   剪辑软件不认」这件事。
 """
 
 from __future__ import annotations
@@ -110,13 +112,26 @@ def _https(value: Any) -> str:
 
 
 def _song_url(entry: dict[str, Any], result: dict[str, Any]) -> str:
-    """优先 https 直链；都没有才退回 `proxy_url`（它是把那条 http 直链包了一层的 https 代理）。"""
+    """mxapi 的 https 音频直链。
+
+    必须优先取 `proxy_url`：`extend[i].media_urls[0].url` 那条 CloudFront 直链
+    虽然也回 200 和 `content-type: audio/mp4`，但正文是**整份加密**的——全文找不到
+    `ftyp`/`moov`/`mdat` 任何一个 box，字节熵 7.999/8.0。中台下载器的签名嗅探因此
+    以「remote media file header is not recognized」415 拒掉（2026-09-26 实测）。
+    `proxy_url` 是把 `fileInfo.mp3Url` 那条 http 直链包了一层的 https 代理，响应
+    带正常的 `ftyp isom` 头，能过校验。
+
+    media_urls 只在没有 proxy_url 时兜底，不要倒过来。
+    """
+    url = _https(result.get("proxy_url"))
+    if url:
+        return url
     for item in entry.get("media_urls") or []:
         if isinstance(item, dict):
             url = _https(item.get("url"))
             if url:
                 return url
-    return _https(result.get("proxy_url"))
+    return ""
 
 
 def _duration(value: Any) -> float | None:
