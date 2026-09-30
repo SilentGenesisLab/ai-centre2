@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import subprocess
@@ -73,6 +74,13 @@ def _payload(
         payload={"model":model,"prompt":request["prompt"],"aspectRatio":aspect,"urls":request.get("reference_image_urls",[]),"shutProgress":True}
         if binding["upstream_model"]=="nano-banana-2": payload["imageSize"]=request.get("image_size","1K")
         return payload
+    if binding["adapter"]=="teamorouter":
+        # OpenAI 兼容的生图请求体。尺寸必须由我们**算准**：这个端点对 size 不做校验，
+        # 传 999x999 它照样回 200（实测会静默出一张默认尺寸的图），所以映射错了不会报错，
+        # 只会安静地给错尺寸。PIXEL_ASPECTS 就是 grsai 那三个模型在用的同一张表，直接复用。
+        size=PIXEL_ASPECTS.get(request.get("image_size","1K"),PIXEL_ASPECTS["1K"])
+        return {"model":binding["upstream_model"],"prompt":request["prompt"],"n":1,
+                "size":size.get(request.get("aspect_ratio","1:1"),size["1:1"])}
     if binding["adapter"]=="runninghub":
         # RunningHub 的参考素材是**逐张编号的平铺字段**（refImage1..9、refVideo1..3、
         # refAudio1..3），不是数组，所以只能这样按序铺开；上游没给的槽位不写，
@@ -191,6 +199,15 @@ def _error_detail(body: dict[str, Any], default: str) -> str:
             value = candidate.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
+            # OpenAI 风格的错误体把话埋在 `error` 这个**对象**里：
+            # {"error":{"message":"...","type":"invalid_request_error","code":400}}
+            # （TeamORouter 的生图与 /v1/systemone 都是这个形状）。不往下钻的话
+            # 每条上游报错都只剩 "request rejected"，白丢最要紧的那句话。
+            if isinstance(value, dict):
+                for nested in ("message", "msg", "detail"):
+                    inner = value.get(nested)
+                    if isinstance(inner, str) and inner.strip():
+                        return inner.strip()
     return default
 
 
@@ -249,7 +266,7 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     return True
 def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
     if not channel.get("base_url"): return False,None,"Base URL未配置"
-    path={"jmapi":"/jmapi/status","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query"}.get(channel["adapter"],"/health")
+    path={"jmapi":"/jmapi/status","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
@@ -267,6 +284,14 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
             if isinstance(body,dict) and int(body.get("code") or 0)==1602: return False,body,"HEADER_API_KEY_NOT_FOUND"
             if response.status_code>=400: return False,None,f"HTTP {response.status_code}"
             return True,body,None
+        if channel["adapter"]=="teamorouter":
+            # GET /v1/models 是免费且**真的鉴权**的入口：错 token 回 401、不带头也回 401
+            # （2026-09-30 实测）。所以这条比 RunningHub/mxapi 的弱判据强 —— 它同时证明了
+            # 「网关通」和「key 有效」，是三条第三方渠道里唯一能证实的一条。
+            if response.status_code in {401,403}: return False,None,"HTTP %d：API key 无效或未配置"%response.status_code
+            if response.status_code>=400: return False,None,f"HTTP {response.status_code}"
+            try: return True,response.json(),None
+            except ValueError: return True,{"status_code":response.status_code},None
         if channel["adapter"]=="mxapi":
             # 这个渠道连「查一个不存在的任务」都要过鉴权，所以 401/403 是「token 不认」的指纹；
             # 400/404 之类的 JSON 错误体反而说明网关通、鉴权过了（上游用 code 字段报应用层错误，
@@ -278,6 +303,69 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
         if response.status_code>=400:return False,None,f"HTTP {response.status_code}"
         return True,response.json(),None
     except Exception as exc:return False,None,type(exc).__name__
+
+
+def _sync_image_results(
+    binding: dict[str, Any], body: dict[str, Any], request: dict[str, Any], job_id: str
+) -> list[str]:
+    """同步生图端点的内联结果 → 可交付的 https 链接。
+
+    OpenAI 兼容的 `POST /v1/images/generations` 把成品直接塞在响应体里
+    （`data[i].b64_json`，PNG 的 base64，实测 1K 一张 1.6MB），**没有 task id**。
+    所以它没法走中台的「提交 → 轮询」链路，只能在提交返回时就地收下。
+
+    b64 必须落盘再传内核：作业契约里 `result_urls` 是链接而不是内联字节，
+    而且把 MB 级 base64 原样存进 generation_jobs 会把库撑爆。
+    """
+    items = body.get("data")
+    if not isinstance(items, list):
+        return []
+    entries = [item for item in items if isinstance(item, dict)]
+    if not entries:
+        return []
+    if not any(item.get("b64_json") for item in entries):
+        # 上游改回 URL 模式（或换了个不吃 b64 的型号）时不必下载转存，直接透传。
+        return list(dict.fromkeys(_urls_from_container(entries)))
+    settings = get_settings()
+    if not settings.kernel_upload_url or not settings.kernel_api_token:
+        raise RuntimeError("inline image results require kernel_upload_url to be configured")
+    directory = settings.video_generation_work_dir / job_id
+    directory.mkdir(parents=True, exist_ok=True)
+    persisted: list[str] = []
+    try:
+        for index, entry in enumerate(entries, start=1):
+            encoded = entry.get("b64_json")
+            if not encoded:
+                persisted.extend(_urls_from_container(entry))
+                continue
+            path = directory / f"result-{index}.png"
+            path.write_bytes(base64.b64decode(encoded))
+            data = {
+                "external_ref": request.get("external_ref") or job_id,
+                "run_id": "",
+                "campaign_id": "",
+                "project_id": "",
+                "stage": f"media.image_generation.result_{index}",
+                "actor": "video-generation-worker",
+            }
+            with path.open("rb") as stream:
+                response = httpx.post(
+                    settings.kernel_upload_url,
+                    headers={"Authorization": f"Bearer {settings.kernel_api_token}"},
+                    data=data,
+                    files={"file": (path.name, stream, "image/png")},
+                    timeout=httpx.Timeout(
+                        settings.video_generation_upload_timeout_seconds, connect=30
+                    ),
+                )
+            response.raise_for_status()
+            result_url = str(response.json().get("uri") or "")
+            if not result_url.startswith("https://"):
+                raise RuntimeError("kernel upload did not return an HTTPS URL")
+            persisted.append(result_url)
+        return persisted
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def _persist_video_results(
@@ -454,6 +542,19 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     f"upstream rejected request: "
                     f"{_error_detail(body, 'request rejected')[:160]}"
                 )
+            if binding["adapter"]=="teamorouter":
+                # 同步端点：响应体里就已经有成品，没有 task id，所以下面的轮询分支对它是死路——
+                # `if not tid` 会把它判成「上游没给任务号」而失败，而**钱已经花了**。
+                # 先落 submitted=True：转存失败属于「图已经生成、我们没接住」，这种情况不能
+                # 让 auto 换渠道重来（那会再买一张），只能如实失败。
+                submitted = True
+                urls = _sync_image_results(binding, body, req, job_id)
+                if not urls:
+                    raise RuntimeError(
+                        f"upstream returned no image: "
+                        f"{_error_detail(body, 'no image in response')[:160]}"
+                    )
+                return _finish_success(store,job_id,req,"","completed",urls,started)
             if not tid:
                 message=_error_detail(body,"upstream response did not contain task id")
                 raise RuntimeError(f"upstream rejected request: {message[:120]}")

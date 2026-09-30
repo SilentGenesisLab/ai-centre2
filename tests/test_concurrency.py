@@ -399,6 +399,7 @@ class UnitReaderTests(StoreTestCase):
                 "video_depth",
                 "video_generation",
                 "audio_generation",
+                "decision_generation",
                 "watermark_remove",
                 "audio_separation",
                 "color_grade",

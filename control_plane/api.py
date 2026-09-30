@@ -67,6 +67,7 @@ from .api_keys import ApiKeyStore
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient
 from .audio_generation_jobs import AudioGenerationJobClient
+from .decision_generation_jobs import DecisionGenerationJobClient
 from .generation_tasks import _compatible as generation_request_compatible
 from .generation_tasks import probe_channel
 from .oss_storage import OssStorage
@@ -657,7 +658,7 @@ class VideoGenerationRequest(BaseModel):
 class ImageGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: Literal["gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2"] = "gpt-image-2"
-    channel: Literal["grsai"] = "grsai"
+    channel: Literal["grsai","teamorouter","auto"] = "grsai"
     prompt: str = Field(min_length=1,max_length=10000)
     reference_image_urls: list[str] = Field(default_factory=list,max_length=9)
     aspect_ratio: Literal["1:1","2:3","3:2","3:4","4:3","9:16","16:9"] = "1:1"
@@ -686,12 +687,28 @@ class AudioGenerationRequest(BaseModel):
     metadata: dict[str,Any] = Field(default_factory=dict)
 
 
+class DecisionGenerationRequest(BaseModel):
+    """定型决策：给一段 state + 一组问题，拿回一组带置信度的定型答案。
+
+    `questions` 故意是**宽松的字典**：三种题型（choice / score / noul）的 `criteria`
+    结构互不相同（choice 要对象、score 要数组、noul 不要），而平台能表达的比上游的校验粗。
+    在本地复刻那套校验，猜错一次就会挡掉本来合法的请求；喂错结构时上游的报错更准。
+    """
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["jev"] = "jev"
+    channel: Literal["teamorouter","auto"] = "teamorouter"
+    state: str = Field(min_length=1,max_length=20000,description="待判定的事实描述（自由文本）。")
+    questions: dict[str,dict[str,Any]] = Field(description="问题字典：键是问题名，值至少含 type 与 instructions。type 取值 choice / score / noul。")
+    external_ref: str | None = Field(default=None,max_length=256)
+    metadata: dict[str,Any] = Field(default_factory=dict)
+
+
 class ChannelCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1,max_length=100)
     code: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     deployment_type: Literal["local","third_party"]
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub"]
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter"]
     base_url: str = Field(default="",max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key"] = "none"
@@ -703,7 +720,7 @@ class ChannelUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None,min_length=1,max_length=100)
     deployment_type: Literal["local","third_party"] | None = None
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub"] | None = None
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter"] | None = None
     base_url: str | None = Field(default=None,max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key"] | None = None
@@ -942,6 +959,11 @@ def get_audio_generation_jobs() -> AudioGenerationJobClient:
     return AudioGenerationJobClient(get_settings(),get_capability_store())
 
 
+@lru_cache(maxsize=1)
+def get_decision_generation_jobs() -> DecisionGenerationJobClient:
+    return DecisionGenerationJobClient(get_settings(),get_capability_store())
+
+
 def require_service_token(authorization: str = Header(default="")) -> None:
     if not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -1088,6 +1110,10 @@ async def _reconcile_observability_task(task: dict[str, Any]) -> None:
     elif service == "audio_generation":
         payload = await asyncio.to_thread(
             get_audio_generation_jobs().status, external_id
+        )
+    elif service == "decision_generation":
+        payload = await asyncio.to_thread(
+            get_decision_generation_jobs().status, external_id
         )
     else:
         return
@@ -4579,10 +4605,23 @@ async def _validate_image_generation_request(request:ImageGenerationRequest)->No
     try:
         for value in request.reference_image_urls: await asyncio.to_thread(validate_public_https_url,value)
     except MediaFetchError as exc: raise HTTPException(exc.status_code,exc.detail) from exc
-    try: binding=await asyncio.to_thread(get_capability_store().binding,request.model,request.channel)
-    except CapabilityNotFound as exc: raise HTTPException(404,"model or channel not found") from exc
-    if not binding["enabled"] or not binding["channel_enabled"] or binding["health_status"]!="online": raise HTTPException(503,"image generation channel is unavailable")
-    if len(request.reference_image_urls)>binding["capabilities"].get("images",0): raise HTTPException(422,"too many reference images")
+    # auto 的候选同样从绑定表读（不再写死渠道名），和视频那条一个道理。
+    store=get_capability_store()
+    candidates=[request.channel] if request.channel!="auto" else store.binding_channels(request.model)
+    for code in candidates:
+        try: binding=await asyncio.to_thread(store.binding,request.model,code)
+        except CapabilityNotFound: continue
+        if not binding["enabled"] or not binding["channel_enabled"] or binding["health_status"]!="online": continue
+        if not generation_request_compatible(binding,request.model_dump()): continue
+        if len(request.reference_image_urls)>binding["capabilities"].get("images",0): continue
+        return
+    # 指定渠道时把「渠道不可用」和「模型没有这个渠道」分开报，否则调试时分不清是配错了还是掉线了。
+    if request.channel!="auto":
+        try: binding=await asyncio.to_thread(store.binding,request.model,request.channel)
+        except CapabilityNotFound as exc: raise HTTPException(404,"model or channel not found") from exc
+        if not binding["enabled"] or not binding["channel_enabled"] or binding["health_status"]!="online": raise HTTPException(503,"image generation channel is unavailable")
+        if len(request.reference_image_urls)>binding["capabilities"].get("images",0): raise HTTPException(422,"too many reference images")
+    raise HTTPException(422,"no enabled, healthy channel supports this model and input combination")
 
 
 @app.post("/v1/video-generations/jobs",tags=["通用视频生成"],summary="创建原子视频生成任务",status_code=202,dependencies=[Depends(require_service_token)])
@@ -4666,6 +4705,46 @@ async def get_audio_generation_job(job_id:UUID)->dict[str,Any]:
 async def cancel_audio_generation_job(job_id:UUID)->dict[str,Any]:
     try:return await asyncio.to_thread(get_audio_generation_jobs().cancel,str(job_id))
     except CapabilityNotFound as exc:raise HTTPException(404,"audio generation job not found") from exc
+
+
+async def _validate_decision_generation_request(request:DecisionGenerationRequest)->None:
+    """只拦本地判得准的错（空问题、缺 type/instructions、渠道不可用）。
+
+    题型的结构约束**不在这里复刻**：choice 的 criteria 是对象、score 的是数组，
+    上游的校验比我们能表达的细，本地猜错会把合法请求挡在门外。
+    """
+    if not request.questions: raise HTTPException(422,"questions must not be empty")
+    for name,question in request.questions.items():
+        if not isinstance(question,dict): raise HTTPException(422,f"question '{name}' must be an object")
+        if not str(question.get("type") or "").strip(): raise HTTPException(422,f"question '{name}' requires a type")
+        if not str(question.get("instructions") or "").strip(): raise HTTPException(422,f"question '{name}' requires instructions")
+    store=get_capability_store()
+    candidates=[request.channel] if request.channel!="auto" else store.binding_channels(request.model)
+    for code in candidates:
+        try: binding=await asyncio.to_thread(store.binding,request.model,code)
+        except CapabilityNotFound: continue
+        if generation_request_compatible(binding,request.model_dump()) and binding["enabled"] and binding["channel_enabled"] and binding["health_status"]=="online": return
+    raise HTTPException(422,"no enabled, healthy channel supports this model")
+
+
+@app.post("/v1/decision-generations/jobs",tags=["定型决策"],summary="创建定型决策任务",status_code=202,dependencies=[Depends(require_service_token)])
+async def create_decision_generation_job(request:DecisionGenerationRequest)->dict[str,Any]:
+    await _validate_decision_generation_request(request)
+    try: jid=await asyncio.to_thread(get_decision_generation_jobs().submit,request.model_dump())
+    except Exception as exc: raise HTTPException(503,"unable to enqueue decision generation job") from exc
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/decision-generations/jobs/{jid}"}
+
+
+@app.get("/v1/decision-generations/jobs/{job_id}",tags=["定型决策"],summary="查询定型决策任务",dependencies=[Depends(require_service_token)])
+async def get_decision_generation_job(job_id:UUID)->dict[str,Any]:
+    try:return await asyncio.to_thread(get_decision_generation_jobs().status,str(job_id))
+    except CapabilityNotFound as exc:raise HTTPException(404,"decision generation job not found") from exc
+
+
+@app.post("/v1/decision-generations/jobs/{job_id}/cancel",tags=["定型决策"],summary="取消定型决策任务",dependencies=[Depends(require_service_token)])
+async def cancel_decision_generation_job(job_id:UUID)->dict[str,Any]:
+    try:return await asyncio.to_thread(get_decision_generation_jobs().cancel,str(job_id))
+    except CapabilityNotFound as exc:raise HTTPException(404,"decision generation job not found") from exc
 
 
 @app.get("/internal/admin/storage/status",include_in_schema=False,dependencies=[Depends(require_service_token)])

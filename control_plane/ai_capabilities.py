@@ -80,6 +80,7 @@ class CapabilityStore:
             ("grsai", "GRSAI", "third_party", "grsai", "https://grsai.dakka.com.cn", 0, 40),
             ("mxapi", "mxapi", "third_party", "mxapi", "https://open.mxapi.org", 0, 50),
             ("runninghub", "RunningHub", "third_party", "runninghub", "https://www.runninghub.cn", 0, 60),
+            ("teamorouter", "TeamORouter", "third_party", "teamorouter", "https://api.teamorouter.com", 0, 70),
         ]
         for code, name, kind, adapter, url, enabled, priority in presets:
             db.execute("INSERT OR IGNORE INTO channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -96,6 +97,11 @@ class CapabilityStore:
         # 不往能力库里复制第二份密钥，轮换只有一处。generation_tasks._headers 在
         # 渠道没有自己的凭据时回落到那个环境变量。管理员若要覆盖，在控制台填一次即可。
         db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='runninghub' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
+        # TeamORouter 也是 Authorization: Bearer。它的 key 和 RunningHub 不同，**可以**落在
+        # 能力库里：控制台 PATCH /internal/admin/ai-capabilities/channels/{id} 写进来的凭据
+        # 是 AESGCM 加密后存的（credential_enc），不进 git、不进前端。所以这里只把认证方式
+        # 摆正，真正的 key 由运维从控制台注入，播种期 credential_tail 仍是 NULL。
+        db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='teamorouter' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
             ("minimax-h3-rh-enhanced", "MiniMax H3 RunningHub 增强版", "video_generation", ["text","image","video","audio"], "video"),
@@ -109,6 +115,10 @@ class CapabilityStore:
             # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
             ("suno-v6", "Suno v6 音乐", "audio_generation", ["text"], "audio"),
             ("suno-sound", "Suno 音效", "audio_generation", ["text"], "audio"),
+            # Jev（TypeSafe）是**定型决策**模型，不是生成模型：给一段 state + 一组问题，
+            # 回一组带置信度的定型答案。输入输出都是文本/JSON，所以 output_modality 是 json。
+            # 这是平台里第一个 decision_generation 能力类型（见 decision_generation_tasks）。
+            ("jev", "Jev 定型决策", "decision_generation", ["text"], "json"),
         ]
         schema = {"duration_seconds":{"type":"integer"},"resolution":{"type":"string"},"aspect_ratio":{"type":"string"}}
         for code,name,capability_type,inputs,output in models:
@@ -117,6 +127,12 @@ class CapabilityStore:
         db.execute("UPDATE models SET capability_type='image_generation',output_modality='image',updated_at=? WHERE code IN ('gpt-image-2','gpt-image-2.5','gpt-image-2.5-sunburst','gpt-image-2.5-flare','nano-banana-2')",(stamp,))
         audio_schema = {"prompt":{"type":"string"},"lyrics":{"type":"string"},"tags":{"type":"string"},"title":{"type":"string"},"instrumental":{"type":"boolean"},"loop":{"type":"boolean"}}
         db.execute("UPDATE models SET parameter_schema_json=?,updated_at=? WHERE code IN ('suno-v6','suno-sound')",(json.dumps(audio_schema),stamp))
+        # Jev 的参数只有两个：state（自由文本）与 questions（问题字典，逐题带 type/instructions，
+        # choice 与 score 还各带一份 criteria）。questions 的三种题型结构不同、且上游的校验
+        # 比我们能表达的都细（choice 的 criteria 是对象、2~255 项；score 的 criteria 是**数组**、
+        # 2~10 级；noul 不收 criteria），所以平台**原样透传**，不在这里复刻上游的题型校验。
+        decision_schema = {"state":{"type":"string"},"questions":{"type":"object"}}
+        db.execute("UPDATE models SET parameter_schema_json=?,updated_at=? WHERE code='jev'",(json.dumps(decision_schema),stamp))
         ids = {r["code"]:r["id"] for r in db.execute("SELECT id,code FROM channels")}
         mids = {r["code"]:r["id"] for r in db.execute("SELECT id,code FROM models")}
         bindings = [
@@ -142,6 +158,19 @@ class CapabilityStore:
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-flare","grsai","gpt-image-2.5-flare","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("nano-banana-2","grsai","nano-banana-2","/v1/draw/nano-banana","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
+          # TeamORouter 是 OpenAI 兼容的**同步**生图端点：POST /v1/images/generations 直接
+          # 回 `data[0].b64_json`（PNG 的 base64），没有 task id、没有 status、没有 url 字段
+          # （2026-09-30 实测，1K 约 37s）。所以这条绑定的 query_path 是空的——永远不会去轮询，
+          # 由 generation_tasks 里 adapter=="teamorouter" 那条同步分支处理（解码 b64 → 传 OSS）。
+          # `images: 0`：/v1/images/generations 只吃文本，不支持参考图（编辑走 /v1/images/edits，
+          # 契约没实测过，不猜）。要参考图时 auto 会落到 grsai。
+          # priority 70 = 排在 grsai(40) 之后：运维已定这个渠道先当兜底，不抢默认选路。
+          ("gpt-image-2","teamorouter","gpt-image-2","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
+          ("gpt-image-2.5-sunburst","teamorouter","gpt-image-2.5-sunburst","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
+          ("gpt-image-2.5-flare","teamorouter","gpt-image-2.5-flare","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
+          # Jev：POST /v1/systemone，同步（实测 1.8s、$0.000014/次），同样没有 task id。
+          # 上游型号名是带命名空间的 typesafe-ai/jev（`jev` 这个裸名没验证过，用已验证的那个）。
+          ("jev","teamorouter","typesafe-ai/jev","/v1/systemone","",{"images":0,"videos":0,"audios":0},1,70),
           # Suno 的生成接口一次提交返回两个 task_id；两条绑定都查同一个 /api/v2/music/task。
           # 上游型号名就是文档里的 mv（灵感/自定义模式与音效的 mv 白名单不同，见 audio_generation_tasks）。
           ("suno-v6","mxapi","chirp-hawk","/api/v2/music/generate","/api/v2/music/task?id={task_id}",{"images":0,"videos":0,"audios":0},1,50),
@@ -212,7 +241,7 @@ class CapabilityStore:
         return self.channel(channel_id)
 
     def delete_channel(self, channel_id:str)->None:
-        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub"}: raise ValueError("preset channel cannot be deleted; disable it instead")
+        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter"}: raise ValueError("preset channel cannot be deleted; disable it instead")
         with self._db() as db: db.execute("UPDATE channels SET enabled=0,deleted_at=?,updated_at=? WHERE id=?",(now(),now(),channel_id))
 
     def models(self)->list[dict[str,Any]]:

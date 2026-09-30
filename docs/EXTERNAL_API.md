@@ -85,6 +85,8 @@ ffmpeg -ss 0 -i "K:\三瑞集团：尊爱AI视频需求汇总\视频脚本\脚�
 | MiniMax H3视频生成 | 创建单段或两段异步参考视频生成任务 | `POST /v1/video-generations/minimax-h3/jobs` |
 | AI 视频拉片 | 无参考拆镜、画面、声音与问题定位 | `POST /v1/video-reviews/jobs` |
 | AI 视频拉片 | 查询任务与获取 JSON/Markdown 报告 | `GET /v1/video-reviews/jobs/{job_id}`、`GET /v1/video-reviews/jobs/{job_id}/report` |
+| 定型决策 | 提交事实描述与问题，取回带置信度的定型答案 | `POST /v1/decision-generations/jobs` |
+| 定型决策 | 查询与取消决策任务 | `/v1/decision-generations/jobs...` |
 
 内部上传、GPU 管理、音色修改和旧版 TTS 接口不在第三方 OpenAPI 中展示，公网访问固定返回 404。
 
@@ -805,7 +807,54 @@ POST /v1/video-generations/minimax-h3/jobs/{job_id}/cancel
 
 完成后`result_url`是可直接访问的OSS成片，`output`返回实际质量档位、交付宽高、模型宽高、比例和目标时长；`attempt_count`表示实际执行次数。接口仅提供异步原子任务。
 
-## 十三、状态码与重试
+## 十四、定型决策（Jev）
+
+给一段事实描述和一组问题，一次调用取回一组带置信度的定型答案。走TeamORouter渠道的Jev（上游型号`typesafe-ai/jev`）。它不产出图片、视频或音频，所以`result_urls`恒为空数组，答案在查询结果的`upstream_response.answers`里；作业记录的形状与生图接口一致（先拿`job_id`再查询）。
+
+```bash
+curl -X POST "$BASE/v1/decision-generations/jobs" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jev",
+    "channel": "teamorouter",
+    "state": "客户09-30提出改枪皮配色，此前已返工两轮，交付期还剩5天。",
+    "questions": {
+      "risk": {
+        "type": "choice",
+        "instructions": "这一轮返工的风险有多高？",
+        "criteria": {"low": "只是微调", "medium": "需要重渲", "high": "方向要重定"}
+      },
+      "urgency": {"type": "noul", "instructions": "这件事的紧迫程度。"}
+    },
+    "external_ref": "decision-001"
+  }'
+```
+
+- `state`为必填字符串，长度1～20000字符，是待判定的事实描述。
+- `questions`为必填的非空对象，每个问题必须有`type`和`instructions`。
+- `model`目前只接受`jev`；`channel`接受`teamorouter | auto`，默认`teamorouter`。
+
+三种题型的`criteria`形状**互不相同**，喂错会被上游拒绝（错误信息里会说明要求）：
+
+| `type` | `criteria` | 返回字段 |
+|---|---|---|
+| `choice` | 对象：key → 选项说明，2～255项 | `choice`（选中的key）、`confidence`、`probabilities` |
+| `score` | 数组：级别名，2～10级 | `score`、`confidence`、`legend`、`probabilities` |
+| `noul` | 不传 | `noul`（0～1的数值） |
+
+平台侧只校验「`questions`非空、每项有`type`和`instructions`」，题型结构原样透传给上游：上游的校验比平台能表达的细，在平台侧复刻只会把合法请求挡在门外。
+
+任务管理：
+
+```text
+GET  /v1/decision-generations/jobs/{job_id}
+POST /v1/decision-generations/jobs/{job_id}/cancel
+```
+
+这是同步短调用（实测约2秒，不轮询、不转存对象存储、不占GPU），但接口形状仍是异步任务：先提交拿`job_id`，再查询。`status`为`succeeded`时答案已经写进记录，即使随后撤单也不会丢。
+
+## 十五、状态码与重试
 
 | 状态码 | 含义 | 处理建议 |
 |---:|---|---|

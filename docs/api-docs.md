@@ -1,7 +1,7 @@
 # AI Centre 2 对外 API 使用手册
 
-版本：3.1  
-更新日期：2026-09-22  
+版本：3.2  
+更新日期：2026-09-30  
 生产地址：`https://aicentre2.sligenai.cn:8443`
 
 > 本文档仅列出当前生产环境已经开放的公网接口。复制示例后，替换 `API_KEY` 和素材 URL 即可调用。
@@ -87,7 +87,7 @@ curl -sS -X POST "$BASE_URL/v1/uploads" \
 - 空文件返回 `422`；中台未配置对象存储时返回 `503`。
 - 前缀由服务端决定，调用方不能指定；每次上传生成新的随机文件名，不会覆盖已有对象。
 - 返回的 `url` 是对象的公网直链，无需再签名，可直接使用。
-- 上传的素材同样受 §11 的保密要求约束：不要放进浏览器前端或公开仓库。
+- 上传的素材同样受 §13 的保密要求约束：不要放进浏览器前端或公开仓库。
 
 ## 2. 接口总览
 
@@ -156,6 +156,16 @@ curl -sS -X POST "$BASE_URL/v1/uploads" \
 | 视频超分 | `POST /v1/video-upscale/jobs` | `POST /v1/video-upscale/jobs/wait` | `GET /v1/video-upscale/jobs/{job_id}` | `POST /v1/video-upscale/jobs/{job_id}/cancel` |
 | 音频四轨分离 | `POST /v1/audio-separation/jobs` | `POST /v1/audio-separation/jobs/wait` | `GET /v1/audio-separation/jobs/{job_id}` | `POST /v1/audio-separation/jobs/{job_id}/cancel` |
 | 授权视频水印处理 | `POST /v1/watermark-removal/jobs` | `POST /v1/watermark-removal/jobs/wait` | `GET /v1/watermark-removal/jobs/{job_id}` | `POST /v1/watermark-removal/jobs/{job_id}/cancel` |
+
+### 2.7 定型决策
+
+| 中文接口名 | 方法 | 路径 | 返回方式 |
+|---|---|---|---|
+| 创建定型决策任务 | POST | `/v1/decision-generations/jobs` | 异步任务 |
+| 查询定型决策任务 | GET | `/v1/decision-generations/jobs/{job_id}` | JSON |
+| 取消定型决策任务 | POST | `/v1/decision-generations/jobs/{job_id}/cancel` | JSON |
+
+给一段事实描述和一组问题，拿回一组带置信度的定型答案（不是图片/视频/音频，所以 `result_urls` 恒为空）。详见第 9 节。
 
 ## 3. 生文与文本能力
 
@@ -270,7 +280,7 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
 | `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2` | `gpt-image-2` |
-| `channel` | 否 | `grsai` | `grsai` |
+| `channel` | 否 | `grsai`、`teamorouter`、`auto` | `grsai` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
 | `aspect_ratio` | 否 | `1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9` | `1:1` |
@@ -305,6 +315,21 @@ curl -sS -X POST \
 ```
 
 完成时查询结果的 `status` 为 `succeeded`，最终图片在 `result_urls` 数组中。
+
+### 4.3 TeamORouter 渠道
+
+`channel` 传 `teamorouter` 走第三方 TeamORouter 的生图接口，目前接了三个型号：
+
+| `model` | 上游型号 | 参考图 | 说明 |
+|---|---|---|---|
+| `gpt-image-2` | `gpt-image-2` | 不支持 | |
+| `gpt-image-2.5-sunburst` | `gpt-image-2.5-sunburst` | 不支持 | 与 `grsai` 的同名型号是不同上游，出图风格不同 |
+| `gpt-image-2.5-flare` | `gpt-image-2.5-flare` | 不支持 | 同上 |
+
+- **只吃纯文本**：`/v1/images/generations` 不接收参考图（编辑类接口的契约未实测，未开放）。带 `reference_image_urls` 的请求会被本地拦下；`channel` 传 `auto` 时会自动落到 `grsai`。
+- **同步返回**：上游一次调用直接给成品，没有任务号。所以作业的 `upstream_task_id` 恒为空、`result_urls` 由中台把上游返回的内联图片转存到对象存储后给出，其余字段与 `grsai` 一致。
+- **尺寸由中台按 `aspect_ratio` + `image_size` 计算**：上游不校验尺寸，传错不会报错、只会静默给一张默认尺寸的图，所以不要指望上游纠正。
+- `auto` 的候选顺序是 `grsai` → `teamorouter`（该渠道登记为兜底，默认不抢选路）。
 
 ## 5. 生视频接口
 
@@ -877,9 +902,87 @@ curl -sS -X POST "$BASE_URL/v1/watermark-removal/jobs" \
 
 `mode` 可为 `light` 或 `intensive`。需要同步等待时使用 `/v1/watermark-removal/jobs/wait`。
 
-## 9. 异步任务通用处理
+## 9. 定型决策（Jev）
 
-### 9.1 状态
+`POST /v1/decision-generations/jobs`
+
+给一段事实描述（`state`）和一组问题（`questions`），一次调用拿回一组带置信度的定型答案。它不产出图片/视频/音频，所以 `result_urls` 恒为空，答案在 `upstream_response.answers` 里。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/decision-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "jev",
+    "channel": "teamorouter",
+    "state": "客户 09-30 提出改枪皮配色，此前已返工两轮，交付期还剩 5 天。",
+    "questions": {
+      "risk": {
+        "type": "choice",
+        "instructions": "这一轮返工的风险有多高？",
+        "criteria": {"low": "只是微调", "medium": "需要重渲", "high": "方向要重定"}
+      },
+      "urgency": {"type": "noul", "instructions": "这件事的紧迫程度。"}
+    },
+    "external_ref": "decision-001"
+  }'
+```
+
+参数：
+
+| 字段 | 必填 | 可选值/限制 | 默认 |
+|---|---:|---|---|
+| `model` | 否 | `jev` | `jev` |
+| `channel` | 否 | `teamorouter`、`auto` | `teamorouter` |
+| `state` | 是 | 1～20000字符的事实描述 | — |
+| `questions` | 是 | 非空对象，每个问题含 `type` 与 `instructions` | — |
+| `external_ref` | 否 | 最多256字符 | `null` |
+| `metadata` | 否 | JSON对象 | `{}` |
+
+三种题型（`criteria` 的形状**互不相同**，喂错上游会拒绝并在错误信息里说明）：
+
+| `type` | `criteria` | 返回 |
+|---|---|---|
+| `choice` | 对象：key → 选项说明，2～255 项 | `choice`（选中的 key）、`confidence`、`probabilities` |
+| `score` | 数组：级别名，2～10 级 | `score`、`confidence`、`legend`、`probabilities` |
+| `noul` | 不给 | `noul`（0～1 的数值） |
+
+`questions` 在本地只校验「非空、每个问题有 `type` 和 `instructions`」，题型结构原样透传给上游——上游的校验比我们能表达的细，本地复刻只会把合法请求挡在门外。
+
+提交成功返回 HTTP 202（`status_url` 与生图接口同一形状）。查询：
+
+```bash
+JOB_ID='替换为提交返回的job_id'
+
+curl -sS \
+  -H "Authorization: Bearer $API_KEY" \
+  "$BASE_URL/v1/decision-generations/jobs/$JOB_ID"
+```
+
+完成时 `status` 为 `succeeded`，答案形如：
+
+```json
+{
+  "status": "succeeded",
+  "upstream_task_id": "",
+  "result_urls": [],
+  "upstream_response": {
+    "model": "typesafe-ai/jev",
+    "answers": {
+      "risk": {"type": "choice", "choice": "medium", "confidence": 0.72,
+               "probabilities": {"low": 0.2, "medium": 0.72, "high": 0.08}},
+      "urgency": {"type": "noul", "noul": 0.4}
+    },
+    "usage": {"prompt_tokens": 118, "completion_tokens": 42}
+  }
+}
+```
+
+它是同步短调用（不轮询、不转存、不占 GPU），但**作业接口的形状与生图一致**：先拿 `job_id`、再查询状态。答案一旦拿到就会写进记录，即使随后调用方撤单也不会丢。
+
+## 10. 异步任务通用处理
+
+### 10.1 状态
 
 不同服务的字段名称可能略有差别，调用方应兼容以下常见状态：
 
@@ -893,7 +996,7 @@ curl -sS -X POST "$BASE_URL/v1/watermark-removal/jobs" \
 
 轮询建议：前1分钟每3秒一次，之后每10秒一次；不要每秒高频查询。
 
-### 9.2 通用 Shell 轮询示例
+### 10.2 通用 Shell 轮询示例
 
 ```bash
 JOB_ID='替换为job_id'
@@ -911,13 +1014,13 @@ while true; do
 done
 ```
 
-### 9.3 幂等与业务关联
+### 10.3 幂等与业务关联
 
 - TTS异步接口使用必填的 `idempotency_key`。
 - 其他接口建议设置唯一 `external_ref`，但它不一定阻止重复提交。
 - 网络超时后先查询已有任务或使用业务侧去重，再决定是否重试。
 
-## 10. HTTP 状态码与排错
+## 11. HTTP 状态码与排错
 
 | HTTP状态码 | 含义 | 建议 |
 |---:|---|---|
@@ -942,14 +1045,14 @@ done
 4. JSON 中字段名被转义成 `voice\_profile\_id`。
 5. 用 `curl` 访问同步音频接口却没有 `--output`，导致二进制内容打印到终端。
 
-## 11. 在线资源
+## 12. 在线资源
 
 - 本文档：`https://aicentre2.sligenai.cn:8443/api-docs.md`
 - Swagger：`https://aicentre2.sligenai.cn:8443/docs`
 - OpenAPI JSON：`https://aicentre2.sligenai.cn:8443/openapi.json`
 - 管理后台中文说明：`https://aicentre2.sligenai.cn:8443/admin/external-api.html`
 
-## 12. 安全说明
+## 13. 安全说明
 
 - API Key 泄露后应立即停用并重新签发。
 - 不要在工单、群聊或公开文档中粘贴完整 API Key 和 OSS 签名 URL。

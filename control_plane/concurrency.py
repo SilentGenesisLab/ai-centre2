@@ -116,6 +116,13 @@ MODULES: tuple[ConcurrencyModule, ...] = (
                  "生成期间几乎只是在轮询，2 个作业并行足够",
     ),
     ConcurrencyModule(
+        module="decision_generation", label="定型决策", queue="decision_generation",
+        service="ai-centre-decision-generation-worker.service", task="control_plane.decision_generation",
+        job_default=4,
+        job_note="Jev 是同步短调用（实测 1.8s、无轮询），所以默认并发给得比生成类高；"
+                 "它不占 GPU、不写 OSS，抬高的成本只是几个并发 HTTP 请求",
+    ),
+    ConcurrencyModule(
         module="watermark_remove", label="视频去水印", queue="watermark_remove",
         service="ai-centre-watermark-worker.service", task="control_plane.watermark_remove",
         job_default=1,

@@ -191,6 +191,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         ("POST", "/v1/video-generations/jobs"): RouteInfo("video_generation", "generate", True, True),
         ("POST", "/v1/image-generations/jobs"): RouteInfo("image_generation", "generate", True, True),
         ("POST", "/v1/audio-generations/jobs"): RouteInfo("audio_generation", "generate", True, True),
+        ("POST", "/v1/decision-generations/jobs"): RouteInfo("decision_generation", "decide", True, True),
         ("POST", "/v1/uploads"): RouteInfo("storage", "upload_public"),
         ("POST", "/internal/admin/storage/upload"): RouteInfo("storage", "upload"),
         ("POST", "/internal/admin/subtitle/detect"): RouteInfo("subtitle", "detect", True),
@@ -212,6 +213,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         (re.compile(r"^/v1/video-generations/jobs/[^/]+$"), RouteInfo("video_generation", "status", status_query=True)),
         (re.compile(r"^/v1/image-generations/jobs/[^/]+$"), RouteInfo("image_generation", "status", status_query=True)),
         (re.compile(r"^/v1/audio-generations/jobs/[^/]+$"), RouteInfo("audio_generation", "status", status_query=True)),
+        (re.compile(r"^/v1/decision-generations/jobs/[^/]+$"), RouteInfo("decision_generation", "status", status_query=True)),
         (re.compile(r"^/v1/lipsync/jobs/[^/]+/cancel$"), RouteInfo("lipsync", "cancel", cancel=True)),
         (re.compile(r"^/v1/face-mosaic/jobs/[^/]+/cancel$"), RouteInfo("face", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-scenes/jobs/[^/]+/cancel$"), RouteInfo("scene", "cancel", cancel=True)),
@@ -224,6 +226,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         (re.compile(r"^/v1/video-generations/jobs/[^/]+/cancel$"), RouteInfo("video_generation", "cancel", cancel=True)),
         (re.compile(r"^/v1/image-generations/jobs/[^/]+/cancel$"), RouteInfo("image_generation", "cancel", cancel=True)),
         (re.compile(r"^/v1/audio-generations/jobs/[^/]+/cancel$"), RouteInfo("audio_generation", "cancel", cancel=True)),
+        (re.compile(r"^/v1/decision-generations/jobs/[^/]+/cancel$"), RouteInfo("decision_generation", "cancel", cancel=True)),
     ]
     for pattern, info in patterns:
         if pattern.match(path):
@@ -258,6 +261,8 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         return RouteInfo("image_generation", "read")
     if path.startswith("/v1/audio-generations/"):
         return RouteInfo("audio_generation", "read")
+    if path.startswith("/v1/decision-generations/"):
+        return RouteInfo("decision_generation", "read")
     return None
 
 
@@ -276,6 +281,7 @@ def external_job_id(path: str, response: Any | None) -> str | None:
         r"^/v1/video-generations/jobs/([^/]+)",
         r"^/v1/image-generations/jobs/([^/]+)",
         r"^/v1/audio-generations/jobs/([^/]+)",
+        r"^/v1/decision-generations/jobs/([^/]+)",
     )
     for pattern in patterns:
         match = re.match(pattern, path)

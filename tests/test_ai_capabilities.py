@@ -1,15 +1,18 @@
 from __future__ import annotations
+import asyncio
+import base64
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("SERVICE_TOKEN", "test")
 
 from control_plane.ai_capabilities import CapabilityStore
 import httpx
+from fastapi import HTTPException
 from control_plane.generation_tasks import (
     _accepted,
     _compatible,
@@ -19,6 +22,7 @@ from control_plane.generation_tasks import (
     _response_body,
     _result,
     _state,
+    _sync_image_results,
     _task_id,
 )
 
@@ -40,7 +44,14 @@ class CapabilityTests(unittest.TestCase):
         self.assertFalse(channels["runninghub"]["enabled"])
         self.assertEqual(channels["runninghub"]["auth_type"],"bearer")
         self.assertFalse(channels["runninghub"]["credential_configured"])
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","suno-v6","suno-sound"})
+        # teamorouter 也是预设渠道：默认关闭、bearer。它和 runninghub 的差别是**key 可以落库**
+        # （控制台 PATCH 进来的是 AESGCM 密文），所以播种期只是把认证方式摆正，密钥留给运维注入。
+        self.assertFalse(channels["teamorouter"]["enabled"])
+        self.assertEqual(channels["teamorouter"]["auth_type"],"bearer")
+        self.assertEqual(channels["teamorouter"]["deployment_type"],"third_party")
+        self.assertEqual(channels["teamorouter"]["base_url"],"https://api.teamorouter.com")
+        self.assertFalse(channels["teamorouter"]["credential_configured"])
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","suno-v6","suno-sound","jev"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -379,3 +390,173 @@ class CapabilityTests(unittest.TestCase):
         request={"prompt":"test","aspect_ratio":"16:9","image_size":"1K","reference_image_urls":[]}
         for model in ("gpt-image-2.5-sunburst","gpt-image-2.5-flare"):
             self.assertEqual(_payload(self.store.binding(model,"grsai"),request)["aspectRatio"],"1344x768")
+
+
+class TeamORouterTests(unittest.TestCase):
+    """TeamORouter：OpenAI 兼容的**同步**生图（三个型号）与 Jev 定型决策。
+
+    这一批绑定的共同点是**没有 task id**：POST 回来就是成品，所以 `query_path` 全是空的，
+    走的是 `_generate` 里那条同步分支，而不是「提交 → 轮询」。
+    """
+
+    def setUp(self): self.store=CapabilityStore(Path(tempfile.mkdtemp())/"cap.db","unit-secret")
+
+    def test_image_bindings_are_synchronous_and_ranked_after_grsai(self):
+        for model in ("gpt-image-2","gpt-image-2.5-sunburst","gpt-image-2.5-flare"):
+            binding=self.store.binding(model,"teamorouter")
+            self.assertEqual(binding["submit_path"],"/v1/images/generations")
+            self.assertEqual(binding["upstream_model"],model)
+            # query_path 空 = 永远不会去轮询。同步端点没有 task id，轮询分支对它是死路：
+            # `if not tid` 会把它判成「上游没给任务号」而失败，可钱已经花了。
+            self.assertEqual(binding["query_path"],"")
+            # priority 70 是运维定的「排 grsai(40) 之后当兜底」，所以 auto 的默认选路不变。
+            self.assertEqual(binding["priority"],70)
+        self.assertEqual(self.store.binding("gpt-image-2","grsai")["priority"],40)
+
+    def test_auto_keeps_grsai_first_and_teamorouter_as_the_fallback(self):
+        self.assertEqual(self.store.binding_channels("gpt-image-2"),["grsai","teamorouter"])
+
+    def test_payload_computes_the_size_locally(self):
+        binding=self.store.binding("gpt-image-2","teamorouter")
+        payload=_payload(binding,{"prompt":"一只在键盘上打字的橘猫","aspect_ratio":"16:9","image_size":"1K","reference_image_urls":[]})
+        self.assertEqual(payload,{"model":"gpt-image-2","prompt":"一只在键盘上打字的橘猫","n":1,"size":"1344x768"})
+        self.assertEqual(_payload(binding,{"prompt":"x","aspect_ratio":"1:1","image_size":"2K","reference_image_urls":[]})["size"],"2048x2048")
+
+    def test_reference_images_are_not_offered_to_a_text_only_endpoint(self):
+        # /v1/images/generations 只吃文本（参考图要走 /v1/images/edits，契约没实测，不猜）。
+        request={"prompt":"x","reference_image_urls":["https://x/a.png"]}
+        self.assertFalse(_compatible(self.store.binding("gpt-image-2","teamorouter"),request))
+        # 同一张单子给 grsai 合法 —— auto 因此会落到 grsai，而不是把参考图悄悄丢掉。
+        self.assertTrue(_compatible(self.store.binding("gpt-image-2","grsai"),request))
+
+    def test_jev_binding_uses_the_namespaced_upstream_model(self):
+        binding=self.store.binding("jev","teamorouter")
+        self.assertEqual(binding["upstream_model"],"typesafe-ai/jev")
+        self.assertEqual(binding["submit_path"],"/v1/systemone")
+        self.assertEqual(binding["query_path"],"")
+        models={m["code"]:m for m in self.store.models()}
+        self.assertEqual(models["jev"]["capability_type"],"decision_generation")
+
+    def test_openai_style_error_object_is_drilled_into(self):
+        # 两个端点都用 {"error":{"message":...}}：不往下钻的话每条上游报错都只剩 "request rejected"。
+        self.assertEqual(_error_detail({"error":{"message":"模型不存在","type":"invalid_request_error"}},"x"),"模型不存在")
+        self.assertEqual(_error_detail({"error":{"detail":"bad size"}},"x"),"bad size")
+
+
+class FakeUpload:
+    def __init__(self, uri): self._uri=uri
+    def raise_for_status(self): return None
+    def json(self): return {"uri":self._uri}
+
+
+class SyncImageResultTests(unittest.TestCase):
+    """内联 b64 → 落盘 → 传内核 → 交付 https 链接。"""
+
+    def setUp(self):
+        self.store=CapabilityStore(Path(tempfile.mkdtemp())/"cap.db","unit-secret")
+        self.binding=self.store.binding("gpt-image-2","teamorouter")
+        self.work=Path(tempfile.mkdtemp());
+
+    def _settings(self):
+        settings=Mock()
+        settings.video_generation_work_dir=self.work
+        settings.kernel_upload_url="https://kernel/upload"
+        settings.kernel_api_token="kernel-token"
+        settings.video_generation_upload_timeout_seconds=30
+        return settings
+
+    @patch("control_plane.generation_tasks.httpx.post")
+    @patch("control_plane.generation_tasks.get_settings")
+    def test_b64_is_uploaded_as_a_file_then_the_work_dir_is_cleaned(self, get_settings, post):
+        seen=[]
+        def upload(url, headers=None, data=None, files=None, timeout=None):
+            seen.append((files["file"][1].read(), data))
+            return FakeUpload("https://oss/result-1.png")
+        post.side_effect=upload
+        get_settings.return_value=self._settings()
+
+        urls=_sync_image_results(self.binding,{"data":[{"b64_json":base64.b64encode(b"png-bytes").decode()}]},{"external_ref":"ref-1"},"job-1")
+
+        self.assertEqual(urls,["https://oss/result-1.png"])
+        self.assertEqual(seen[0][0],b"png-bytes")
+        self.assertEqual(seen[0][1]["stage"],"media.image_generation.result_1")
+        self.assertEqual(seen[0][1]["external_ref"],"ref-1")
+        # 中间文件在 finally 里清掉：一张 1K PNG 是 1.6MB，不留盘。
+        self.assertFalse((self.work/"job-1").exists())
+
+    @patch("control_plane.generation_tasks.get_settings")
+    def test_url_mode_is_passed_through_without_downloading(self, get_settings):
+        urls=_sync_image_results(self.binding,{"data":[{"url":"https://x/a.png"},{"url":"https://x/a.png"}]},{}, "job-1")
+        self.assertEqual(urls,["https://x/a.png"])
+        # 透传路径完全不该碰设置（更不该去下载转存）。
+        get_settings.assert_not_called()
+
+    @patch("control_plane.generation_tasks.get_settings")
+    def test_missing_kernel_upload_config_fails_loudly(self, get_settings):
+        settings=self._settings(); settings.kernel_upload_url=""
+        get_settings.return_value=settings
+        with self.assertRaises(RuntimeError): _sync_image_results(self.binding,{"data":[{"b64_json":"eA=="}]},{},"job-1")
+
+    def test_a_response_without_data_is_empty_not_an_exception(self):
+        self.assertEqual(_sync_image_results(self.binding,{"error":{"message":"boom"}},{},"job-1"),[])
+        self.assertEqual(_sync_image_results(self.binding,{"data":[]},{},"job-1"),[])
+
+
+class ImageChannelSelectionTests(unittest.TestCase):
+    """`channel="auto"` 的候选现在从绑定表读（不再写死 grsai），所以这里钉住选路与拒因。
+
+    单独用真实的能力库（而不是 Mock）来验：绑定表的 priority、capabilities 才是被判的东西。
+    """
+
+    def setUp(self):
+        self.store=CapabilityStore(Path(tempfile.mkdtemp())/"cap.db","unit-secret")
+        self._patches=[
+            patch("control_plane.api.get_capability_store",return_value=self.store),
+            patch("control_plane.api.validate_public_https_url",return_value=None),
+        ]
+        for item in self._patches: item.start()
+
+    def tearDown(self):
+        for item in self._patches: item.stop()
+
+    def _validate(self, **overrides):
+        from control_plane.api import ImageGenerationRequest,_validate_image_generation_request
+        request={"model":"gpt-image-2","channel":"teamorouter","prompt":"一只猫","reference_image_urls":[],"aspect_ratio":"1:1","image_size":"1K"}
+        request.update(overrides)
+        return asyncio.run(_validate_image_generation_request(ImageGenerationRequest(**request)))
+
+    def _reject(self, **overrides):
+        with self.assertRaises(HTTPException) as caught: self._validate(**overrides)
+        return caught.exception
+
+    def _online(self, code):
+        channel=self.store.channel(code)
+        self.store.record_probe(channel["id"],True)   # -> health_status = online
+        self.store.save_channel({"enabled":True},channel["id"])
+
+    def test_a_text_only_request_is_accepted_but_reference_images_are_not_offered_to_it(self):
+        self._online("teamorouter")
+        self._validate()  # 纯文本：teamorouter 收
+        # /v1/images/generations 不接收参考图（images: 0），所以带图时这个渠道不接这单。
+        self.assertEqual(self._reject(reference_image_urls=["https://x/a.png"]).status_code,422)
+
+    def test_auto_moves_a_reference_image_request_to_grsai(self):
+        self._online("grsai")
+        # teamorouter 根本没启用/在线 —— auto 必须挑到 grsai，而不是把参考图丢掉。
+        self._validate(channel="auto",reference_image_urls=["https://x/a.png"])
+
+    def test_auto_uses_teamorouter_as_the_fallback_for_plain_text(self):
+        self._online("grsai")
+        self._validate(channel="auto")
+        # 两组绑定都在线时，auto 的候选顺序仍是 priority 升序：grsai(40) 在前。
+        self.assertEqual(self.store.binding_channels("gpt-image-2"),["grsai","teamorouter"])
+
+    def test_the_reject_reason_separates_offline_from_unbound(self):
+        # 没探过 = 离线：指定渠道报 503（渠道配了但不可用），比笼统的 422 好排查。
+        self.assertEqual(self._reject(channel="teamorouter").status_code,503)
+        # auto 没有可用的候选，只能报「没有支持的渠道」。
+        self.assertEqual(self._reject(channel="auto").status_code,422)
+        # nano-banana-2 没绑 teamorouter：这是「模型没这个渠道」，与掉线是两回事。
+        with self.assertRaises(HTTPException) as caught:
+            self._validate(model="nano-banana-2",channel="teamorouter")
+        self.assertEqual(caught.exception.status_code,404)
