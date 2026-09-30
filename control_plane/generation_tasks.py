@@ -266,7 +266,7 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     return True
 def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
     if not channel.get("base_url"): return False,None,"Base URL未配置"
-    path={"jmapi":"/jmapi/status","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models"}.get(channel["adapter"],"/health")
+    path={"jmapi":"/jmapi/v1/keys","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
@@ -300,6 +300,24 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
             if response.status_code in {401,403,500,502,503,504}: return False,None,f"HTTP {response.status_code}"
             try: return True,response.json(),None
             except ValueError: return True,{"status_code":response.status_code},None
+        if channel["adapter"]=="jmapi":
+            # 2026-10-01 上游给 8 个生成类端点加了 `X-API-Key`（查询/状态/用量类仍开放），
+            # 原来那条探针 `/jmapi/status` 因此失效：它不带 key 也回 200，**证明不了密钥可用**，
+            # 而密钥恰恰是这个渠道上唯一会坏、坏了又不报错的东西 —— 生成类 401 会被兜底换到
+            # libtv，作业照样成功，只有 `fallback_count` 悄悄变成 1。
+            # 改用 `GET /v1/keys`：只读、要鉴权，且上游明说 401/403 在业务逻辑之前返回、
+            # **不消耗积分**（生成类端点要花钱，不能拿来当探针）。三种结果可分：
+            #   401            → 没带 key 或 key 拼错
+            #   403「已被停用」 → key 被停用
+            #   403「需 role=admin」→ key **有效**，只是普通 key —— 生成类本来就只认普通 key
+            # 判据是响应体里的中文 detail，因为那边是我们自己的服务（SilentGenesisAI/JmApi）。
+            # 同 mxapi/RunningHub 一样：能证伪，不能证实（措辞变了就会漏判成在线）。
+            try: detail=str((response.json() or {}).get("detail") or "")
+            except (ValueError,AttributeError): detail=""
+            if response.status_code==401: return False,None,"HTTP 401：API Key 无效或未配置"
+            if response.status_code==403 and "停用" in detail: return False,None,f"HTTP 403：{detail}"
+            if response.status_code>=400 and response.status_code!=403: return False,None,f"HTTP {response.status_code}"
+            return True,{"status_code":response.status_code,"detail":detail or "密钥有效"},None
         if response.status_code>=400:return False,None,f"HTTP {response.status_code}"
         return True,response.json(),None
     except Exception as exc:return False,None,type(exc).__name__
