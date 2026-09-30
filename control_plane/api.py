@@ -4590,7 +4590,9 @@ async def _validate_generation_request(request: VideoGenerationRequest) -> None:
     except MediaFetchError as exc:
         raise HTTPException(exc.status_code,exc.detail) from exc
     store=get_capability_store()
-    candidates=[request.channel] if request.channel!="auto" else store.binding_channels(request.model)
+    # 点名的渠道只是排头：同一型号的其余渠道跟在后面，前一家报错时由 worker 换下一家。
+    # 所以「有任意一家能用」就放行，而不是只看点名的那个。
+    candidates=store.channel_order(request.model,request.channel)
     compatible=False
     for code in candidates:
         try: binding=await asyncio.to_thread(store.binding,request.model,code)
@@ -4605,9 +4607,9 @@ async def _validate_image_generation_request(request:ImageGenerationRequest)->No
     try:
         for value in request.reference_image_urls: await asyncio.to_thread(validate_public_https_url,value)
     except MediaFetchError as exc: raise HTTPException(exc.status_code,exc.detail) from exc
-    # auto 的候选同样从绑定表读（不再写死渠道名），和视频那条一个道理。
+    # 候选同样从绑定表读（不写死渠道名），和视频那条一个道理；点名的排头而已。
     store=get_capability_store()
-    candidates=[request.channel] if request.channel!="auto" else store.binding_channels(request.model)
+    candidates=store.channel_order(request.model,request.channel)
     for code in candidates:
         try: binding=await asyncio.to_thread(store.binding,request.model,code)
         except CapabilityNotFound: continue
@@ -4677,7 +4679,7 @@ async def _validate_audio_generation_request(request:AudioGenerationRequest)->No
         if request.instrumental and request.lyrics.strip(): raise HTTPException(422,"instrumental music cannot carry lyrics")
         if not request.lyrics.strip() and not request.prompt.strip(): raise HTTPException(422,"prompt or lyrics is required")
     store=get_capability_store()
-    candidates=[request.channel] if request.channel!="auto" else ["mxapi"]
+    candidates=store.channel_order(request.model,request.channel)
     compatible=False
     for code in candidates:
         try: binding=await asyncio.to_thread(store.binding,request.model,code)
@@ -4719,7 +4721,7 @@ async def _validate_decision_generation_request(request:DecisionGenerationReques
         if not str(question.get("type") or "").strip(): raise HTTPException(422,f"question '{name}' requires a type")
         if not str(question.get("instructions") or "").strip(): raise HTTPException(422,f"question '{name}' requires instructions")
     store=get_capability_store()
-    candidates=[request.channel] if request.channel!="auto" else store.binding_channels(request.model)
+    candidates=store.channel_order(request.model,request.channel)
     for code in candidates:
         try: binding=await asyncio.to_thread(store.binding,request.model,code)
         except CapabilityNotFound: continue

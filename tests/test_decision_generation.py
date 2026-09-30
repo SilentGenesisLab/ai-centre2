@@ -105,8 +105,10 @@ class FakeStore:
             out.pop("request", None)
         return out
 
-    def binding_channels(self, model: str) -> list[str]:
-        return list(self.channels)
+    def channel_order(self, model: str, requested: str | None) -> list[str]:
+        if not requested or requested == "auto":
+            return list(self.channels)
+        return [requested] + [code for code in self.channels if code != requested]
 
     def binding(self, model: str, code: str) -> dict:
         if code not in self.channels:
@@ -195,6 +197,18 @@ class DecideTests(unittest.TestCase):
         # 第一次提交被上游拒（auto 的意义就在这里），第二次接住；fallback_count 记的是
         # **候选列表里的位次**（这里是 1），不是失败次数。
         self.assertEqual(len(self.client.urls), 2)
+        self.assertEqual(record["fallback_count"], 1)
+
+    def test_a_named_channel_also_falls_back_when_it_errors(self) -> None:
+        # 点名 teamorouter 只是「先用它」：它报错，同型号的 grsai 接着上。
+        record = self._run(
+            [FakeResponse({"error": {"message": "busy"}}), FakeResponse(CHOICE_ANSWER)],
+            channels=("teamorouter", "grsai"),
+        )
+
+        self.assertEqual(record["status"], "succeeded")
+        self.assertEqual(len(self.client.urls), 2)
+        self.assertEqual(record["channel_id"], "chan-grsai")
         self.assertEqual(record["fallback_count"], 1)
 
     def test_stages_are_reported_in_order(self) -> None:
@@ -332,13 +346,25 @@ class ValidationTests(unittest.TestCase):
 
     def test_an_unavailable_channel_is_rejected(self) -> None:
         store = Mock()
+        store.channel_order.return_value = ["teamorouter"]
         store.binding.return_value = {**BINDING, "health_status": "unknown"}
         with patch("control_plane.api.get_capability_store", return_value=store):
             self.assertIn("no enabled, healthy channel", self._reject(**decision_request()))
 
     def test_a_healthy_channel_is_accepted(self) -> None:
         store = Mock()
+        store.channel_order.return_value = ["teamorouter"]
         store.binding.return_value = dict(BINDING)
+        with patch("control_plane.api.get_capability_store", return_value=store):
+            asyncio.run(_validate_decision_generation_request(DecisionGenerationRequest(**decision_request())))
+
+    def test_a_named_channel_that_is_down_is_accepted_when_another_one_is_up(self) -> None:
+        # 点名 teamorouter 只是排头：它掉线、grsai 在线，这单照样放行（由 worker 去换渠道）。
+        store = Mock()
+        store.channel_order.return_value = ["teamorouter", "grsai"]
+        store.binding.side_effect = lambda model, code: (
+            {**BINDING, "health_status": "unknown"} if code == "teamorouter" else dict(BINDING)
+        )
         with patch("control_plane.api.get_capability_store", return_value=store):
             asyncio.run(_validate_decision_generation_request(DecisionGenerationRequest(**decision_request())))
 

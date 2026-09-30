@@ -514,7 +514,8 @@ def generate(self,job_id:str)->dict[str,Any]:
 def _generate(self,job_id:str)->dict[str,Any]:
     settings = get_settings()
     store=_store(); job=store.job(job_id,include_request=True); req=job["request"]; started=time.monotonic()
-    requested=req.get("channel") or "jmapi"; order=[requested] if requested!="auto" else store.binding_channels(req["model"])
+    # 点名的渠道排头，同一型号的其余渠道按 priority 跟上：上游报错就换下一家，而不是整单失败。
+    order=store.channel_order(req["model"],req.get("channel"))
     store.update_job(job_id,status="running",stage="selecting_channel",started_at=datetime.now(timezone.utc).isoformat())
     failures=[]
     for index,code in enumerate(order):
@@ -611,17 +612,17 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     )
             raise TimeoutError("upstream generation timed out")
         except (httpx.TimeoutException,httpx.NetworkError) as exc:
-            if requested=="auto" and not submitted:failures.append(f"{code}:{type(exc).__name__}");continue
-            failures.append(type(exc).__name__);break
+            # 提交成功之后的超时/断连不再换渠道：上游那一单可能还在跑，重投就是再买一份。
+            failures.append(f"{code}:{type(exc).__name__}")
+            if submitted:break
+            continue
         except UpstreamTerminalError as exc:
+            # 上游明确判失败（任务不会再有结果了），换下一家试。
             failures.append(f"{code}:{str(exc)[:200]}")
-            if requested == "auto":
-                continue
-            break
+            continue
         except Exception as exc:
             failures.append(f"{code}:{str(exc)[:200]}")
-            if requested=="auto" and not submitted:
-                continue
-            break
+            if submitted:break
+            continue
     elapsed=round(time.monotonic()-started,3); store.update_job(job_id,status="failed",stage="failed",error="; ".join(failures) or "no enabled compatible channel",finished_at=datetime.now(timezone.utc).isoformat(),elapsed_seconds=elapsed)
     return store.job(job_id)

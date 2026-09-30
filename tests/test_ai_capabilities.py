@@ -15,6 +15,7 @@ import httpx
 from fastapi import HTTPException
 from control_plane.generation_tasks import (
     _accepted,
+    _generate,
     _compatible,
     _error_detail,
     _payload,
@@ -238,6 +239,27 @@ class CapabilityTests(unittest.TestCase):
         )
         self.assertEqual(
             self.store.binding_channels("minimax-h3-rh-enhanced"), ["runninghub"]
+        )
+
+    def test_a_named_channel_is_only_the_head_of_the_candidate_list(self):
+        """点名的渠道排头，同一型号的其余渠道按 priority 跟上 —— 报错才有得换。"""
+        self.assertEqual(
+            self.store.channel_order("gpt-image-2", "teamorouter"), ["teamorouter", "grsai"]
+        )
+        self.assertEqual(
+            self.store.channel_order("gpt-image-2", "grsai"), ["grsai", "teamorouter"]
+        )
+        self.assertEqual(
+            self.store.channel_order("seedance-2.5", "libtv"), ["libtv", "jmapi"]
+        )
+        # auto 与「没给」都是纯 priority 顺序。
+        self.assertEqual(self.store.channel_order("gpt-image-2", "auto"), ["grsai", "teamorouter"])
+        self.assertEqual(self.store.channel_order("gpt-image-2", None), ["grsai", "teamorouter"])
+        # 只绑了一家的型号没有第二家可换。
+        self.assertEqual(self.store.channel_order("nano-banana-2", "grsai"), ["grsai"])
+        # 没登记过的名字照样排头：能不能用由 binding() 说了算，这里不替它判断。
+        self.assertEqual(
+            self.store.channel_order("nano-banana-2", "teamorouter"), ["teamorouter", "grsai"]
         )
 
     def test_reference_image_cap_is_per_binding(self):
@@ -502,6 +524,135 @@ class SyncImageResultTests(unittest.TestCase):
         self.assertEqual(_sync_image_results(self.binding,{"data":[]},{},"job-1"),[])
 
 
+class FakeJobStore:
+    """`_generate` 需要的那部分能力库：绑定与候选顺序走真库，作业记录放内存。"""
+
+    def __init__(self, capabilities, request):
+        self.capabilities, self.request, self.record, self.updates = (
+            capabilities, request, {"id": "job-1", "status": "queued"}, [],
+        )
+
+    def job(self, job_id, include_request=False):
+        out = dict(self.record)
+        if include_request:
+            out["request"] = self.request
+        return out
+
+    def update_job(self, job_id, **values):
+        self.updates.append(values)
+        self.record.update(values)
+
+    def channel_order(self, model, requested):
+        return self.capabilities.channel_order(model, requested)
+
+    def binding(self, model, code):
+        return self.capabilities.binding(model, code)
+
+
+class FakePostClient:
+    def __init__(self, responses):
+        self.responses, self.urls = responses, []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def post(self, url, headers=None, json=None):
+        self.urls.append(url)
+        # 最后一条会一直复用：换渠道时想「第二家一定成功」，只喂最后那一条就行。
+        return self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]
+
+
+class FakeResponse:
+    def __init__(self, body, status_code=200):
+        self._body, self.status_code = body, status_code
+
+    def json(self):
+        return self._body
+
+    @property
+    def text(self):
+        return json.dumps(self._body)
+
+
+class GenerationFallbackTests(unittest.TestCase):
+    """点名渠道只是排头：它报错就按 priority 换下一家（同型号的另一家）。"""
+
+    def setUp(self):
+        self.capabilities = CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
+        for code in ("grsai", "teamorouter"):
+            self.capabilities.record_probe(self.capabilities.channel(code)["id"], True)
+            self.capabilities.save_channel({"enabled": True}, self.capabilities.channel(code)["id"])
+
+    def _run(self, responses, channel="grsai", sync=None):
+        request = {
+            "model": "gpt-image-2",
+            "channel": channel,
+            "prompt": "一只猫",
+            "reference_image_urls": [],
+            "aspect_ratio": "16:9",
+            "image_size": "1K",
+        }
+        store = FakeJobStore(self.capabilities, request)
+        client = FakePostClient(responses)
+        settings = Mock(video_generation_blank_image_url="")
+        sync_patch = (
+            patch("control_plane.generation_tasks._sync_image_results", side_effect=sync)
+            if isinstance(sync, Exception)
+            else patch("control_plane.generation_tasks._sync_image_results", return_value=sync or ["https://oss/1.png"])
+        )
+        with (
+            patch("control_plane.generation_tasks._store", return_value=store),
+            patch("control_plane.generation_tasks.httpx.Client", return_value=client),
+            patch("control_plane.generation_tasks.get_settings", return_value=settings),
+            sync_patch,
+        ):
+            _generate(None, "job-1")
+        self.store, self.client = store, client
+        return store.record
+
+    def test_a_named_channel_falls_back_to_the_other_one_on_error(self):
+        # grsai 报 500（点名要的是它），同型号的 teamorouter 还能接 —— 换过去，别整单失败。
+        record = self._run([
+            FakeResponse({"error": {"message": "upstream is down"}}, status_code=500),
+            FakeResponse({"data": [{"b64_json": "eA=="}]}),
+        ])
+
+        self.assertEqual(record["status"], "succeeded")
+        self.assertEqual(record["channel_id"], self.capabilities.channel("teamorouter")["id"])
+        self.assertEqual(record["fallback_count"], 1)
+        self.assertEqual(len(self.client.urls), 2)
+        self.assertTrue(self.client.urls[1].endswith("/v1/images/generations"), self.client.urls[1])
+
+    def test_a_model_with_a_single_channel_still_fails_honestly(self):
+        # nano-banana-2 只绑了 grsai：没有第二家可换，就如实失败（错误里留着上游那句话）。
+        request = {"model": "nano-banana-2", "channel": "grsai", "prompt": "一只猫",
+                   "reference_image_urls": [], "aspect_ratio": "1:1", "image_size": "1K"}
+        store = FakeJobStore(self.capabilities, request)
+        client = FakePostClient([FakeResponse({"error": {"message": "quota exhausted"}}, status_code=429)])
+        with (
+            patch("control_plane.generation_tasks._store", return_value=store),
+            patch("control_plane.generation_tasks.httpx.Client", return_value=client),
+            patch("control_plane.generation_tasks.get_settings", return_value=Mock(video_generation_blank_image_url="")),
+        ):
+            _generate(None, "job-1")
+
+        self.assertEqual(store.record["status"], "failed")
+        self.assertIn("quota exhausted", store.record["error"])
+        self.assertEqual(len(client.urls), 1)
+
+    def test_a_failure_after_the_image_was_paid_for_does_not_re_buy_it(self):
+        # teamorouter 已经出图、转存才炸：换渠道重来等于再买一张，所以只记失败、不再 POST。
+        record = self._run([FakeResponse({"data": [{"b64_json": "eA=="}]})],
+                           channel="teamorouter", sync=RuntimeError("kernel upload failed"))
+
+        self.assertEqual(record["status"], "failed")
+        self.assertIn("kernel upload failed", record["error"])
+        self.assertEqual(len(self.client.urls), 1)
+
+
 class ImageChannelSelectionTests(unittest.TestCase):
     """`channel="auto"` 的候选现在从绑定表读（不再写死 grsai），所以这里钉住选路与拒因。
 
@@ -550,6 +701,12 @@ class ImageChannelSelectionTests(unittest.TestCase):
         self._validate(channel="auto")
         # 两组绑定都在线时，auto 的候选顺序仍是 priority 升序：grsai(40) 在前。
         self.assertEqual(self.store.binding_channels("gpt-image-2"),["grsai","teamorouter"])
+
+    def test_a_named_channel_falls_back_when_another_one_serves_the_same_model(self):
+        # 点名的 teamorouter 没在线，但同型号的 grsai 在线：这单照样接（worker 先试 teamorouter，
+        # 报错/不可用就换 grsai），而不是把调用方挡在门外。
+        self._online("grsai")
+        self._validate()   # channel="teamorouter"
 
     def test_the_reject_reason_separates_offline_from_unbound(self):
         # 没探过 = 离线：指定渠道报 503（渠道配了但不可用），比笼统的 422 好排查。

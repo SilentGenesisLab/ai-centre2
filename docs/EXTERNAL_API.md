@@ -740,10 +740,11 @@ curl -X POST "$BASE/v1/video-generations/jobs" \
   }'
 ```
 
-- `channel`省略时默认`jmapi`；取值为`jmapi | libtv | runninghub`。传`auto`时才允许在可重试故障后切换渠道，候选顺序是后台为该`model`登记的绑定（`seedance-2.0`/`seedance-2.5`依次为jmapi、libtv；`minimax-h3-rh-enhanced`只有runninghub）。
-- 明确传`jmapi`、`libtv`或`runninghub`时不切换渠道。
-- jmapi首版支持图片参考；libtv首版支持视频参考。渠道未配置或未通过健康检查时不会受理任务。
-- `model`也接受`seedance-2.5`：时长4～30秒（超过15秒只有它接），参考素材上限30图/10视频且参考视频音频合计≤30秒；分辨率上jmapi只有480p/720p（1080p会自动落到libtv），480p只有2.5能做。
+- `channel`省略时默认`jmapi`；取值为`jmapi | libtv | runninghub`。**点名的渠道只是候选列表的排头，不是唯一候选**：后面自动跟上后台为该`model`登记的其余绑定（`seedance-2.0`/`seedance-2.5`依优先级为jmapi、libtv；`minimax-h3-rh-enhanced`只有runninghub）。
+- 某一家不可用（未登记、被停用、健康检查未通过）或不支持这次的时长/分辨率/参考素材数量，或提交时报错，都会换下一家；换过几家看任务的`fallback_count`（`0`就是第一顺位）。候选全部不可用时才返回`422`。
+- **上游一旦接单就不再换渠道**：提交之后才发生的超时、轮询途中的网络抖动、结果转存失败都不会重投，作业直接判失败——上游那一单已经产生费用，重投就是再买一份。所以「作业失败」不等于「没花钱」，重投前先看`channel`、`stage`与`error`。
+- jmapi首版支持图片参考；libtv首版支持视频参考。
+- `model`也接受`seedance-2.5`：时长4～30秒（超过15秒只有它接），参考素材上限30图/10视频且参考视频音频合计≤30秒；分辨率上jmapi只有480p/720p（1080p会落到libtv，点名`jmapi`时也一样，不返回422），480p只有2.5能做。
 - `model`还接受`minimax-h3-rh-enhanced`（RunningHub渠道的MiniMax H3增强版），约束与Seedance不同，见下。
 
 ### minimax-h3-rh-enhanced（RunningHub渠道）
@@ -833,7 +834,7 @@ curl -X POST "$BASE/v1/decision-generations/jobs" \
 
 - `state`为必填字符串，长度1～20000字符，是待判定的事实描述。
 - `questions`为必填的非空对象，每个问题必须有`type`和`instructions`。
-- `model`目前只接受`jev`；`channel`接受`teamorouter | auto`，默认`teamorouter`。
+- `model`目前只接受`jev`；`channel`接受`teamorouter | auto`，默认`teamorouter`。点名只是排头（目前只有这一条绑定，暂时无处可换）；**答案一旦拿到就不会再换渠道重问**——上游每次调用都计费，而定型判定是概率输出，第二次未必给同一份答案。
 
 三种题型的`criteria`形状**互不相同**，喂错会被上游拒绝（错误信息里会说明要求）：
 

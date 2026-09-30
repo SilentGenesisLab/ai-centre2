@@ -433,7 +433,9 @@ def _generate_audio(job_id: str) -> dict[str, Any]:
     request = job["request"]
     started = time.monotonic()
     requested = request.get("channel") or "mxapi"
-    order = [requested] if requested != "auto" else ["mxapi"]
+    # 和视频/生图一个规矩：点名的排头，同一型号的其余渠道按 priority 跟上，报错就换下一家
+    # （今天两个音乐型号都只绑了 mxapi，所以这里是单元素列表；写死渠道名会让新渠道进不来）。
+    order = store.channel_order(request["model"], requested)
     store.update_job(
         job_id,
         status="running",
@@ -453,6 +455,7 @@ def _generate_audio(job_id: str) -> dict[str, Any]:
             or not _compatible(binding, request)
         ):
             continue
+        submitted = False
         try:
             store.update_job(
                 job_id, channel_id=binding["channel_id"], stage="submitting", fallback_count=index
@@ -495,13 +498,19 @@ def _generate_audio(job_id: str) -> dict[str, Any]:
                     {"accepted": True, "status_code": response.status_code, "task_ids": task_ids}
                 ),
             )
+            submitted = True
             return _poll_songs(store, job_id, request, binding, task_ids, started)
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            # 提交成功之后（含轮询途中）的失败不再换渠道：上游那两首还在生成，重投就是再买一份。
             failures.append(f"{code}:{type(exc).__name__}")
-            break
+            if submitted:
+                break
+            continue
         except Exception as exc:
             failures.append(f"{code}:{str(exc)[:200]}")
-            break
+            if submitted:
+                break
+            continue
     store.update_job(
         job_id,
         status="failed",

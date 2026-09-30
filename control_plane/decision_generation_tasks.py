@@ -87,7 +87,7 @@ def _decide(job_id: str) -> dict[str, Any]:
     request = job["request"]
     started = time.monotonic()
     requested = request.get("channel") or "teamorouter"
-    order = [requested] if requested != "auto" else store.binding_channels(request["model"])
+    order = store.channel_order(request["model"], requested)
     store.update_job(
         job_id,
         status="running",

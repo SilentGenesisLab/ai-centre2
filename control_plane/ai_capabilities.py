@@ -270,6 +270,16 @@ class CapabilityStore:
             rows=db.execute("SELECT c.code FROM model_channels mc JOIN models m ON m.id=mc.model_id JOIN channels c ON c.id=mc.channel_id WHERE m.code=? AND m.deleted_at IS NULL AND c.deleted_at IS NULL ORDER BY mc.priority",(model_code,)).fetchall()
         return [row[0] for row in rows]
 
+    def channel_order(self, model_code:str, requested:str|None)->list[str]:
+        """候选渠道顺序：点名的排头，同一型号的其余渠道按 priority 跟上。
+
+        点名只是「先用它」，不是「只用它」—— 第三方抽风是常态，报错就接着试下一家，
+        否则每挂一次都得人工换渠道重投。channel="auto"（或不给）就是纯 priority 顺序。
+        没登记过的名字照样排头：能不能用由 binding() 说了算，这里不做判断。"""
+        candidates=self.binding_channels(model_code)
+        if not requested or requested=="auto": return candidates
+        return [requested]+[code for code in candidates if code!=requested]
+
     def create_job(self, model_code:str, requested_channel:str, request:dict[str,Any])->str:
         models={m["code"]:m for m in self.models()}
         if model_code not in models or not models[model_code]["enabled"]: raise CapabilityNotFound(model_code)
