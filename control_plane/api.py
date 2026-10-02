@@ -3768,6 +3768,9 @@ async def _strict_enhanced_response(
     # seed 42.  Seed 45 is stable in the pinned backend and still gives three
     # distinct deterministic candidates (45, 46, 47).  Explicit caller seeds
     # remain authoritative.
+    # 一般分支（4~80 字同语种）用 DEFAULT_SEED：≤80 字的文本都会被
+    # _requires_synchronous_quality_gate 强制走这里，而 always_three=False 时
+    # 第一个候选过了质量门就提前返回，所以这个 base_seed 基本就是最终结果。
     base_seed = (
         request.seed
         if request.seed is not None
@@ -3775,7 +3778,7 @@ async def _strict_enhanced_response(
         if normalized_units <= 3
         or (context.target_language == "ja" and normalized_units <= 20)
         else 43 if context.cross_language
-        else 42
+        else DEFAULT_SEED
     )
     speaker_threshold = (
         0.31
