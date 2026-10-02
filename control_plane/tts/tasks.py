@@ -19,6 +19,7 @@ from ..config import get_settings
 from ..media_fetch import AUDIO_MEDIA, download_public_media_async
 from .base import TransientTTSProviderError
 from .enhanced import (
+    DEFAULT_SEED,
     combine_wav_segment_files,
     model_text,
     normalize_wav_silence,
@@ -175,7 +176,7 @@ async def _synthesize_long_form(
                 ),
                 "prosody": ProsodySpec(),
                 "timing": TimingSpec(),
-                "seed": request.seed if request.seed is not None else 42,
+                "seed": request.seed if request.seed is not None else DEFAULT_SEED,
             }
         )
         if context.model_reference_path is not None:
@@ -187,7 +188,7 @@ async def _synthesize_long_form(
         else:
             internal = TTSSpeechRequest(**common)
 
-        base_seed = request.seed if request.seed is not None else 42
+        base_seed = request.seed if request.seed is not None else DEFAULT_SEED
         async with semaphore:
             for attempt in range(SEGMENT_RETRIES):
                 try:

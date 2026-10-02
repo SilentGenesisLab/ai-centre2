@@ -78,6 +78,7 @@ from .tts.base import (
 )
 from .tts.jobs import TTSJobClient, TTSJobNotFound, TTSJobNotReady
 from .tts.enhanced import (
+    DEFAULT_SEED,
     FADE_MS,
     PARAGRAPH_SILENCE_MS,
     PCM_CHANNELS,
@@ -2754,7 +2755,7 @@ async def synthesize_v2(request: TTSPublicSpeechRequest) -> Response:
             context.model_reference_path,
             context.model_prompt_text,
             context.style,
-            seed=request.seed if request.seed is not None else 42,
+            seed=request.seed if request.seed is not None else DEFAULT_SEED,
         )
         await _quality_store_put(
             request_id,
@@ -2966,7 +2967,7 @@ async def _segmented_pcm_source(
         else None
     )
     segments = split_tts_text(request.text, limit=segment_limit)
-    seed = request.seed if request.seed is not None else 42
+    seed = request.seed if request.seed is not None else DEFAULT_SEED
     timeout = httpx.Timeout(get_settings().upstream_timeout_seconds, connect=15)
     async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         prefetched: dict[int, asyncio.Task[bytes]] = {}
@@ -4400,7 +4401,7 @@ async def synthesize_v2_upload(
             context.model_reference_path,
             context.model_prompt_text,
             context.style,
-            seed=42,
+            seed=DEFAULT_SEED,
         )
         await _quality_store_put(request_id, {"request_id": request_id, "status": "pending"})
         _run_background(

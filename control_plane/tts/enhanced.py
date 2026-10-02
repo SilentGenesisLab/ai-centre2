@@ -27,6 +27,11 @@ PCM_SAMPLE_WIDTH = 2
 FADE_MS = 10
 SENTENCE_SILENCE_MS = 120
 PARAGRAPH_SILENCE_MS = 250
+# VoxCPM2 的 CFM 噪声种子。调用方不给 seed 时，vLLM-Omni 会用 request_id 派生噪声
+# （voxcpm2_talker.py 的 _fill_deterministic_cfm_noise），那样每次都是新的随机结果；
+# 只有给了 seed 才逐字节可复现。1234 是实测选出来的：在 22 段互不重叠的中文文本上，
+# 谱平坦度均值 0.0008、最差样本 0.0038；原先的 42 分别是 0.0028 和 0.0090。
+DEFAULT_SEED = 1234
 SILENCE_FRAME_MS = 20
 SILENCE_THRESHOLD_DBFS = -50.0
 SILENCE_ANOMALY_SECONDS = 0.8

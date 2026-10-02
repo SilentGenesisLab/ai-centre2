@@ -14,6 +14,7 @@ from control_plane.tts.schemas import (
     TTSAsyncSpeechRequest,
     TTSEmotionStrategy,
 )
+from control_plane.tts.enhanced import DEFAULT_SEED
 from control_plane.tts.tasks import _synthesize_long_form
 
 
@@ -109,7 +110,7 @@ class LongFormTTSTests(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(service.seeds, [42, 43])
+        self.assertEqual(service.seeds, [DEFAULT_SEED, DEFAULT_SEED + 1])
 
     def test_eight_thousand_characters_are_segmented_and_stream_combined(self) -> None:
         request = TTSAsyncSpeechRequest(text="长文本。" * 2000, language="zh")
