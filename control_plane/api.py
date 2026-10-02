@@ -78,6 +78,7 @@ from .tts.base import (
 )
 from .tts.jobs import TTSJobClient, TTSJobNotFound, TTSJobNotReady
 from .tts.enhanced import (
+    CLEAN_SEED_LADDER,
     DEFAULT_SEED,
     FADE_MS,
     PARAGRAPH_SILENCE_MS,
@@ -3768,18 +3769,21 @@ async def _strict_enhanced_response(
     # seed 42.  Seed 45 is stable in the pinned backend and still gives three
     # distinct deterministic candidates (45, 46, 47).  Explicit caller seeds
     # remain authoritative.
-    # 一般分支（4~80 字同语种）用 DEFAULT_SEED：≤80 字的文本都会被
-    # _requires_synchronous_quality_gate 强制走这里，而 always_three=False 时
-    # 第一个候选过了质量门就提前返回，所以这个 base_seed 基本就是最终结果。
-    base_seed = (
-        request.seed
-        if request.seed is not None
-        else 45
-        if normalized_units <= 3
-        or (context.target_language == "ja" and normalized_units <= 20)
-        else 43 if context.cross_language
-        else DEFAULT_SEED
-    )
+    #
+    # 候选序列按分支一次算清。原来跨语言那一支在 generate_and_score 里又判断了
+    # 一遍，重复且容易漂。一般分支（≥4 字同语种）用实测干净的 CLEAN_SEED_LADDER，
+    # 原因见 enhanced.py 里那段说明。
+    if request.seed is not None:
+        seed_sequence = tuple(request.seed + step for step in range(6))
+    elif normalized_units <= 3 or (
+        context.target_language == "ja" and normalized_units <= 20
+    ):
+        seed_sequence = (45, 46, 47)
+    elif context.cross_language:
+        seed_sequence = (43, 44, 45, 46, 52, 53)
+    else:
+        seed_sequence = CLEAN_SEED_LADDER
+    base_seed = seed_sequence[0]
     speaker_threshold = (
         0.31
         if context.emotion_strategy == TTSEmotionStrategy.FORCE
@@ -3793,14 +3797,11 @@ async def _strict_enhanced_response(
     )
 
     async def generate_and_score(attempt: int):
-        if context.cross_language and request.seed is None:
-            # The pinned VoxCPM2 backend has complementary clean candidates at
-            # seeds 52/53 for language pairs whose first four seeds preserve
-            # content but miss the ERes2NetV2 threshold. They are only reached
-            # after the normal candidates fail, so healthy requests stay fast.
-            seed = (43, 44, 45, 46, 52, 53)[attempt - 1]
-        else:
-            seed = base_seed + attempt - 1
+        # The pinned VoxCPM2 backend has complementary clean candidates at
+        # seeds 52/53 for language pairs whose first four seeds preserve
+        # content but miss the ERes2NetV2 threshold. They are only reached
+        # after the normal candidates fail, so healthy requests stay fast.
+        seed = seed_sequence[attempt - 1]
         audio, provider, segment_count = await _synthesize_enhanced_once(
             request,
             context.model_reference_path,

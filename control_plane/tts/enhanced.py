@@ -31,12 +31,19 @@ PARAGRAPH_SILENCE_MS = 250
 # （voxcpm2_talker.py 的 _fill_deterministic_cfm_noise），那样每次都是新的随机结果；
 # 只有给了 seed 才逐字节可复现。
 #
-# 1232 是实测挑出来的：在 20 个候选 seed × 10 段中文上按谱平坦度排名，
+# 1232 是实测挑出来的：在 20 个候选 seed × 6 段中文上按谱平坦度排名，
 # 1232 是 0.0004（最差样本 0.0010），排第一；原先的 42 是 0.0027/0.0045。
-# 这个常量同时是严格模式里 ≥4 字同语种文本的 base_seed，而 ≤80 字的文本都会被
+# 这个常量是严格模式里 ≥4 字同语种文本的首个候选，而 ≤80 字的文本都会被
 # _requires_synchronous_quality_gate 强制走严格模式、且 always_three=False 时
 # 第一个候选过了质量门就返回，所以它基本就是最终结果 —— 选哪一签直接决定音质。
-DEFAULT_SEED = 1232
+#
+# 严格模式会按顺序试候选直到质量门通过，那个门只按内容/说话人相似度/情绪打分、
+# 不看噪声，所以候选里混进脏 seed 时会被挑中（实测 04_terms 上拒了平坦度 0.0003
+# 的 1234、退到 0.0062 的 1235）。因此候选序列里的每一签都必须是干净的：
+# 下面三个的实测平坦度均值/最差分别是 0.0004/0.0010、0.0005/0.0020、0.0008/0.0015。
+# 它们不连续，所以不能用 base + attempt - 1 推。
+CLEAN_SEED_LADDER = (1232, 1237, 1234)
+DEFAULT_SEED = CLEAN_SEED_LADDER[0]
 SILENCE_FRAME_MS = 20
 SILENCE_THRESHOLD_DBFS = -50.0
 SILENCE_ANOMALY_SECONDS = 0.8
