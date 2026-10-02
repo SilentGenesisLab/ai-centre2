@@ -3772,6 +3772,7 @@ function Tts({
                   <option value="voxcpm2">VoxCPM2</option>
                   <option value="doubao">豆包</option>
                   <option value="elevenlabs">ElevenLabs</option>
+                  <option value="minimax">MiniMax</option>
                 </Select>
               </label>
             </div>

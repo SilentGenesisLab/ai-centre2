@@ -12,6 +12,7 @@ class TTSProviderName(StrEnum):
     VOXCPM2 = "voxcpm2"
     DOUBAO = "doubao"
     ELEVENLABS = "elevenlabs"
+    MINIMAX = "minimax"
 
 
 class TTSQualityMode(StrEnum):
@@ -146,6 +147,7 @@ class VoiceProfile(BaseModel):
             TTSProviderName.VOXCPM2.value,
             TTSProviderName.DOUBAO.value,
             TTSProviderName.ELEVENLABS.value,
+            TTSProviderName.MINIMAX.value,
         }
         unknown = set(self.bindings) - allowed
         if unknown:

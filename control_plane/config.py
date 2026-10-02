@@ -214,7 +214,7 @@ class Settings(BaseSettings):
     tts_job_workers: int = 8
     tts_upload_timeout_seconds: float = 900
     tts_result_expires_seconds: int = 604800
-    tts_auto_provider_order: str = "voxcpm2,doubao,elevenlabs"
+    tts_auto_provider_order: str = "voxcpm2,doubao,elevenlabs,minimax"
 
     voxcpm2_tts_enabled: bool = True
     voxcpm2_tts_max_concurrency: int = 4
@@ -237,6 +237,12 @@ class Settings(BaseSettings):
     elevenlabs_tts_model_id: str = "eleven_multilingual_v2"
     elevenlabs_tts_output_format: str = "mp3_44100_128"
     elevenlabs_tts_max_concurrency: int = 4
+
+    minimax_tts_enabled: bool = False
+    minimax_tts_base_url: str = "https://api.minimaxi.com"
+    minimax_tts_api_key: SecretStr | None = None
+    minimax_tts_model_id: str = "speech-02-hd"
+    minimax_tts_max_concurrency: int = 4
 
     gpu0_enabled: bool = False
     gpu1_enabled: bool = True

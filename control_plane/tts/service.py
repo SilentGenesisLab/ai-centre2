@@ -16,6 +16,7 @@ from .base import (
 )
 from .providers.doubao import DoubaoProvider
 from .providers.elevenlabs import ElevenLabsProvider
+from .providers.minimax import MiniMaxProvider
 from .providers.voxcpm2 import VoxCPM2Provider
 from .schemas import (
     TTSCloneSpeechRequest,
@@ -42,6 +43,7 @@ class TTSService:
             TTSProviderName.VOXCPM2.value: settings.voxcpm2_tts_max_concurrency,
             TTSProviderName.DOUBAO.value: settings.doubao_tts_max_concurrency,
             TTSProviderName.ELEVENLABS.value: settings.elevenlabs_tts_max_concurrency,
+            TTSProviderName.MINIMAX.value: settings.minimax_tts_max_concurrency,
         }
         self._semaphores = {
             name: threading.BoundedSemaphore(max(1, limits.get(name, 1)))
@@ -169,6 +171,11 @@ class TTSService:
             if settings.elevenlabs_tts_api_key
             else None
         )
+        minimax_key = (
+            settings.minimax_tts_api_key.get_secret_value()
+            if settings.minimax_tts_api_key
+            else None
+        )
         return [
             VoxCPM2Provider(
                 settings.tts_backend_url,
@@ -190,5 +197,12 @@ class TTSService:
                 settings.elevenlabs_tts_output_format,
                 settings.upstream_timeout_seconds,
                 settings.elevenlabs_tts_enabled,
+            ),
+            MiniMaxProvider(
+                settings.minimax_tts_base_url,
+                minimax_key,
+                settings.minimax_tts_model_id,
+                settings.upstream_timeout_seconds,
+                settings.minimax_tts_enabled,
             ),
         ]
