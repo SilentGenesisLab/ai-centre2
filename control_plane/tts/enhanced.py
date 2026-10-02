@@ -29,9 +29,14 @@ SENTENCE_SILENCE_MS = 120
 PARAGRAPH_SILENCE_MS = 250
 # VoxCPM2 的 CFM 噪声种子。调用方不给 seed 时，vLLM-Omni 会用 request_id 派生噪声
 # （voxcpm2_talker.py 的 _fill_deterministic_cfm_noise），那样每次都是新的随机结果；
-# 只有给了 seed 才逐字节可复现。1234 是实测选出来的：在 22 段互不重叠的中文文本上，
-# 谱平坦度均值 0.0008、最差样本 0.0038；原先的 42 分别是 0.0028 和 0.0090。
-DEFAULT_SEED = 1234
+# 只有给了 seed 才逐字节可复现。
+#
+# 1232 是实测挑出来的：在 20 个候选 seed × 10 段中文上按谱平坦度排名，
+# 1232 是 0.0004（最差样本 0.0010），排第一；原先的 42 是 0.0027/0.0045。
+# 这个常量同时是严格模式里 ≥4 字同语种文本的 base_seed，而 ≤80 字的文本都会被
+# _requires_synchronous_quality_gate 强制走严格模式、且 always_three=False 时
+# 第一个候选过了质量门就返回，所以它基本就是最终结果 —— 选哪一签直接决定音质。
+DEFAULT_SEED = 1232
 SILENCE_FRAME_MS = 20
 SILENCE_THRESHOLD_DBFS = -50.0
 SILENCE_ANOMALY_SECONDS = 0.8
