@@ -52,6 +52,28 @@ def _headers(binding:dict[str,Any])->dict[str,str]:
     if kind=="x-api-key":return {"X-API-Key":key}
     if kind=="bearer":return {"Authorization":f"Bearer {key}"}
     return {}
+
+
+def _effective_resolution(binding:dict[str,Any],r:dict[str,Any])->Any:
+    """该绑定实际会用到的分辨率。
+
+    jmapi 的 Seedance 2.0 VIP 契约不收 480p（上游明说 480p 要用它的 Seedance 2.5），
+    但它的 720p 是好的。原先的做法是把 jmapi 整个排除出候选，于是 480p 的 Seedance 2.0
+    **只剩 libtv 一家** —— libtv 一旦不可用（2026-10-07 实测四个账号余额耗尽、上游回
+    `算力不足` code 1200000136），这类请求就没有任何兜底，整单失败。
+
+    改成「升到 720p 交给 jmapi」：480p→720p 是变好不是变差，模型不变，而且是**同一个
+    渠道**承接，不会把请求悄悄换到别家去。`_compatible` 与 `_payload` 共用这一处判断，
+    避免「判定说能接、发包却用原分辨率」两边打架。
+    """
+    resolution=str(r.get("resolution") or "").lower()
+    if (binding.get("adapter")=="jmapi"
+            and binding.get("upstream_model")=="seedance2.0_vip"
+            and resolution=="480p"):
+        return "720p"
+    return r.get("resolution")
+
+
 def _payload(
     binding: dict[str, Any],
     request: dict[str, Any],
@@ -63,7 +85,7 @@ def _payload(
     if not images and not videos and not audios and blank_image_url:
         images = [blank_image_url]
     if binding["adapter"]=="jmapi":
-        return {"image_urls":images,"audio_urls":audios,"video_urls":videos,"prompt":request["prompt"],"model_version":binding["upstream_model"],"duration":request["duration_seconds"],"ratio":request["aspect_ratio"],"video_resolution":request["resolution"],"poll":None}
+        return {"image_urls":images,"audio_urls":audios,"video_urls":videos,"prompt":request["prompt"],"model_version":binding["upstream_model"],"duration":request["duration_seconds"],"ratio":request["aspect_ratio"],"video_resolution":_effective_resolution(binding,request),"poll":None}
     if binding["adapter"]=="libtv":
         return {"model":binding["upstream_model"],"prompt":request["prompt"],"params":{"modeType":"mixed2video","duration":request["duration_seconds"],"ratio":request["aspect_ratio"],"resolution":request["resolution"],"enableSound":"on" if request.get("sound") else "off"},"imageUrls":images,"videoUrls":videos,"audioUrls":audios}
     if binding["adapter"]=="grsai":
@@ -247,14 +269,11 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
             return False
     elif resolution == "768p":
         return False
-    # jmapi's Seedance 2.0 VIP contract rejects 480p and requires its
-    # Seedance 2.5 model for that resolution. `auto` can select libtv instead.
-    if (
-        binding.get("adapter") == "jmapi"
-        and binding.get("upstream_model") == "seedance2.0_vip"
-        and str(r.get("resolution") or "").lower() == "480p"
-    ):
-        return False
+    # jmapi 的 Seedance 2.0 VIP 契约不收 480p，但**不再把它排除出候选** ——
+    # 改成由 `_effective_resolution` 把这个请求升到 720p 再发给它。原先直接排除的后果是
+    # 480p 只剩 libtv 一家，libtv 账号一耗尽就整单失败、连兜底都没有（2026-10-07）。
+    # 这里不写分支，是因为「能不能接」与「以什么分辨率接」现在都由 `_effective_resolution`
+    # 一处决定，两边各写一份迟早会对不上。
     # jmapi's Seedance 2.5 only serves 480p/720p ("video_resolution must be one
     # of 480p, 720p for model_version seedance2.5"); 1080p has to go to libtv.
     if (

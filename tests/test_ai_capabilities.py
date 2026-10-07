@@ -69,19 +69,46 @@ class CapabilityTests(unittest.TestCase):
         request["reference_image_urls"]=[];request["reference_video_urls"]=["https://x/a.mp4"]
         tv=self.store.binding("seedance-2.0","libtv"); self.assertTrue(_compatible(tv,request)); self.assertEqual(_payload(tv,request)["videoUrls"],request["reference_video_urls"])
 
-    def test_seedance_20_480p_routes_away_from_jmapi(self):
+    def test_seedance_20_480p_is_upgraded_to_720p_on_jmapi(self):
+        # 480p 原先被 jmapi 整个排除出候选，后果是这类请求只有 libtv 一家能接；
+        # libtv 账号一耗尽就整单失败、连兜底都没有（2026-10-07 实测）。
+        # 现在改成把分辨率升到 720p 交给 jmapi：可达性有了，而且是同一个渠道承接，
+        # 不会把请求悄悄换到别家。libtv 侧仍原样接 480p，不受影响。
         request = {
+            "prompt": "原样提示词",
             "reference_image_urls": [],
             "reference_video_urls": [],
             "reference_audio_urls": [],
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
             "resolution": "480p",
+            "sound": False,
         }
-        self.assertFalse(
-            _compatible(self.store.binding("seedance-2.0", "jmapi"), request)
-        )
-        self.assertTrue(
-            _compatible(self.store.binding("seedance-2.0", "libtv"), request)
-        )
+        jm = self.store.binding("seedance-2.0", "jmapi")
+        self.assertTrue(_compatible(jm, request))
+        self.assertEqual(_payload(jm, request)["video_resolution"], "720p")
+
+        tv = self.store.binding("seedance-2.0", "libtv")
+        self.assertTrue(_compatible(tv, request))
+        self.assertEqual(_payload(tv, request)["params"]["resolution"], "480p")
+
+    def test_seedance_20_keeps_the_requested_resolution_when_jmapi_can_serve_it(self):
+        # 升分辨率的适配只针对 480p —— 720p/1080p 必须原样转发，
+        # 别让这段逻辑顺手改掉本来就没问题的请求。
+        base = {
+            "prompt": "原样提示词",
+            "reference_image_urls": [],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "sound": False,
+        }
+        jm = self.store.binding("seedance-2.0", "jmapi")
+        for resolution in ("720p", "1080p"):
+            request = dict(base, resolution=resolution)
+            self.assertTrue(_compatible(jm, request))
+            self.assertEqual(_payload(jm, request)["video_resolution"], resolution)
 
     def test_seedance_25_bindings_and_payloads(self):
         request = {
@@ -121,14 +148,11 @@ class CapabilityTests(unittest.TestCase):
 
         jm = self.store.binding("seedance-2.5", "jmapi")
         tv = self.store.binding("seedance-2.5", "libtv")
-        # 480p 只有 2.5 能做，jmapi 的 2.5 可以，jmapi 的 2.0 不行。
+        # 480p 只有 2.5 能做，jmapi 的 2.5 可以。
+        # （jmapi 的 **2.0** 现在也能接 480p 请求，但那是靠 _effective_resolution
+        #   升到 720p 实现的，不属于本节讨论的 2.5 分辨率切分 ——
+        #   见 test_seedance_20_480p_is_upgraded_to_720p_on_jmapi。）
         self.assertTrue(_compatible(jm, resolution_request("480p")))
-        self.assertFalse(
-            _compatible(
-                self.store.binding("seedance-2.0", "jmapi"),
-                resolution_request("480p"),
-            )
-        )
         # 1080p 上游只认 libtv。
         self.assertFalse(_compatible(jm, resolution_request("1080p")))
         self.assertTrue(_compatible(tv, resolution_request("1080p")))
@@ -576,6 +600,11 @@ class FakeResponse:
     def text(self):
         return json.dumps(self._body)
 
+    def raise_for_status(self):
+        # 轮询分支会调它（生图是同步端点、走不到那里，所以这个假响应原先没有这个方法）。
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
 
 class GenerationFallbackTests(unittest.TestCase):
     """点名渠道只是排头：它报错就按 priority 换下一家（同型号的另一家）。"""
@@ -651,6 +680,79 @@ class GenerationFallbackTests(unittest.TestCase):
         self.assertEqual(record["status"], "failed")
         self.assertIn("kernel upload failed", record["error"])
         self.assertEqual(len(self.client.urls), 1)
+
+
+class FakePostGetClient(FakePostClient):
+    """给基类补一个 `get`。
+
+    libtv 的轮询走的是 GET（jmapi/grsai/runninghub 都走 POST），基类只实现了 post。
+    顺带记下每次 POST 的请求体，用来断言「发给 jmapi 的分辨率是升过级的」。
+    """
+
+    def __init__(self, posts, gets):
+        super().__init__(posts)
+        self.gets, self.get_urls, self.bodies = gets, [], []
+
+    def post(self, url, headers=None, json=None):
+        self.bodies.append(json)
+        return super().post(url, headers=headers, json=json)
+
+    def get(self, url, headers=None):
+        self.get_urls.append(url)
+        return self.gets.pop(0) if len(self.gets) > 1 else self.gets[0]
+
+
+class VideoFallsBackToJmapiTests(unittest.TestCase):
+    """libtv 不可用时，480p 的 Seedance 2.0 必须能自动切到 jmapi。
+
+    线上真实故障（2026-10-07）：libtv 四个账号余额耗尽，上游回 `算力不足`；而 480p
+    当时**只有 libtv 一家能接**（jmapi 被 _compatible 显式排除），于是换渠道逻辑
+    无路可走，整单失败。修法是把 480p 升到 720p 交给 jmapi —— 这条测试钉住整个链路：
+    提交 → libtv 轮询报失败 → 换 jmapi → 以 720p 提交 → 成功。
+    """
+
+    def setUp(self):
+        self.capabilities = CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
+        for code in ("jmapi", "libtv"):
+            self.capabilities.record_probe(self.capabilities.channel(code)["id"], True)
+            self.capabilities.save_channel({"enabled": True}, self.capabilities.channel(code)["id"])
+
+    def test_libtv_exhaustion_falls_back_to_jmapi_at_720p(self):
+        request = {
+            "model": "seedance-2.0", "channel": "libtv", "prompt": "一只猫",
+            "reference_image_urls": [], "reference_video_urls": [], "reference_audio_urls": [],
+            "duration_seconds": 5, "aspect_ratio": "16:9", "resolution": "480p", "sound": False,
+        }
+        store = FakeJobStore(self.capabilities, request)
+        client = FakePostGetClient(
+            posts=[
+                FakeResponse({"ok": True, "taskId": "tv-1"}),                                        # libtv 受理
+                FakeResponse({"submit_id": "jm-1"}),                                                 # jmapi 受理
+                FakeResponse({"status": "succeeded", "result": {"video_url": "https://oss/out.mp4"}}),
+            ],
+            gets=[FakeResponse({"status": "failed", "msg": "算力不足", "code": 1200000136})],        # libtv 判失败
+        )
+        with (
+            patch("control_plane.generation_tasks._store", return_value=store),
+            patch("control_plane.generation_tasks.httpx.Client", return_value=client),
+            patch("control_plane.generation_tasks.get_settings", return_value=Mock(video_generation_blank_image_url="")),
+            patch("control_plane.generation_tasks._persist_video_results", side_effect=lambda urls, req, jid: urls),
+            patch("control_plane.generation_tasks.time.sleep", return_value=None),
+        ):
+            _generate(None, "job-1")
+
+        self.assertEqual(store.record["status"], "succeeded")
+        self.assertEqual(store.record["channel_id"], self.capabilities.channel("jmapi")["id"])
+        self.assertEqual(store.record["fallback_count"], 1)
+
+        # 关键断言：真正发给 jmapi 的是 720p。若这里还是 480p，上游会再拒一次。
+        jmapi_submit = [
+            body for url, body in zip(client.urls, client.bodies)
+            if url.endswith("/jmapi/v1/multimodal2video")
+        ]
+        self.assertEqual(len(jmapi_submit), 1)
+        self.assertEqual(jmapi_submit[0]["video_resolution"], "720p")
+        self.assertEqual(jmapi_submit[0]["model_version"], "seedance2.0_vip")
 
 
 class ImageChannelSelectionTests(unittest.TestCase):
