@@ -51,6 +51,9 @@ def _headers(binding:dict[str,Any])->dict[str,str]:
     if not key:return {}
     if kind=="x-api-key":return {"X-API-Key":key}
     if kind=="bearer":return {"Authorization":f"Bearer {key}"}
+    # 裸 Authorization，**不带** `Bearer ` 前缀。速创的查询端点只认这一种形式：
+    # 带前缀或改用 X-API-Key 都会回 403「请求密钥KEY不正确！」（2026-10-08 实测）。
+    if kind=="authorization":return {"Authorization":key}
     return {}
 
 
@@ -118,6 +121,15 @@ def _payload(
         for index,url in enumerate(videos[:3],start=1): payload[f"refVideo{index}"]=url
         for index,url in enumerate(audios[:3],start=1): payload[f"refAudio{index}"]=url
         return payload
+    if binding["adapter"]=="wuyinkeji":
+        # 参考图是**逗号分隔的一个字符串**，不是数组 —— 传数组上游回 500「转发请求失败:
+        # 目标服务器返回 500 错误」（2026-10-08 实测，同一个请求改成逗号串就受理了）。
+        # key 同时放进 body：提交端点 body 和头都认，但**查询端点只认头**，
+        # 所以 _headers 那边的 Authorization 才是必须的，这里只是跟上上游的示例写法。
+        return {"key":binding.get("credential",""),"prompt":request["prompt"],
+                "imageSize":request.get("image_size","1K"),
+                "aspectRatio":request.get("aspect_ratio","1:1"),
+                "urls":",".join(images)}
     raise ValueError("unsupported generation channel adapter")
 def _unwrap(body:dict[str,Any])->dict[str,Any]:
     stdout=body.get("stdout")
@@ -168,7 +180,10 @@ def _urls_from_container(value: Any) -> list[str]:
                         break
         return output
     if isinstance(value, dict):
-        for key in ("urls", "videos", "images", "image_urls", "video_urls", "results", "url", "video_url", "image_url"):
+        # `result`（单数）也要认：速创把结果放在 `data.result` 里，而它不在原本这张表上，
+        # 于是轮询明明成功了也取不到 URL。这个函数只回真的 http(s) 链接，
+        # 对上游把 "result" 用作别的含义（对象/状态）是安全的 —— 那种情况返回空。
+        for key in ("urls", "videos", "images", "image_urls", "video_urls", "results", "result", "url", "video_url", "image_url"):
             if value.get(key):
                 return _urls_from_container(value[key])
     return []
@@ -190,7 +205,20 @@ def _result(body:dict[str,Any])->list[str]:
     return []
 
 
-def _state(body: dict[str, Any]) -> str:
+# 速创用数字状态，而中台的 SUCCESS_STATES/FAILURE_STATES 只认英文词 —— 不翻译的话
+# 轮询会一直拿到 "2"、既不成功也不失败，白白等到超时。0（排队）与 2（成功）是实测到的；
+# 1 按同族接口的惯例记为处理中；其余值一律当失败 —— 上游用 message 说明原因，
+# 宁可如实失败，也不要挂到超时。
+_WUYINKEJI_STATES = {"0": "running", "1": "running", "2": "succeeded"}
+
+
+def _normalize_state(state: str, adapter: str | None = None) -> str:
+    if adapter == "wuyinkeji":
+        return _WUYINKEJI_STATES.get(state, "failed")
+    return state
+
+
+def _state(body: dict[str, Any], adapter: str | None = None) -> str:
     normalized = _unwrap(body)
     candidates = [normalized]
     for key in ("task", "data", "result"):
@@ -199,7 +227,7 @@ def _state(body: dict[str, Any]) -> str:
     for candidate in candidates:
         for key in ("gen_status", "status", "state"):
             if candidate.get(key) is not None:
-                return str(candidate[key]).lower()
+                return _normalize_state(str(candidate[key]).lower(), adapter)
     return ""
 
 
@@ -285,7 +313,7 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     return True
 def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
     if not channel.get("base_url"): return False,None,"Base URL未配置"
-    path={"jmapi":"/jmapi/v1/keys","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models"}.get(channel["adapter"],"/health")
+    path={"jmapi":"/jmapi/v1/keys","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models","wuyinkeji":"/api/async/detail?id=image_00000000-0000-0000-0000-000000000000"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
@@ -337,6 +365,19 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
             if response.status_code==403 and "停用" in detail: return False,None,f"HTTP 403：{detail}"
             if response.status_code>=400 and response.status_code!=403: return False,None,f"HTTP {response.status_code}"
             return True,{"status_code":response.status_code,"detail":detail or "密钥有效"},None
+        if channel["adapter"]=="wuyinkeji":
+            # 这个上游 HTTP 恒为 200，错误全在响应体的 `code` 字段里，所以不能看状态码。
+            # 探针查一个「格式合法但不存在」的任务号：好 key 回 400「错误的ID」
+            # —— 说明鉴权已过、只是查无此单；坏 key 回 403「请求密钥KEY不正确！」。
+            # 于是这条能同时证明「网关通」和「密钥有效」，在同族里算强判据；
+            # 但措辞变了仍会漏判（跟 mxapi/RunningHub 一样的性质：能证伪，不能证实）。
+            try: body=response.json()
+            except ValueError: body={}
+            code=int(body.get("code") or 0) if isinstance(body,dict) else 0
+            if code==403: return False,body,"响应体 code 403：API key 无效或未配置"
+            if code==400: return True,body,None
+            if code!=200: return False,body,f"响应体 code {code}：{str((body or {}).get('msg'))[:60]}"
+            return True,body,None
         if response.status_code>=400:return False,None,f"HTTP {response.status_code}"
         return True,response.json(),None
     except Exception as exc:return False,None,type(exc).__name__
@@ -597,7 +638,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                 message=_error_detail(body,"upstream response did not contain task id")
                 raise RuntimeError(f"upstream rejected request: {message[:120]}")
             submitted = True
-            inline_state=_state(body)
+            inline_state=_state(body, binding["adapter"])
             if inline_state in FAILURE_STATES:
                 raise UpstreamTerminalError(
                     f"upstream generation failed: "
@@ -632,7 +673,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     status=_response_body(q)
                 except (httpx.TimeoutException,httpx.NetworkError):
                     continue
-                state=_state(status); urls=_result(status)
+                state=_state(status, binding["adapter"]); urls=_result(status)
                 if state in SUCCESS_STATES:
                     if urls:
                         return _finish_success(store,job_id,req,tid,state,urls,started)

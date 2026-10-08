@@ -18,6 +18,7 @@ from control_plane.generation_tasks import (
     _generate,
     _compatible,
     _error_detail,
+    _headers,
     _payload,
     _prepare_video_for_upload,
     _response_body,
@@ -52,7 +53,15 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(channels["teamorouter"]["deployment_type"],"third_party")
         self.assertEqual(channels["teamorouter"]["base_url"],"https://api.teamorouter.com")
         self.assertFalse(channels["teamorouter"]["credential_configured"])
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","suno-v6","suno-sound","jev"})
+        # 速创（wuyinkeji）也是预设渠道：默认关闭。它与前面几家的差别在**认证形式** ——
+        # 上游查询端点只认裸 `Authorization: <key>`，带 Bearer 前缀会回 403，
+        # 所以 auth_type 是新增的 authorization 而不是 bearer（2026-10-08 实测）。
+        self.assertFalse(channels["wuyinkeji"]["enabled"])
+        self.assertEqual(channels["wuyinkeji"]["auth_type"],"authorization")
+        self.assertEqual(channels["wuyinkeji"]["deployment_type"],"third_party")
+        self.assertEqual(channels["wuyinkeji"]["base_url"],"https://api.wuyinkeji.com")
+        self.assertFalse(channels["wuyinkeji"]["credential_configured"])
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","suno-v6","suno-sound","jev"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -819,3 +828,123 @@ class ImageChannelSelectionTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             self._validate(model="nano-banana-2",channel="teamorouter")
         self.assertEqual(caught.exception.status_code,404)
+
+
+class WuyinkejiAdapterTests(unittest.TestCase):
+    """速创（wuyinkeji）这一家的协议怪癖，逐条钉住。
+
+    这几条都是 2026-10-08 拿真实请求探出来的，光看代码看不出来：
+    参考图必须是逗号串、状态是数字、结果在 data.result 里、认证头不能带前缀。
+    """
+
+    def _binding(self, **overrides):
+        binding = {"adapter": "wuyinkeji", "upstream_model": "NanoBanana2.1", "credential": "wk-key"}
+        binding.update(overrides)
+        return binding
+
+    def _request(self, **overrides):
+        request = {
+            "prompt": "一只猫",
+            "reference_image_urls": [],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "aspect_ratio": "16:9",
+            "image_size": "2K",
+        }
+        request.update(overrides)
+        return request
+
+    def test_reference_images_are_joined_into_one_comma_separated_string(self):
+        # 传数组上游回 500「转发请求失败」—— 必须是一个逗号串。
+        payload = _payload(self._binding(), self._request(
+            reference_image_urls=["https://x/a.png", "https://x/b.png"]))
+
+        self.assertEqual(payload["urls"], "https://x/a.png,https://x/b.png")
+
+    def test_no_reference_images_sends_an_empty_string(self):
+        # 上游的示例就是 `"urls": ""`，不是 null、不是省略这个键。
+        payload = _payload(self._binding(), self._request())
+
+        self.assertEqual(payload["urls"], "")
+
+    def test_the_payload_carries_the_upstream_field_names(self):
+        payload = _payload(self._binding(), self._request())
+
+        self.assertEqual(payload["imageSize"], "2K")
+        self.assertEqual(payload["aspectRatio"], "16:9")
+        self.assertEqual(payload["prompt"], "一只猫")
+        self.assertEqual(payload["key"], "wk-key")
+
+    def test_the_raw_authorization_header_is_sent_without_a_bearer_prefix(self):
+        headers = _headers({"auth_type": "authorization", "credential": "wk-key"})
+
+        self.assertEqual(headers, {"Authorization": "wk-key"})
+
+    def test_numeric_status_is_translated_for_wuyinkeji(self):
+        # 不翻译的话轮询会一直拿到 "2"，既不成功也不失败，白白等到超时。
+        self.assertEqual(_state({"data": {"status": 0}}, "wuyinkeji"), "running")
+        self.assertEqual(_state({"data": {"status": 2}}, "wuyinkeji"), "succeeded")
+        self.assertEqual(_state({"data": {"status": 9}}, "wuyinkeji"), "failed")
+
+    def test_other_adapters_keep_their_english_statuses(self):
+        # 翻译只对速创生效，别把别家上游恰好也叫 "2" 的状态带偏。
+        self.assertEqual(_state({"data": {"status": "completed"}}), "completed")
+        self.assertEqual(_state({"status": "2"}), "2")
+
+    def test_the_result_comes_from_the_nested_data_result(self):
+        # 上游把成品放在 `data.result` 里，而 _urls_from_container 原本不认 `result`（单数）。
+        urls = _result({"code": 200, "msg": "成功",
+                        "data": {"task_id": "image_x", "status": 2,
+                                 "result": ["https://o/a.png"]}})
+
+        self.assertEqual(urls, ["https://o/a.png"])
+
+    def test_a_still_pending_task_yields_no_urls(self):
+        urls = _result({"code": 200, "data": {"task_id": "image_x", "status": 0, "result": None}})
+
+        self.assertEqual(urls, [])
+
+
+class WuyinkejiEndToEndTests(unittest.TestCase):
+    """速创的完整链路：提交 → 轮询（数字状态）→ 出图。
+
+    单独跑一遍：单测 `_state` 只能证明状态翻译得对，证明不了轮询循环真的用了它 ——
+    当初就是这条链路（翻译没接进循环）会让作业一直挂到超时。
+    """
+
+    def setUp(self):
+        self.capabilities = CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
+        channel = self.capabilities.channel("wuyinkeji")["id"]
+        self.capabilities.record_probe(channel, True)
+        self.capabilities.save_channel({"enabled": True}, channel)
+        self.channel_id = channel
+
+    def test_a_wuyinkeji_job_polls_numeric_status_and_succeeds(self):
+        request = {
+            "model": "nanobanana-2.1", "channel": "wuyinkeji", "prompt": "一只猫",
+            "reference_image_urls": [], "aspect_ratio": "16:9", "image_size": "1K",
+        }
+        store = FakeJobStore(self.capabilities, request)
+        client = FakePostGetClient(
+            posts=[FakeResponse({"code": 200, "msg": "成功", "data": {"id": "image_x", "count": "1"}})],
+            gets=[
+                FakeResponse({"code": 200, "data": {"task_id": "image_x", "status": 0, "result": None}}),
+                FakeResponse({"code": 200, "data": {"task_id": "image_x", "status": 2,
+                                                    "result": ["https://o/a.png"]}}),
+            ],
+        )
+        with (
+            patch("control_plane.generation_tasks._store", return_value=store),
+            patch("control_plane.generation_tasks.httpx.Client", return_value=client),
+            patch("control_plane.generation_tasks.get_settings", return_value=Mock(video_generation_blank_image_url="")),
+            patch("control_plane.generation_tasks.time.sleep", return_value=None),
+        ):
+            _generate(None, "job-1")
+
+        self.assertEqual(store.record["status"], "succeeded")
+        self.assertEqual(store.record["channel_id"], self.channel_id)
+        self.assertIn("https://o/a.png", store.record["result_urls_json"])
+        # 提交用的是 POST，轮询走 GET + `?id=`（速创的查询是 GET）
+        self.assertTrue(client.urls[0].endswith("/api/async/NanoBanana2.1"), client.urls[0])
+        self.assertIn("/api/async/detail?id=image_x", client.get_urls[0])
+

@@ -288,8 +288,8 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2` | `gpt-image-2` |
-| `channel` | 否 | `grsai`、`teamorouter`、`auto` | `grsai` |
+| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2`、`nanobanana-2.1` | `gpt-image-2` |
+| `channel` | 否 | `grsai`、`teamorouter`、`wuyinkeji`、`auto` | `grsai` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
 | `aspect_ratio` | 否 | `1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9` | `1:1` |
@@ -339,6 +339,21 @@ curl -sS -X POST \
 - **同步返回**：上游一次调用直接给成品，没有任务号。所以作业的 `upstream_task_id` 恒为空、`result_urls` 由中台把上游返回的内联图片转存到对象存储后给出，其余字段与 `grsai` 一致。
 - **尺寸由中台按 `aspect_ratio` + `image_size` 计算**：上游不校验尺寸，传错不会报错、只会静默给一张默认尺寸的图，所以不要指望上游纠正。
 - 候选顺序是 `grsai` → `teamorouter`（后者登记为兜底，优先级更低）。`channel` 传 `teamorouter` 只是把它挪到排头，`grsai` 仍跟在后面。
+
+### 4.4 速创渠道（wuyinkeji）
+
+`channel` 传 `wuyinkeji` 走速创（`api.wuyinkeji.com`）的异步生图接口。目前一个型号：
+
+| `model` | 上游型号 | 参考图 | 说明 |
+|---|---|---|---|
+| `nanobanana-2.1` | `NanoBanana2.1` | 最多 9 张 | 与 `grsai` 的 `nano-banana-2` 是不同上游、不同代数 |
+
+- **异步 + 轮询**：提交拿到 `image_<uuid>` 形式的任务号，中台按 `GET /api/async/detail?id=` 轮询，成功后把上游返回的图片转存到对象存储再给出 `result_urls`。与 `teamorouter` 的同步返回不同。
+- **参考图走 `urls` 字段**，上游收的是**逗号分隔的一个字符串**，不是数组 —— 传数组会回 500「转发请求失败」。中台已按串拼好，调用方无感知。
+- **认证是裸 `Authorization: <key>`**，不带 `Bearer ` 前缀。这不是随意选择：上游的**查询**端点带前缀会直接回 403，改用 `X-API-Key` 也不认（提交端点反而三种都收）。所以这个渠道的 `auth_type` 是单独的一种。
+- **状态是数字**：`0` 排队、`2` 成功（实测）；中台会翻译成统一的 `queued`/`succeeded`，调用方只看 `status` 字段即可。
+- **上游不校验 `image_size`**：传 `8K` 这类非法值照样受理并回一张图，不会报错。所以尺寸错了是静默的，别指望上游纠正。
+- **HTTP 恒为 200，错误在响应体的 `code` 字段里**（如 `403` 密钥错误、`400` 错误的ID）。中台已按响应体判定，渠道探针也据此区分「密钥有效」与「密钥不认」。
 
 ## 5. 生视频接口
 

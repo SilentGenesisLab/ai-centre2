@@ -659,8 +659,8 @@ class VideoGenerationRequest(BaseModel):
 
 class ImageGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model: Literal["gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2"] = "gpt-image-2"
-    channel: Literal["grsai","teamorouter","auto"] = "grsai"
+    model: Literal["gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1"] = "gpt-image-2"
+    channel: Literal["grsai","teamorouter","wuyinkeji","auto"] = "grsai"
     prompt: str = Field(min_length=1,max_length=10000)
     reference_image_urls: list[str] = Field(default_factory=list,max_length=9)
     aspect_ratio: Literal["1:1","2:3","3:2","3:4","4:3","9:16","16:9"] = "1:1"
@@ -710,10 +710,10 @@ class ChannelCreateRequest(BaseModel):
     name: str = Field(min_length=1,max_length=100)
     code: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     deployment_type: Literal["local","third_party"]
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter"]
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter","wuyinkeji"]
     base_url: str = Field(default="",max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
-    auth_type: Literal["none","bearer","x-api-key"] = "none"
+    auth_type: Literal["none","bearer","x-api-key","authorization"] = "none"
     priority: int = Field(default=100,ge=1,le=1000)
     timeout_seconds: int = Field(default=1800,ge=5,le=14400)
 
@@ -722,10 +722,10 @@ class ChannelUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None,min_length=1,max_length=100)
     deployment_type: Literal["local","third_party"] | None = None
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter"] | None = None
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter","wuyinkeji"] | None = None
     base_url: str | None = Field(default=None,max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
-    auth_type: Literal["none","bearer","x-api-key"] | None = None
+    auth_type: Literal["none","bearer","x-api-key","authorization"] | None = None
     enabled: bool | None = None
     priority: int | None = Field(default=None,ge=1,le=1000)
     timeout_seconds: int | None = Field(default=None,ge=5,le=14400)

@@ -116,5 +116,63 @@ class JmapiProbeTests(unittest.TestCase):
         self.assertIsNone(error)
 
 
+def wuyinkeji_channel(**overrides):
+    channel = {
+        "adapter": "wuyinkeji",
+        "base_url": "https://api.wuyinkeji.com",
+        "auth_type": "authorization",
+        "credential": "wk-test-key",
+        "timeout_seconds": 20,
+    }
+    channel.update(overrides)
+    return channel
+
+
+def probe_wuyinkeji(response: FakeResponse, **overrides):
+    client = FakeClient(response)
+    with patch("control_plane.generation_tasks.httpx.Client", return_value=client):
+        ok, balance, error = probe_channel(wuyinkeji_channel(**overrides))
+    return ok, balance, error, client
+
+
+class WuyinkejiProbeTests(unittest.TestCase):
+    """速创的探针跑在一个**格式合法但不存在**的任务号上。
+
+    这个上游 HTTP 恒为 200，错误全在响应体的 `code` 字段里，所以判据只能是 body：
+      code 400「错误的ID」    → 鉴权过了，只是查无此单 → 在线
+      code 403「请求密钥KEY不正确！」→ 密钥不认 → 离线
+    """
+
+    def test_a_good_key_is_online_when_the_id_is_simply_unknown(self) -> None:
+        ok, balance, error, _ = probe_wuyinkeji(FakeResponse(200, {"code": 400, "msg": "错误的ID", "data": []}))
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(balance["msg"], "错误的ID")
+
+    def test_a_wrong_key_is_offline(self) -> None:
+        # 上游用 403 的 **body code** 报密钥错误，HTTP 状态码仍是 200 —— 别去看状态码。
+        ok, _, error, _ = probe_wuyinkeji(FakeResponse(200, {"code": 403, "msg": "请求密钥KEY不正确！"}))
+
+        self.assertFalse(ok)
+        self.assertIn("403", error)
+
+    def test_the_probe_sends_the_raw_authorization_header(self) -> None:
+        # 这一条是这个渠道最容易踩的坑：查询端点只认裸 Authorization，
+        # 带 `Bearer ` 前缀或改用 X-API-Key 都会回 403（2026-10-08 实测）。
+        _, _, _, client = probe_wuyinkeji(FakeResponse(200, {"code": 400, "msg": "错误的ID"}))
+
+        _, headers = client.calls[0]
+        self.assertEqual(headers.get("Authorization"), "wk-test-key")
+        self.assertNotIn("Bearer", headers.get("Authorization", ""))
+        self.assertNotIn("X-API-Key", headers)
+
+    def test_the_probe_queries_the_detail_endpoint_with_a_well_formed_id(self) -> None:
+        _, _, _, client = probe_wuyinkeji(FakeResponse(200, {"code": 400, "msg": "错误的ID"}))
+
+        url, _ = client.calls[0]
+        self.assertIn("/api/async/detail?id=image_", url)
+
+
 if __name__ == "__main__":
     unittest.main()

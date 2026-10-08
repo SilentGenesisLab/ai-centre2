@@ -81,6 +81,7 @@ class CapabilityStore:
             ("mxapi", "mxapi", "third_party", "mxapi", "https://open.mxapi.org", 0, 50),
             ("runninghub", "RunningHub", "third_party", "runninghub", "https://www.runninghub.cn", 0, 60),
             ("teamorouter", "TeamORouter", "third_party", "teamorouter", "https://api.teamorouter.com", 0, 70),
+            ("wuyinkeji", "速创", "third_party", "wuyinkeji", "https://api.wuyinkeji.com", 0, 80),
         ]
         for code, name, kind, adapter, url, enabled, priority in presets:
             db.execute("INSERT OR IGNORE INTO channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -102,6 +103,12 @@ class CapabilityStore:
         # 是 AESGCM 加密后存的（credential_enc），不进 git、不进前端。所以这里只把认证方式
         # 摆正，真正的 key 由运维从控制台注入，播种期 credential_tail 仍是 NULL。
         db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='teamorouter' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
+        # 速创（wuyinkeji）用的是**裸** `Authorization: <key>`，不带 `Bearer ` 前缀 ——
+        # 这不是随意选择：它的**查询**端点带前缀会直接回 403「请求密钥KEY不正确！」
+        # （2026-10-08 实测：提交端点三种写法都收，查询端点只认裸 Authorization，
+        #   X-API-Key 也不认）。所以现有三种 auth_type 没有一个能用，新增 `authorization`。
+        # key 与 TeamORouter 同理，可由控制台加密注入，播种期 credential_tail 为 NULL。
+        db.execute("UPDATE channels SET auth_type='authorization',updated_at=? WHERE code='wuyinkeji' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
             ("minimax-h3-rh-enhanced", "MiniMax H3 RunningHub 增强版", "video_generation", ["text","image","video","audio"], "video"),
@@ -112,6 +119,7 @@ class CapabilityStore:
             ("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-flare", "GPT Image 2.5 Flare", "image_generation", ["text","image"], "image"),
             ("nano-banana-2", "Nano Banana 2", "image_generation", ["text","image"], "image"),
+            ("nanobanana-2.1", "NanoBanana 2.1", "image_generation", ["text","image"], "image"),
             # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
             ("suno-v6", "Suno v6 音乐", "audio_generation", ["text"], "audio"),
             ("suno-sound", "Suno 音效", "audio_generation", ["text"], "audio"),
@@ -158,6 +166,11 @@ class CapabilityStore:
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-flare","grsai","gpt-image-2.5-flare","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("nano-banana-2","grsai","nano-banana-2","/v1/draw/nano-banana","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
+          # 速创的查询是 GET + `?id=`，所以 task_id 直接拼进 query_path（中台按
+          # `.replace("{task_id}",tid)` 处理），走通用 GET 分支，不需要在轮询里加分支。
+          # `images:9` 沿用同门 nano-banana-2 的上限；速创自己的上限没实测过，
+          # 只在提交侧验证过逗号分隔的多张参考图能被受理。
+          ("nanobanana-2.1","wuyinkeji","NanoBanana2.1","/api/async/NanoBanana2.1","/api/async/detail?id={task_id}",{"images":9,"videos":0,"audios":0},1,80),
           # TeamORouter 是 OpenAI 兼容的**同步**生图端点：POST /v1/images/generations 直接
           # 回 `data[0].b64_json`（PNG 的 base64），没有 task id、没有 status、没有 url 字段
           # （2026-09-30 实测，1K 约 37s）。所以这条绑定的 query_path 是空的——永远不会去轮询，
@@ -241,7 +254,7 @@ class CapabilityStore:
         return self.channel(channel_id)
 
     def delete_channel(self, channel_id:str)->None:
-        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter"}: raise ValueError("preset channel cannot be deleted; disable it instead")
+        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji"}: raise ValueError("preset channel cannot be deleted; disable it instead")
         with self._db() as db: db.execute("UPDATE channels SET enabled=0,deleted_at=?,updated_at=? WHERE id=?",(now(),now(),channel_id))
 
     def models(self)->list[dict[str,Any]]:
