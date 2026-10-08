@@ -82,6 +82,7 @@ class CapabilityStore:
             ("runninghub", "RunningHub", "third_party", "runninghub", "https://www.runninghub.cn", 0, 60),
             ("teamorouter", "TeamORouter", "third_party", "teamorouter", "https://api.teamorouter.com", 0, 70),
             ("wuyinkeji", "速创", "third_party", "wuyinkeji", "https://api.wuyinkeji.com", 0, 80),
+            ("huanwangai", "幻网AI", "third_party", "huanwangai", "https://api.huanwangai.com", 0, 90),
         ]
         for code, name, kind, adapter, url, enabled, priority in presets:
             db.execute("INSERT OR IGNORE INTO channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -109,6 +110,9 @@ class CapabilityStore:
         #   X-API-Key 也不认）。所以现有三种 auth_type 没有一个能用，新增 `authorization`。
         # key 与 TeamORouter 同理，可由控制台加密注入，播种期 credential_tail 为 NULL。
         db.execute("UPDATE channels SET auth_type='authorization',updated_at=? WHERE code='wuyinkeji' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
+        # 幻网 AI 同样是**裸** Authorization（`sk-mj-...`，不带 Bearer 前缀）。实测查询端点
+        # 带不带前缀都收，但按上游文档 curl 的形式配，少一个变量。
+        db.execute("UPDATE channels SET auth_type='authorization',updated_at=? WHERE code='huanwangai' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
             ("minimax-h3-rh-enhanced", "MiniMax H3 RunningHub 增强版", "video_generation", ["text","image","video","audio"], "video"),
@@ -120,6 +124,11 @@ class CapabilityStore:
             ("gpt-image-2.5-flare", "GPT Image 2.5 Flare", "image_generation", ["text","image"], "image"),
             ("nano-banana-2", "Nano Banana 2", "image_generation", ["text","image"], "image"),
             ("nanobanana-2.1", "NanoBanana 2.1", "image_generation", ["text","image"], "image"),
+            # Midjourney 只声明 text：它的「垫图/风格参考」要 base64 图片（`base64Array`），
+            # 而中台这层拿到的是公网 URL，中间缺一次下载+编码。没做之前不声明 image，
+            # 免得 auto 在有参考图的请求上把这一家选进来、再被 `_compatible` 筛掉。
+            # 调用方仍可在 prompt 里写 `--sref <公网URL>`（MJ 自己去取），那条路不经过我们。
+            ("midjourney", "Midjourney", "image_generation", ["text"], "image"),
             # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
             ("suno-v6", "Suno v6 音乐", "audio_generation", ["text"], "audio"),
             ("suno-sound", "Suno 音效", "audio_generation", ["text"], "audio"),
@@ -171,6 +180,10 @@ class CapabilityStore:
           # `images:9` 沿用同门 nano-banana-2 的上限；速创自己的上限没实测过，
           # 只在提交侧验证过逗号分隔的多张参考图能被受理。
           ("nanobanana-2.1","wuyinkeji","NanoBanana2.1","/api/async/NanoBanana2.1","/api/async/detail?id={task_id}",{"images":9,"videos":0,"audios":0},1,80),
+          # Midjourney（幻网 AI）：提交 POST /mj/submit/imagine、查询 GET /mj/task/{id}/fetch。
+          # upstream_model 是 botType，同一个渠道以后加 Niji 就是再挂一行绑定、不改代码。
+          # images:0 —— 这一版不做垫图（见模型清单里的说明）。
+          ("midjourney","huanwangai","MID_JOURNEY","/mj/submit/imagine","/mj/task/{task_id}/fetch",{"images":0,"videos":0,"audios":0},1,90),
           # TeamORouter 是 OpenAI 兼容的**同步**生图端点：POST /v1/images/generations 直接
           # 回 `data[0].b64_json`（PNG 的 base64），没有 task id、没有 status、没有 url 字段
           # （2026-09-30 实测，1K 约 37s）。所以这条绑定的 query_path 是空的——永远不会去轮询，
@@ -254,7 +267,7 @@ class CapabilityStore:
         return self.channel(channel_id)
 
     def delete_channel(self, channel_id:str)->None:
-        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji"}: raise ValueError("preset channel cannot be deleted; disable it instead")
+        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji","huanwangai"}: raise ValueError("preset channel cannot be deleted; disable it instead")
         with self._db() as db: db.execute("UPDATE channels SET enabled=0,deleted_at=?,updated_at=? WHERE id=?",(now(),now(),channel_id))
 
     def models(self)->list[dict[str,Any]]:

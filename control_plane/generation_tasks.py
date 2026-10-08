@@ -21,7 +21,10 @@ from .media_fetch import VIDEO_MEDIA, download_public_media
 
 RETRYABLE={408,429,500,502,503,504}
 SUCCESS_STATES = {"completed", "succeeded", "success"}
-FAILURE_STATES = {"fail", "failed", "error", "cancelled", "canceled"}
+# `failure` 与 `fail`/`failed` 并列：幻网AI（Midjourney）报的就是 `status: "FAILURE"`。
+# 少了它，失败的任务不会被判失败 —— 轮询会一直拿到既不成功也不失败的状态，
+# 白白挂到超时（默认 1800s），调用方还得自己猜发生了什么。
+FAILURE_STATES = {"fail", "failed", "failure", "error", "cancelled", "canceled"}
 # 结果先转存到 AI Centre 的 OSS 再回给调用方的模型。两个理由，任一个成立就该在这里：
 #  1. 上游给的是**临时**结果地址，直接回给调用方会过期；
 #  2. sound=false 要求确定性摘掉音轨 —— 那一步只在转存时做（_prepare_video_for_upload），
@@ -130,6 +133,15 @@ def _payload(
                 "imageSize":request.get("image_size","1K"),
                 "aspectRatio":request.get("aspect_ratio","1:1"),
                 "urls":",".join(images)}
+    if binding["adapter"]=="huanwangai":
+        # Midjourney 的参数是**写进 prompt 字符串**的（`--ar 16:9` 这种），没有独立字段。
+        # 所以画幅只能拼进去；调用方自己在 prompt 里写过 --ar 就尊重它、不重复拼
+        # （MJ 对重复的 --ar 取最后一个，硬拼会把调用方的意图盖掉）。
+        prompt=str(request["prompt"])
+        if "--ar" not in prompt.lower():
+            prompt=f"{prompt} --ar {request.get('aspect_ratio','1:1')}"
+        # botType 走绑定的 upstream_model：同一家可能同时挂 MJ 与 Niji，换模型不改代码。
+        return {"botType":binding["upstream_model"],"prompt":prompt}
     raise ValueError("unsupported generation channel adapter")
 def _unwrap(body:dict[str,Any])->dict[str,Any]:
     stdout=body.get("stdout")
@@ -162,6 +174,15 @@ def _task_id(body:dict[str,Any])->str|None:
             task_id = _task_id(data)
             if task_id:
                 return task_id
+    # midjourney-proxy 系的提交响应是 {"code":1,"description":"Submit success","result":"1790..."}，
+    # 任务号挂在 `result` 上、而且是**字符串**不是对象 —— 上面那个嵌套分支只认 dict，
+    # 所以不补这一条的话「上游已经接单」会被判成「没给任务号」，**钱花了却报提交失败**。
+    # 放在嵌套之后：result 是对象时仍走上面那条，不受影响。
+    tail=body.get("result")
+    if isinstance(tail,str) and tail.strip() and tail.strip().isdigit():
+        # 只认纯数字：MJ 的任务号就是雪花 id，而别的家把 `result` 用作状态词
+        # （"success"/"ok"）时不会被误当成任务号去轮询。
+        return tail.strip()
     return None
 
 
@@ -183,7 +204,11 @@ def _urls_from_container(value: Any) -> list[str]:
         # `result`（单数）也要认：速创把结果放在 `data.result` 里，而它不在原本这张表上，
         # 于是轮询明明成功了也取不到 URL。这个函数只回真的 http(s) 链接，
         # 对上游把 "result" 用作别的含义（对象/状态）是安全的 —— 那种情况返回空。
-        for key in ("urls", "videos", "images", "image_urls", "video_urls", "results", "result", "url", "video_url", "image_url"):
+        # `imageUrls`（复数，元素是 {url,thumbnail}）排在 `imageUrl`（单数，是张 2x2 拼图）
+        # 之前：MJ 一次 imagine 出的是 **4 张独立图**，比那张要自己裁的拼图更好用，
+        # 所以 results[0] 给第一张独立图；只有拿不到复数时才回落到拼图（升采样等动作）。
+        for key in ("urls", "videos", "images", "image_urls", "video_urls", "results", "result",
+                    "imageUrls", "imageUrl", "url", "video_url", "image_url"):
             if value.get(key):
                 return _urls_from_container(value[key])
     return []
@@ -242,6 +267,10 @@ def _error_detail(body: dict[str, Any], default: str) -> str:
             "error",
             "fail_reason",
             "failure_reason",
+            # 幻网AI（Midjourney）用的是 camelCase 的 `failReason`。不认它的话，
+            # 生成被判失败时那句真正的原因（如 "Banned prompt detected"）会被丢掉，
+            # 只剩一句 "upstream generation failed"。
+            "failReason",
             "detail",
             "msg",
             "message",
@@ -263,6 +292,11 @@ def _error_detail(body: dict[str, Any], default: str) -> str:
 
 def _accepted(body: dict[str, Any]) -> bool:
     if body.get("ok") is False:
+        return False
+    # 幻网 AI：**HTTP 恒为 200、成败在 body 里**，形状是
+    # {"success":false,"code":-1,"message":"prompt不能为空"}。不看这一条的话，
+    # 被拒的提交会被当成已受理，然后在「没给任务号」那一步才报错，丢掉真正的 message。
+    if body.get("success") is False:
         return False
     if "exit_code" in body:
         try:
@@ -313,7 +347,11 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     return True
 def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
     if not channel.get("base_url"): return False,None,"Base URL未配置"
-    path={"jmapi":"/jmapi/v1/keys","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models","wuyinkeji":"/api/async/detail?id=image_00000000-0000-0000-0000-000000000000"}.get(channel["adapter"],"/health")
+    path={"jmapi":"/jmapi/v1/keys","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models","wuyinkeji":"/api/async/detail?id=image_00000000-0000-0000-0000-000000000000",
+                # 幻网 AI：查一个**格式合法但不存在**的任务号。它先鉴权后查库，所以
+                # 好 key 回 404（查无此任务）、坏 key 与不带头回 401 —— 与 id 取什么值无关
+                # （实测 0 / 1 / 20 位都一个样）。免费：查询不建任务、不出图。
+                "huanwangai":"/mj/task/0/fetch"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
@@ -347,6 +385,13 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
             if response.status_code in {401,403,500,502,503,504}: return False,None,f"HTTP {response.status_code}"
             try: return True,response.json(),None
             except ValueError: return True,{"status_code":response.status_code},None
+        if channel["adapter"]=="huanwangai":
+            # 这条探针**强**：鉴权在查库之前，所以 401 只可能是「没带 key 或 key 不认」，
+            # 404/200 则同时证明了「网关通」和「key 有效」。比 RunningHub/mxapi 那种
+            # 「错 token 与对 token 返回逐字相同」的弱判据好，与 teamorouter 同级。
+            if response.status_code in {401,403}: return False,None,f"HTTP {response.status_code}：API key 无效或未配置"
+            if response.status_code>=400 and response.status_code!=404: return False,None,f"HTTP {response.status_code}"
+            return True,{"status_code":response.status_code,"detail":"网关通、密钥有效"},None
         if channel["adapter"]=="jmapi":
             # 2026-10-01 上游给 8 个生成类端点加了 `X-API-Key`（查询/状态/用量类仍开放），
             # 原来那条探针 `/jmapi/status` 因此失效：它不带 key 也回 200，**证明不了密钥可用**，

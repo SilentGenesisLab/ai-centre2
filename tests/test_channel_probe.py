@@ -174,5 +174,69 @@ class WuyinkejiProbeTests(unittest.TestCase):
         self.assertIn("/api/async/detail?id=image_", url)
 
 
+def huanwangai_channel(**overrides):
+    channel = {
+        "adapter": "huanwangai",
+        "base_url": "https://api.huanwangai.com",
+        "auth_type": "authorization",
+        "credential": "sk-mj-test",
+        "timeout_seconds": 20,
+    }
+    channel.update(overrides)
+    return channel
+
+
+def probe_huanwangai(response: FakeResponse, **overrides):
+    client = FakeClient(response)
+    with patch("control_plane.generation_tasks.httpx.Client", return_value=client):
+        ok, balance, error = probe_channel(huanwangai_channel(**overrides))
+    return ok, balance, error, client
+
+
+class HuanwangaiProbeTests(unittest.TestCase):
+    """幻网AI（Midjourney）。探针查一个**格式合法但不存在**的任务号。
+
+    这一家的鉴权发生在查库**之前**，所以三种结果可分（2026-10-08 实测）：
+      401 → 没带 key 或 key 不认
+      404 → 查无此任务，但**鉴权过了** —— 网关通 + key 有效
+    """
+
+    def test_401_is_offline(self) -> None:
+        ok, _, error, _ = probe_huanwangai(FakeResponse(401, {"message": "unauthorized"}))
+
+        self.assertFalse(ok)
+        self.assertIn("401", error)
+
+    def test_404_means_the_key_was_accepted(self) -> None:
+        # 这是这条探针的关键：404 不是「渠道坏了」，是「查无此任务」，
+        # 恰恰证明鉴权过了。当成离线会把一个正常的渠道误报掉。
+        ok, balance, error, _ = probe_huanwangai(
+            FakeResponse(404, {"title": "Not Found", "status": 404}))
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(balance["status_code"], 404)
+
+    def test_200_is_online(self) -> None:
+        ok, _, error, _ = probe_huanwangai(FakeResponse(200, {"status": "SUCCESS"}))
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+
+    def test_a_5xx_is_offline(self) -> None:
+        ok, _, error, _ = probe_huanwangai(FakeResponse(503, {}))
+
+        self.assertFalse(ok)
+        self.assertIn("503", error)
+
+    def test_the_probe_queries_a_nonexistent_task_with_the_raw_header(self) -> None:
+        _, _, _, client = probe_huanwangai(FakeResponse(404, {}))
+
+        url, headers = client.calls[0]
+        self.assertTrue(url.endswith("/mj/task/0/fetch"), url)
+        self.assertEqual(headers.get("Authorization"), "sk-mj-test")
+        self.assertNotIn("Bearer", headers.get("Authorization", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

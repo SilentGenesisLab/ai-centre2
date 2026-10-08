@@ -289,8 +289,8 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2`、`nanobanana-2.1` | `gpt-image-2` |
-| `channel` | 否 | `grsai`、`teamorouter`、`wuyinkeji`、`auto` | `grsai` |
+| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2`、`nanobanana-2.1`、`midjourney` | `gpt-image-2` |
+| `channel` | 否 | `grsai`、`teamorouter`、`wuyinkeji`、`huanwangai`、`auto` | `grsai` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
 | `aspect_ratio` | 否 | `1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9` | `1:1` |
@@ -355,6 +355,23 @@ curl -sS -X POST \
 - **状态是数字**：`0` 排队、`2` 成功（实测）；中台会翻译成统一的 `queued`/`succeeded`，调用方只看 `status` 字段即可。
 - **上游不校验 `image_size`**：传 `8K` 这类非法值照样受理并回一张图，不会报错。所以尺寸错了是静默的，别指望上游纠正。
 - **HTTP 恒为 200，错误在响应体的 `code` 字段里**（如 `403` 密钥错误、`400` 错误的ID）。中台已按响应体判定，渠道探针也据此区分「密钥有效」与「密钥不认」。
+
+### 4.5 幻网AI 渠道（huanwangai，Midjourney）
+
+`channel` 传 `huanwangai`、`model` 传 `midjourney`，走幻网 AI（`api.huanwangai.com`）的 Midjourney 接口。目前一个型号：
+
+| `model` | 上游 `botType` | 参考图 | 说明 |
+|---|---|---|---|
+| `midjourney` | `MID_JOURNEY` | **不支持**（见下） | 一次 imagine 出 **4 张独立图** |
+
+- **画幅要写进 prompt**。Midjourney 没有独立的画幅字段，`--ar` 是 prompt 字符串的一部分。中台会把请求里的 `aspect_ratio` 拼成 `--ar 16:9` 追加到 prompt 末尾；**prompt 里已经写过 `--ar` 就不再加**（MJ 对重复的 `--ar` 取最后一个，硬拼会盖掉调用方的意图）。其余 MJ 参数（`--v`、`--style`、`--sref`、`--stylize`…）调用方直接写在 prompt 里即可。
+- **一次生成返回 4 张图**，`result_urls` 就是这 4 张独立图的地址（不是那张 2×2 拼图）。升级/单张动作只回一张时，才回落到拼图。
+- **不支持参考图**。MJ 的「垫图/风格参考」要 base64 图片（`base64Array`），而中台这层拿到的是公网 URL，中间缺一次下载+编码，所以这一版把 `midjourney` 的输入声明成**纯文本** —— 带参考图的请求不会选到它。想用风格参考可以在 prompt 里写 `--sref <公网URL>`，MJ 自己去取。
+- **认证是裸 `Authorization: <key>`**（`sk-mj-...`，不带 `Bearer ` 前缀），与 `wuyinkeji` 同一种 `auth_type`。
+- **HTTP 恒为 200，成败在响应体里**：失败是 `{"success":false,"code":-1,"message":"prompt不能为空"}`。中台按 `success` 判定，报错信息取自 `message`。
+- **状态是英文词**：`SUCCESS` / `FAILURE` / `IN_PROGRESS`，中台的状态表直接认（`FAILURE` 因此补进了 `FAILURE_STATES`）。
+- **失败原因在 `failReason`**（camelCase），中台已把它接进错误详情。
+- **探针是强判据**：鉴权发生在查库之前，所以探一个不存在的任务号时，`401` = key 不认、`404` = 网关通且 key 有效、`200` = 通。这一条同时证明了「网关通」与「密钥有效」，与 `teamorouter` 同级。
 
 ## 5. 生视频接口
 

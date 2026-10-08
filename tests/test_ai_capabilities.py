@@ -26,6 +26,9 @@ from control_plane.generation_tasks import (
     _state,
     _sync_image_results,
     _task_id,
+    _urls_from_container,
+    FAILURE_STATES,
+    SUCCESS_STATES,
 )
 
 class CapabilityTests(unittest.TestCase):
@@ -61,7 +64,14 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(channels["wuyinkeji"]["deployment_type"],"third_party")
         self.assertEqual(channels["wuyinkeji"]["base_url"],"https://api.wuyinkeji.com")
         self.assertFalse(channels["wuyinkeji"]["credential_configured"])
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","suno-v6","suno-sound","jev"})
+        # 幻网AI（huanwangai，Midjourney）：同样默认关闭、裸 Authorization。
+        # 与速创的差别是**探针强弱** —— 它鉴权在查库之前，所以探针能同时证明网关通和 key 有效。
+        self.assertFalse(channels["huanwangai"]["enabled"])
+        self.assertEqual(channels["huanwangai"]["auth_type"],"authorization")
+        self.assertEqual(channels["huanwangai"]["deployment_type"],"third_party")
+        self.assertEqual(channels["huanwangai"]["base_url"],"https://api.huanwangai.com")
+        self.assertFalse(channels["huanwangai"]["credential_configured"])
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney","suno-v6","suno-sound","jev"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -948,3 +958,114 @@ class WuyinkejiEndToEndTests(unittest.TestCase):
         self.assertTrue(client.urls[0].endswith("/api/async/NanoBanana2.1"), client.urls[0])
         self.assertIn("/api/async/detail?id=image_x", client.get_urls[0])
 
+
+class HuanwangaiAdapterTests(unittest.TestCase):
+    """幻网AI（huanwangai，Midjourney）的协议形状，逐条钉住。
+
+    这些是 2026-10-08 对着一份**真实的任务记录**（`GET /mj/task/<id>/fetch`）和一批
+    零花费探针问出来的：MJ 的参数写在 prompt 字符串里、提交响应把任务号放在 `result`
+    而且是字符串、HTTP 恒为 200 成败在 body、一次 imagine 出 4 张独立图外加一张拼图。
+    """
+
+    def _binding(self, **overrides):
+        binding = {"adapter": "huanwangai", "upstream_model": "MID_JOURNEY", "credential": "sk-mj-x"}
+        binding.update(overrides)
+        return binding
+
+    def _request(self, **overrides):
+        request = {
+            "prompt": "一只猫",
+            "reference_image_urls": [],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "aspect_ratio": "16:9",
+            "image_size": "2K",
+        }
+        request.update(overrides)
+        return request
+
+    def test_the_aspect_ratio_is_appended_into_the_prompt(self):
+        # Midjourney 没有画幅字段，`--ar 16:9` 必须写进 prompt 字符串。
+        payload = _payload(self._binding(), self._request())
+
+        self.assertEqual(payload["prompt"], "一只猫 --ar 16:9")
+
+    def test_an_explicit_ar_in_the_prompt_is_not_duplicated(self):
+        # MJ 对重复的 --ar 取**最后一个**，硬拼会把调用方自己写的意图盖掉。
+        payload = _payload(self._binding(), self._request(prompt="一只猫 --ar 9:16"))
+
+        self.assertEqual(payload["prompt"], "一只猫 --ar 9:16")
+
+    def test_the_ar_check_is_case_insensitive(self):
+        payload = _payload(self._binding(), self._request(prompt="一只猫 --AR 9:16"))
+
+        self.assertNotIn("--ar 16:9", payload["prompt"])
+
+    def test_the_bot_type_comes_from_the_binding(self):
+        # 以后加 Niji 就是再挂一行绑定、不改代码。
+        payload = _payload(self._binding(upstream_model="NIJI_JOURNEY"), self._request())
+
+        self.assertEqual(payload["botType"], "NIJI_JOURNEY")
+
+    def test_the_task_id_is_taken_from_a_string_result(self):
+        # midjourney-proxy 系的提交响应是 {"code":1,"result":"1790167764996255"}，
+        # 任务号在 result 上、且是**字符串**。嵌套那个分支只认 dict，不补这条的话
+        # 「上游已接单」会被判成「没给任务号」—— 钱花了却报提交失败。
+        self.assertEqual(
+            _task_id({"code": 1, "description": "Submit success", "result": "1790167764996255"}),
+            "1790167764996255",
+        )
+
+    def test_a_non_numeric_result_is_not_mistaken_for_a_task_id(self):
+        # 别家把 `result` 用作状态词时不能被当成任务号去轮询到超时。
+        self.assertIsNone(_task_id({"code": 1, "result": "success"}))
+        self.assertIsNone(_task_id({"code": -1, "result": True}))
+        self.assertIsNone(_task_id({"code": 1, "result": {"status": "ok"}}))
+
+    def test_the_four_individual_images_win_over_the_grid(self):
+        # 一次 imagine 出 4 张独立图 + 一张 2x2 拼图；独立图比要自己裁的拼图好用。
+        body = {
+            "status": "SUCCESS",
+            "imageUrl": "https://cdn/grid.webp",
+            "imageUrls": [
+                {"url": "https://ycdn/0.png", "thumbnail": "https://ycdn/0_384.webp"},
+                {"url": "https://ycdn/1.png", "thumbnail": "https://ycdn/1_384.webp"},
+            ],
+        }
+
+        urls = _result(body)
+
+        self.assertEqual(urls, ["https://ycdn/0.png", "https://ycdn/1.png"])
+        self.assertNotIn("https://cdn/grid.webp", urls)
+
+    def test_the_grid_is_used_when_there_are_no_individual_images(self):
+        # 升采样这类动作只回单张，那时才回落到拼图。
+        body = {"status": "SUCCESS", "imageUrl": "https://cdn/grid.webp", "imageUrls": None}
+
+        self.assertEqual(_result(body), ["https://cdn/grid.webp"])
+
+    def test_success_false_is_a_rejection_carrying_its_message(self):
+        # 上游 HTTP 恒为 200，成败只看 body。不看 success:false 的话被拒的提交会被
+        # 当成已受理，然后在「没给任务号」那一步才报错、丢掉真正的 message。
+        body = {"success": False, "code": -1, "message": "prompt不能为空"}
+
+        self.assertFalse(_accepted(body))
+        self.assertEqual(_error_detail(body, "request rejected"), "prompt不能为空")
+
+    def test_a_real_submission_is_accepted(self):
+        self.assertTrue(_accepted({"code": 1, "description": "Submit success", "result": "1790"}))
+
+    def test_english_statuses_need_no_translation(self):
+        # 与速创相反：这一家的 status 本来就是英文词，**不需要任何翻译**，
+        # `_state` 原样小写返回，由 SUCCESS_STATES/FAILURE_STATES 去判成员资格。
+        # 对着真实常量断言，不抄字面量 —— 抄的那份不会随代码更新，等于白钉。
+        self.assertEqual(_state({"status": "SUCCESS"}, "huanwangai"), "success")
+        self.assertIn(_state({"status": "SUCCESS"}, "huanwangai"), SUCCESS_STATES)
+        # `FAILURE`（不是 `failed`）是这一家的写法，也是 FAILURE_STATES 里曾经缺的那个词。
+        self.assertEqual(_state({"status": "FAILURE"}, "huanwangai"), "failure")
+        self.assertIn(_state({"status": "FAILURE"}, "huanwangai"), FAILURE_STATES)
+
+    def test_the_failure_reason_is_surfaced(self):
+        body = {"status": "FAILURE", "failReason": "Banned prompt detected"}
+
+        self.assertEqual(_error_detail(body, "upstream generation failed"), "Banned prompt detected")
