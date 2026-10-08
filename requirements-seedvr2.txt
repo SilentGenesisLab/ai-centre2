@@ -1,0 +1,26 @@
+# 图片超分 worker（本地 SeedVR2）。
+# torch 必须走 cu128 —— 服务器是 RTX 5090（Blackwell / sm_120），
+# cu118/cu121 的轮子里没有 sm_120 内核，装上去 torch.cuda.is_available() 会是 False
+# 或者一跑就 illegal memory access。安装脚本用 --index-url 指定 cu128，见
+# scripts/install_image_upscale.sh。
+celery[redis]==5.5.3
+cryptography>=42
+diffusers>=0.33,<1
+einops>=0.8,<1
+gguf>=0.10,<1
+httpx==0.28.1
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+matplotlib>=3.8,<4
+numpy>=1.26,<2
+omegaconf>=2.3,<3
+opencv-python-headless>=4.10,<5
+peft>=0.17,<1
+pillow>=10,<12
+psutil>=5.9,<7
+pydantic-settings==2.10.1
+rotary-embedding-torch>=0.5.3
+safetensors>=0.5,<1
+torch==2.8.0
+torchvision==0.23.0
+tqdm>=4.66,<5

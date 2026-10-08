@@ -347,7 +347,14 @@ def split_video(
 
 
 
-def _upload_file(path: Path, job_id: str, stage: str, filename: str) -> str:
+def _upload_file(path: Path, job_id: str, stage: str, filename: str,
+                 content_type: str = "video/mp4", actor: str = "video-upscale-worker") -> str:
+    """把产物传进中台自有 OSS 并拿回公网直链。
+
+    默认值都是为了不动视频侧既有的调用；图片超分复用同一个函数
+    （见 image_upscale_tasks），它传 content_type=image/png、actor=image-upscale-worker。
+    超时沿用视频侧那一个（900s）——图片只有几 MB，这个值宽裕得多，不值得再开一个配置项。
+    """
     settings = get_settings()
     if not settings.kernel_upload_url or not settings.kernel_api_token:
         raise RuntimeError("kernel upload is not configured")
@@ -355,8 +362,8 @@ def _upload_file(path: Path, job_id: str, stage: str, filename: str) -> str:
         response = httpx.post(
             settings.kernel_upload_url,
             headers={"Authorization": f"Bearer {settings.kernel_api_token}"},
-            data={"external_ref": f"{job_id}:{stage}", "stage": stage, "actor": "video-upscale-worker"},
-            files={"file": (filename, stream, "video/mp4")},
+            data={"external_ref": f"{job_id}:{stage}", "stage": stage, "actor": actor},
+            files={"file": (filename, stream, content_type)},
             timeout=httpx.Timeout(settings.video_upscale_upload_timeout_seconds, connect=30),
         )
     response.raise_for_status()

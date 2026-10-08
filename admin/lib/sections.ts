@@ -7,6 +7,7 @@ export const SECTIONS = [
   { id: "lipsync", label: "唇形驱动" }, { id: "face", label: "人脸处理" },
   { id: "scene", label: "视频切片" }, { id: "depth", label: "视频深度推理" },
   { id: "upscale", label: "视频超分" },
+  { id: "image-upscale", label: "图片超分" },
   { id: "h3", label: "MiniMax H3 生成" }, { id: "image", label: "图像能力" },
   { id: "music", label: "音乐生成" },
   { id: "storage", label: "OSS 对象存储" },
@@ -46,7 +47,10 @@ export const NAVIGATION: NavigationItem[] = [
       { id: "upscale", label: "视频超分", icon: "depth", href: "upscale" },
       { id: "h3", label: "MiniMax H3 生成", icon: "h3", href: "h3" },
     ] },
-    { id: "image", label: "图像", icon: "image", href: "image" },
+    { id: "image", label: "图像", icon: "image", children: [
+      { id: "image-gen", label: "图像生成", icon: "image", href: "image" },
+      { id: "image-upscale", label: "图片超分", icon: "upscale", href: "image-upscale" },
+    ] },
     { id: "other", label: "其他", icon: "production", children: [
       { id: "storage", label: "OSS 对象存储", icon: "storage", href: "storage" },
     ] },

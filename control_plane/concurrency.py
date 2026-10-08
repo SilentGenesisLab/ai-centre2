@@ -140,6 +140,13 @@ MODULES: tuple[ConcurrencyModule, ...] = (
         service="ai-centre-color-grade-worker.service", task="control_plane.color_grade",
         job_default=1,
     ),
+    ConcurrencyModule(
+        module="image_upscale", label="图片超分", queue="image_upscale",
+        service="ai-centre-image-upscale-worker.service", task="control_plane.image_upscale",
+        job_default=1, job_adjustable=False,
+        job_note="本地 SeedVR2 推理，模型常驻 worker 进程（所以池必须是 threads + 并发 1，"
+                 "prefork 会每个子进程各加载一份）；跑在 GPU0，不占 depth/audio 的 gpu 槽位",
+    ),
 )
 
 MODULE_INDEX: dict[str, ConcurrencyModule] = {item.module: item for item in MODULES}

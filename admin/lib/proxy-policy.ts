@@ -9,6 +9,7 @@ const POLICIES: Record<BackendName, Array<{ methods: string[]; pattern: RegExp }
     { methods: ["GET", "POST"], pattern: /^\/v1\/video-depth\/jobs(?:\/wait|\/[0-9a-f-]+(?:\/cancel)?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/audio-separation\/jobs(?:\/wait|\/[0-9a-f-]+(?:\/cancel)?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/video-upscale\/jobs(?:\/wait|\/[0-9a-f-]+(?:\/cancel)?)?$/ },
+    { methods: ["GET", "POST"], pattern: /^\/v1\/image-upscale\/jobs(?:\/wait|\/[0-9a-f-]+(?:\/cancel)?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/video-generations\/minimax-h3\/jobs(?:\/[0-9a-f-]+(?:\/(?:cancel|queue-position))?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/video-generations\/jobs(?:\/[0-9a-f-]+(?:\/cancel)?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/image-generations\/jobs(?:\/[0-9a-f-]+(?:\/cancel)?)?$/ },

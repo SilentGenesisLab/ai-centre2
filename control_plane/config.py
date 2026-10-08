@@ -174,6 +174,23 @@ class Settings(BaseSettings):
     video_upscale_ffmpeg_timeout_seconds: float = 3600
     video_upscale_ffmpeg_bin: str = "auto"
     video_upscale_upload_timeout_seconds: float = 900
+    # 图片超分（SeedVR2 本地推理）。源码与权重都放在 services/seedvr2 下，不进仓库。
+    # 模型缓存在 worker 进程内，所以那个 worker 必须是 threads 池 + 并发 1：
+    # prefork 会让每个子进程各加载一份，显存直接翻倍。
+    image_upscale_work_dir: Path = Path("/home/donxu/ai-centre/runtime/image-upscale")
+    image_upscale_source_dir: Path = Path("/home/donxu/services/seedvr2")
+    image_upscale_model_dir: Path = Path("/home/donxu/services/seedvr2/weights")
+    # 模型名到权重文件的白名单在 seedvr2_inference.MODELS 里，这里只放默认值 ——
+    # 请求方传的名字要过那张表，不能拼成文件系统路径。
+    image_upscale_default_model: str = "3b"
+    image_upscale_target_short_side: int = 1080
+    image_upscale_max_images: int = 32
+    image_upscale_max_download_bytes: int = 256 * 1024 * 1024
+    image_upscale_download_timeout_seconds: float = 300
+    image_upscale_inference_timeout_seconds: float = 900
+    image_upscale_upload_timeout_seconds: float = 300
+    image_upscale_wait_timeout_seconds: float = 3600
+    image_upscale_result_expires_seconds: int = 604800
     h3_work_dir: Path = Path("/home/donxu/ai-centre/runtime/minimax-h3")
     h3_db_path: Path = Path("/home/donxu/ai-centre/runtime/minimax-h3/h3.db")
     h3_max_video_bytes: int = 512 * 1024 * 1024
@@ -275,6 +292,7 @@ def get_settings() -> Settings:
     settings.audio_separation_work_dir.mkdir(parents=True, exist_ok=True)
     settings.color_grade_work_dir.mkdir(parents=True, exist_ok=True)
     settings.video_upscale_work_dir.mkdir(parents=True, exist_ok=True)
+    settings.image_upscale_work_dir.mkdir(parents=True, exist_ok=True)
     settings.h3_work_dir.mkdir(parents=True, exist_ok=True)
     settings.h3_db_path.parent.mkdir(parents=True, exist_ok=True)
     return settings

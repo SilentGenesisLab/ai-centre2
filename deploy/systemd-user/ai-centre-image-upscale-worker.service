@@ -1,0 +1,28 @@
+[Unit]
+Description=AI Centre SeedVR2 Image Upscale Celery Worker
+After=network-online.target ai-centre-redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+Environment=PYTHONPATH=/home/donxu/ai-centre
+# 跑 GPU0。GPU1 是 depth / audio_separation / voxcpm2 的地盘，那三个共用 "gpu" 闸门槽位；
+# 本模块不参与那个槽位（见 control_plane/concurrency.py 里 image_upscale 的 job_note），
+# 换卡时要两处一起改，否则会因为「看着有闸门其实保护的是另一张卡」而 OOM。
+Environment=CUDA_VISIBLE_DEVICES=0
+# --pool=threads --concurrency=1 是硬约束，不是调优：模型缓存在 worker 进程内
+# （control_plane/seedvr2_inference.py 的 runner_cache），prefork 会让每个子进程
+# 各加载一份 3B/7B 权重，显存直接翻倍。并发也只能是 1 —— 单卡放不下第二份模型。
+ExecStart=/home/donxu/ai-centre/.venv-seedvr2/bin/celery -A control_plane.celery_app:celery_app worker -Q image_upscale -n seedvr2@%%h --pool=threads --concurrency=1 --prefetch-multiplier=1 --loglevel=INFO
+Restart=always
+RestartSec=5
+TimeoutStartSec=900
+TimeoutStopSec=7200
+KillSignal=SIGTERM
+LimitNOFILE=65536
+TasksMax=1024
+
+[Install]
+WantedBy=default.target

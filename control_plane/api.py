@@ -54,6 +54,7 @@ from .audio_separation_jobs import (
 )
 from .color_grade_jobs import ColorGradeJobClient, ColorGradeJobNotFound
 from .video_upscale_jobs import VideoUpscaleJobClient, VideoUpscaleJobNotFound
+from .image_upscale_jobs import ImageUpscaleJobClient, ImageUpscaleJobNotFound
 from .h3_jobs import H3JobClient, H3JobNotFound
 from .h3_scheduler import H3Scheduler, probe_worker
 from .h3_pool import H3PoolManager
@@ -193,6 +194,12 @@ app.openapi_tags.append(
     {
         "name": "视频超分",
         "description": "FlashVSR V2、FlashVSR与SeedVR2智能渠道视频超分。",
+    }
+)
+app.openapi_tags.append(
+    {
+        "name": "图片超分",
+        "description": "本地 SeedVR2 修复式图片放大，一次可提交多张参考图。",
     }
 )
 app.openapi_tags.append(
@@ -515,6 +522,36 @@ class VideoUpscaleUrlJobRequest(BaseModel):
     source_uri: str = Field(min_length=1, max_length=4096)
     provider: Literal["auto", "flashvsr", "flashvsr_v2", "seedvr2"] = "auto"
     max_resolution: int = Field(default=1920, ge=480, le=3840)
+    external_ref: str | None = Field(default=None, max_length=256)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ImageUpscaleJobRequest(BaseModel):
+    """图片超分（本地 SeedVR2）。
+
+    与视频超分不同，这里一次可以给多张：参考图天然是成批的，而且模型常驻在 worker
+    进程里，一批走一次比一张一个作业省掉每张一次的排队与加载。
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{
+            "source_uris": [
+                "https://storage.example.com/ref/a.png",
+                "https://storage.example.com/ref/b.jpg",
+            ],
+            "model": "auto",
+            "target_short_side": 1080,
+            "external_ref": "ref-batch-001",
+            "metadata": {},
+        }]},
+    )
+
+    # 上限这里放宽到 64，真正的闸门是 settings.image_upscale_max_images（task 里判），
+    # 这样调上限只改配置、不用改接口契约。这里只拦「明显不合理的载荷」。
+    source_uris: list[str] = Field(min_length=1, max_length=64)
+    model: Literal["auto", "3b", "7b-sharp"] = "auto"
+    target_short_side: int = Field(default=1080, ge=256, le=4096)
     external_ref: str | None = Field(default=None, max_length=256)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -1060,6 +1097,11 @@ def get_color_grade_jobs() -> ColorGradeJobClient:
 @lru_cache(maxsize=1)
 def get_video_upscale_jobs() -> VideoUpscaleJobClient:
     return VideoUpscaleJobClient(get_settings())
+
+
+@lru_cache(maxsize=1)
+def get_image_upscale_jobs() -> ImageUpscaleJobClient:
+    return ImageUpscaleJobClient(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -2058,6 +2100,97 @@ async def cancel_video_upscale_job(job_id: UUID) -> dict[str, Any]:
         return await asyncio.to_thread(get_video_upscale_jobs().cancel, str(job_id))
     except VideoUpscaleJobNotFound as exc:
         raise HTTPException(status_code=404, detail="video upscale job not found") from exc
+
+
+async def _validate_image_upscale_sources(source_uris: list[str]) -> None:
+    # 与视频侧一样，每个模块自己留一份这个两行校验（api.py 里已有 4 份同形的）。
+    # 抽成公共函数要动其余 4 处调用，收益不抵风险，所以照现有写法加第 5 份。
+    for source_uri in source_uris:
+        try:
+            await asyncio.to_thread(validate_public_https_url, source_uri)
+        except MediaFetchError as exc:
+            raise HTTPException(exc.status_code, exc.detail) from exc
+
+
+@app.post(
+    "/v1/image-upscale/jobs",
+    tags=["图片超分"],
+    summary="创建图片超分任务（支持一次多张）",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_service_token)],
+)
+async def create_image_upscale_job(request: ImageUpscaleJobRequest) -> dict[str, Any]:
+    await _validate_image_upscale_sources(request.source_uris)
+    try:
+        job = await asyncio.to_thread(get_image_upscale_jobs().submit, request.model_dump(), 5)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"unable to enqueue image upscale job: {type(exc).__name__}",
+        ) from exc
+    return {
+        "job_id": job.id,
+        "status": "queued",
+        "model": request.model,
+        "target_short_side": request.target_short_side,
+        "image_count": len(request.source_uris),
+        "status_url": f"/v1/image-upscale/jobs/{job.id}",
+    }
+
+
+@app.post(
+    "/v1/image-upscale/jobs/wait",
+    tags=["图片超分"],
+    summary="高优先级提交图片超分并等待结果",
+    dependencies=[Depends(require_service_token)],
+)
+async def create_image_upscale_job_and_wait(request: ImageUpscaleJobRequest) -> dict[str, Any]:
+    await _validate_image_upscale_sources(request.source_uris)
+    try:
+        job = await asyncio.to_thread(get_image_upscale_jobs().submit, request.model_dump(), 9)
+        result = await asyncio.to_thread(
+            job.get, timeout=get_settings().image_upscale_wait_timeout_seconds
+        )
+    except CeleryTimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail={"message": "image upscale is still running", "job_id": job.id,
+                    "status_url": f"/v1/image-upscale/jobs/{job.id}"},
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"image upscale failed: {type(exc).__name__}",
+        ) from exc
+    if not isinstance(result, dict):
+        raise HTTPException(status_code=502, detail="image upscale worker returned an invalid result")
+    return result
+
+
+@app.get(
+    "/v1/image-upscale/jobs/{job_id}",
+    tags=["图片超分"],
+    summary="查询图片超分任务",
+    dependencies=[Depends(require_service_token)],
+)
+async def get_image_upscale_job(job_id: UUID) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(get_image_upscale_jobs().status, str(job_id))
+    except ImageUpscaleJobNotFound as exc:
+        raise HTTPException(status_code=404, detail="image upscale job not found") from exc
+
+
+@app.post(
+    "/v1/image-upscale/jobs/{job_id}/cancel",
+    tags=["图片超分"],
+    summary="取消图片超分任务",
+    dependencies=[Depends(require_service_token)],
+)
+async def cancel_image_upscale_job(job_id: UUID) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(get_image_upscale_jobs().cancel, str(job_id))
+    except ImageUpscaleJobNotFound as exc:
+        raise HTTPException(status_code=404, detail="image upscale job not found") from exc
 
 
 async def _validate_depth_source(source_uri: str) -> None:

@@ -187,6 +187,8 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         ("POST", "/v1/audio-separation/jobs/wait"): RouteInfo("separation", "separate_wait", True, True),
         ("POST", "/v1/video-upscale/jobs"): RouteInfo("upscale", "upscale", True, True),
         ("POST", "/v1/video-upscale/jobs/wait"): RouteInfo("upscale", "upscale_wait", True, True),
+        ("POST", "/v1/image-upscale/jobs"): RouteInfo("image_upscale", "upscale", True, True),
+        ("POST", "/v1/image-upscale/jobs/wait"): RouteInfo("image_upscale", "upscale_wait", True, True),
         ("POST", "/v1/video-generations/minimax-h3/jobs"): RouteInfo("h3", "generate", True, True),
         ("POST", "/v1/video-generations/jobs"): RouteInfo("video_generation", "generate", True, True),
         ("POST", "/v1/image-generations/jobs"): RouteInfo("image_generation", "generate", True, True),
@@ -209,6 +211,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         (re.compile(r"^/v1/video-depth/jobs/[^/]+$"), RouteInfo("depth", "status", status_query=True)),
         (re.compile(r"^/v1/audio-separation/jobs/[^/]+$"), RouteInfo("separation", "status", status_query=True)),
         (re.compile(r"^/v1/video-upscale/jobs/[^/]+$"), RouteInfo("upscale", "status", status_query=True)),
+        (re.compile(r"^/v1/image-upscale/jobs/[^/]+$"), RouteInfo("image_upscale", "status", status_query=True)),
         (re.compile(r"^/v1/video-generations/minimax-h3/jobs/[^/]+$"), RouteInfo("h3", "status", status_query=True)),
         (re.compile(r"^/v1/video-generations/jobs/[^/]+$"), RouteInfo("video_generation", "status", status_query=True)),
         (re.compile(r"^/v1/image-generations/jobs/[^/]+$"), RouteInfo("image_generation", "status", status_query=True)),
@@ -222,6 +225,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         (re.compile(r"^/v1/video-depth/jobs/[^/]+/cancel$"), RouteInfo("depth", "cancel", cancel=True)),
         (re.compile(r"^/v1/audio-separation/jobs/[^/]+/cancel$"), RouteInfo("separation", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-upscale/jobs/[^/]+/cancel$"), RouteInfo("upscale", "cancel", cancel=True)),
+        (re.compile(r"^/v1/image-upscale/jobs/[^/]+/cancel$"), RouteInfo("image_upscale", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-generations/minimax-h3/jobs/[^/]+/cancel$"), RouteInfo("h3", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-generations/jobs/[^/]+/cancel$"), RouteInfo("video_generation", "cancel", cancel=True)),
         (re.compile(r"^/v1/image-generations/jobs/[^/]+/cancel$"), RouteInfo("image_generation", "cancel", cancel=True)),
@@ -253,6 +257,8 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         return RouteInfo("separation", "read")
     if path.startswith("/v1/video-upscale/"):
         return RouteInfo("upscale", "read")
+    if path.startswith("/v1/image-upscale/"):
+        return RouteInfo("image_upscale", "read")
     if path.startswith("/v1/video-generations/minimax-h3/"):
         return RouteInfo("h3", "read")
     if path.startswith("/v1/video-generations/"):
@@ -1295,7 +1301,7 @@ class ObservabilityStore:
         unit_type = str(payload["unit_type"]).strip()
         fixed_fee = Decimal(str(payload.get("fixed_fee", "0")))
         unit_price = Decimal(str(payload.get("unit_price", "0")))
-        if service not in {"asr", "tts", "ocr", "subtitle", "lipsync", "face", "scene", "watermark", "depth", "upscale", "separation", "h3", "video_review"}:
+        if service not in {"asr", "tts", "ocr", "subtitle", "lipsync", "face", "scene", "watermark", "depth", "upscale", "image_upscale", "separation", "h3", "video_review"}:
             raise ValueError("unsupported service")
         if unit_type not in {"task", "audio_minute", "1000_chars", "image", "video_minute", "output_second"}:
             raise ValueError("unsupported unit type")

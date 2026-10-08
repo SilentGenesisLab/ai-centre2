@@ -163,6 +163,7 @@ curl -sS -X POST "$BASE_URL/v1/uploads" \
 | AI 视频拉片/拆审 | `POST /v1/video-reviews/jobs` | — | `GET /v1/video-reviews/jobs/{job_id}` | `POST /v1/video-reviews/jobs/{job_id}/cancel` |
 | 视频深度推理 | `POST /v1/video-depth/jobs` | `POST /v1/video-depth/jobs/wait` | `GET /v1/video-depth/jobs/{job_id}` | `POST /v1/video-depth/jobs/{job_id}/cancel` |
 | 视频超分 | `POST /v1/video-upscale/jobs` | `POST /v1/video-upscale/jobs/wait` | `GET /v1/video-upscale/jobs/{job_id}` | `POST /v1/video-upscale/jobs/{job_id}/cancel` |
+| 图片超分 | `POST /v1/image-upscale/jobs` | `POST /v1/image-upscale/jobs/wait` | `GET /v1/image-upscale/jobs/{job_id}` | `POST /v1/image-upscale/jobs/{job_id}/cancel` |
 | 音频四轨分离 | `POST /v1/audio-separation/jobs` | `POST /v1/audio-separation/jobs/wait` | `GET /v1/audio-separation/jobs/{job_id}` | `POST /v1/audio-separation/jobs/{job_id}/cancel` |
 | 授权视频水印处理 | `POST /v1/watermark-removal/jobs` | `POST /v1/watermark-removal/jobs/wait` | `GET /v1/watermark-removal/jobs/{job_id}` | `POST /v1/watermark-removal/jobs/{job_id}/cancel` |
 
@@ -925,6 +926,56 @@ curl -sS -X POST "$BASE_URL/v1/watermark-removal/jobs" \
 ```
 
 `mode` 可为 `light` 或 `intensive`。需要同步等待时使用 `/v1/watermark-removal/jobs/wait`。
+
+### 8.8 图片超分
+
+中台自己跑的 **SeedVR2**（不是转发第三方），跑在服务器 GPU0 上，所以**不吃上游排队**，但一张要十几到几十秒。
+
+与视频超分最大的不同是**一次可以提交多张**：参考图天然是成批的，而且模型常驻在 worker 进程里，一批只加载一次。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/image-upscale/jobs"   -H "Authorization: Bearer $API_KEY"   -H 'Content-Type: application/json'   --data-raw '{
+    "source_uris": [
+      "https://storage.example.com/ref/a.png",
+      "https://storage.example.com/ref/b.jpg"
+    ],
+    "model": "auto",
+    "target_short_side": 1080,
+    "external_ref": "ref-batch-001",
+    "metadata": {}
+  }'
+```
+
+| 字段 | 必填 | 说明 |
+|---|---:|---|
+| `source_uris` | 是 | 1～32 张公网 HTTPS 图片（上限由 `IMAGE_UPSCALE_MAX_IMAGES` 决定） |
+| `model` | 否 | `auto`（默认，跟随服务端配置）／`3b`（fp8，推荐）／`7b-sharp` |
+| `target_short_side` | 否 | 目标**短边**像素，256～4096，默认 1080 |
+
+**`target_short_side` 是目标分辨率，不是放大倍数。** SeedVR2 做的是"按目标分辨率修复式放大"，所以没有 2×/4× 这种概念；给 1080 就是出短边 1080 的图。
+
+**返回结构与别的接口不同：逐张给结果。**
+
+```json
+{
+  "job_id": "…",
+  "status": "succeeded",
+  "model": "3b",
+  "target_short_side": 1080,
+  "image_count": 2,
+  "succeeded_count": 1,
+  "failed_count": 1,
+  "result_urls": ["https://oss…/000.png"],
+  "results": [
+    {"source_uri": "…/a.png", "status": "succeeded", "result_url": "https://oss…/000.png",
+     "source_size": "512x512", "output_size": "1080x1080", "seconds": 18.4},
+    {"source_uri": "…/b.jpg", "status": "failed", "error": "RuntimeError: …"}
+  ],
+  "elapsed_seconds": 41.2
+}
+```
+
+**单张失败不改作业状态**：`status` 仍是 `succeeded`，坏图记在 `results` 里并计入 `failed_count`。批量参考图里，一张坏图让整批返回「失败」会让调用方分不清「全挂了」和「挂了一张」——判断成败要读 `succeeded_count`／`failed_count`，不要只看 `status`。
 
 ## 9. 定型决策（Jev）
 

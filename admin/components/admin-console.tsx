@@ -1212,6 +1212,9 @@ export function AdminConsole({
           {section === "upscale" && (
             <VideoUpscale setError={setError} showNotice={showNotice} />
           )}
+          {section === "image-upscale" && (
+            <ImageUpscale setError={setError} showNotice={showNotice} />
+          )}
           {section === "h3" && (
             <MiniMaxH3 setError={setError} showNotice={showNotice} />
           )}
@@ -1299,6 +1302,7 @@ const SERVICE_NAMES: Record<string, string> = {
   scene: "视频切片",
   depth: "视频深度",
   upscale: "视频超分",
+  image_upscale: "图片超分",
   separation: "音频分离",
   h3: "MiniMax H3",
   watermark: "水印处理",
@@ -1694,6 +1698,7 @@ function Analytics({
               "watermark",
               "depth",
               "upscale",
+              "image_upscale",
               "separation",
               "h3",
               "audio_generation",
@@ -4645,6 +4650,193 @@ function VideoUpscale({
         </Panel>
       </div>
       <RecentTasks service="upscale" setError={setError} />
+    </>
+  );
+}
+
+function ImageUpscale({
+  setError,
+  showNotice,
+}: {
+  setError: (value: string) => void;
+  showNotice: (value: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [jobId, setJobId] = useState("");
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const form = new FormData(event.currentTarget);
+    const wait = form.get("mode") === "wait";
+    // 一行一个 URL：参考图天然是成批的，一次提交整批比一张一个任务省掉
+    // 每张一次的排队与模型加载。
+    const uris = String(form.get("source_uris") || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!uris.length) {
+      setError("至少填一个图片 URL");
+      setBusy(false);
+      return;
+    }
+    try {
+      const response = await apiRequest<Record<string, unknown>>(
+        "control",
+        `/v1/image-upscale/jobs${wait ? "/wait" : ""}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_uris: uris,
+            model: form.get("model"),
+            target_short_side: Number(form.get("target_short_side")),
+          }),
+        },
+      );
+      setResult(response);
+      if (typeof response.job_id === "string") setJobId(response.job_id);
+      showNotice(`图片超分任务已提交（${uris.length} 张）`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "提交失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function query() {
+    if (!jobId) return;
+    try {
+      setResult(await apiRequest("control", `/v1/image-upscale/jobs/${jobId}`));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "查询失败");
+    }
+  }
+  async function cancel() {
+    if (!jobId || !window.confirm("确认取消这个图片超分任务？")) return;
+    try {
+      setResult(
+        await apiRequest("control", `/v1/image-upscale/jobs/${jobId}/cancel`, {
+          method: "POST",
+        }),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "取消失败");
+    }
+  }
+  const perImage = Array.isArray(result?.results)
+    ? (result.results as Array<Record<string, unknown>>)
+    : [];
+  return (
+    <>
+      <PageHeading
+        eyebrow="IMAGE UPSCALE · LOCAL SEEDVR2"
+        title="图片超分"
+        description="本地 SeedVR2 修复式放大，跑在中台自己的 GPU 上。一次可提交多张参考图，模型只加载一次；单张失败不影响其余。"
+      />
+      <div className="two-column">
+        <Panel title="创建超分任务" eyebrow="UPSCALE JOB">
+          <form className="stack-form" onSubmit={submit}>
+            <label>
+              来源图片 URL（一行一个，最多 32 张）
+              <textarea
+                name="source_uris"
+                rows={5}
+                placeholder={"https://.../ref-a.png\nhttps://.../ref-b.jpg"}
+                required
+              />
+            </label>
+            <div className="field-row">
+              <label>
+                模型
+                <Select name="model" defaultValue="auto">
+                  <option value="auto">跟随服务端默认</option>
+                  <option value="3b">SeedVR2 3B fp8（推荐，约 6G，2.2s/张）</option>
+                  <option value="7b-sharp">SeedVR2 7B sharp fp8（约 20G、5.4s/张；实测质量不如 3B）</option>
+                </Select>
+              </label>
+              <label>
+                目标短边（像素）
+                <input
+                  name="target_short_side"
+                  type="number"
+                  min="256"
+                  max="4096"
+                  defaultValue="1080"
+                />
+              </label>
+            </div>
+            <label>
+              执行方式
+              <Select name="mode" defaultValue="async">
+                <option value="async">异步排队</option>
+                <option value="wait">高优先级等待结果</option>
+              </Select>
+            </label>
+            <button className="primary-button" disabled={busy}>
+              {busy ? "处理中…" : "提交图片超分"}
+            </button>
+          </form>
+        </Panel>
+        <Panel title="任务结果" eyebrow="JOB STATUS">
+          <div className="inline-query">
+            <input
+              value={jobId}
+              onChange={(event) => setJobId(event.target.value)}
+              placeholder="任务 UUID"
+            />
+            <button onClick={() => void query()}>查询</button>
+            <button className="danger-link" onClick={() => void cancel()}>
+              取消
+            </button>
+          </div>
+          {perImage.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>来源</th>
+                    <th>尺寸</th>
+                    <th>结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {perImage.map((item, index) => (
+                    <tr key={index}>
+                      <td>{index + 1}</td>
+                      <td>
+                        <small>{String(item.source_uri || "").slice(-48)}</small>
+                      </td>
+                      <td>
+                        {item.status === "succeeded"
+                          ? `${String(item.source_size || "")} → ${String(item.output_size || "")}`
+                          : "—"}
+                      </td>
+                      <td>
+                        {item.status === "succeeded" ? (
+                          <a
+                            className="table-link"
+                            href={String(item.result_url || "")}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            打开成片
+                          </a>
+                        ) : (
+                          <small>{String(item.error || item.status || "")}</small>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <ResultBox value={result} empty="提交任务或输入已有任务 ID。" />
+        </Panel>
+      </div>
+      <RecentTasks service="image_upscale" setError={setError} />
     </>
   );
 }

@@ -387,7 +387,9 @@ class UnitReaderTests(StoreTestCase):
         self.assertEqual(state["segment"]["key"], "audio_separation.batch_size")
         self.assertEqual(state["segment"]["default"], 4)
 
-    def test_all_states_cover_the_video_family(self) -> None:
+    def test_all_states_cover_every_registered_module(self) -> None:
+        # 名字原来是 ..._video_family：注册表加了「图片超分」之后它不再只是视频族，
+        # 但断言的东西没变 —— 这里钉的是「注册表里的模块一个不少地出现在控制台载荷里」。
         payload = all_module_states(client=self.redis, runner=FakeRunner(EXEC_START))
         modules = {item["module"] for item in payload["items"]}
         self.assertEqual(
@@ -403,6 +405,7 @@ class UnitReaderTests(StoreTestCase):
                 "watermark_remove",
                 "audio_separation",
                 "color_grade",
+                "image_upscale",
             },
         )
         for item in payload["items"]:
@@ -419,8 +422,10 @@ class TaskBudgetTests(StoreTestCase):
         import control_plane.audio_generation_tasks  # noqa: F401
         import control_plane.audio_separation_tasks  # noqa: F401
         import control_plane.color_grade_tasks  # noqa: F401
+        import control_plane.decision_generation_tasks  # noqa: F401
         import control_plane.depth_tasks  # noqa: F401
         import control_plane.generation_tasks  # noqa: F401
+        import control_plane.image_upscale_tasks  # noqa: F401
         import control_plane.scene_tasks  # noqa: F401
         import control_plane.video_review_tasks  # noqa: F401
         import control_plane.video_upscale_tasks  # noqa: F401
