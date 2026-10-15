@@ -17,6 +17,7 @@ from .ai_capabilities import CapabilityStore
 from .celery_app import celery_app
 from .concurrency import job_slot
 from .config import get_settings
+from .provenance import apply_provenance
 from .media_fetch import VIDEO_MEDIA, download_public_media
 
 RETRYABLE={408,429,500,502,503,504}
@@ -463,6 +464,13 @@ def _sync_image_results(
                 continue
             path = directory / f"result-{index}.png"
             path.write_bytes(base64.b64decode(encoded))
+            # AI 生成标识（算法备案）：隐式恒加，显式角标由请求的 explicit_label 控制。
+            # 改的是本地这个文件本身，紧接着就上传，不产生额外副本。
+            apply_provenance(
+                path, job_id=job_id, external_ref=request.get("external_ref"),
+                explicit_label=bool(request.get("explicit_label")), settings=settings,
+                work_dir=directory,
+            )
             data = {
                 "external_ref": request.get("external_ref") or job_id,
                 "run_id": "",
@@ -511,6 +519,12 @@ def _persist_video_results(
                 settings.video_generation_download_timeout_seconds,
             )
             upload_path = _prepare_video_for_upload(downloaded.path, request)
+            # 顺序要紧：先去音轨（上面那步）再打标识，否则改的是被丢掉的那份。
+            apply_provenance(
+                upload_path, job_id=job_id, external_ref=request.get("external_ref"),
+                explicit_label=bool(request.get("explicit_label")), settings=settings,
+                work_dir=directory,
+            )
             data = {
                 "external_ref": request.get("external_ref") or job_id,
                 "run_id": "",

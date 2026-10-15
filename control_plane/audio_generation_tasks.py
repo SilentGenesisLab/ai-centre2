@@ -42,6 +42,7 @@ from .generation_tasks import (
     _response_body,
     _store,
 )
+from .provenance import apply_provenance
 from .media_fetch import ASR_MEDIA, download_public_media
 
 SOUND_MODEL = "suno-sound"
@@ -287,6 +288,12 @@ def _persist_audio_results(
                 settings.audio_generation_download_timeout_seconds,
             )
             upload_path = _to_mp3(downloaded.path)
+            # AI 生成标识：音频**只做隐式**（元数据），不做显式 —— 音频上没有公认的
+            # 可见标识做法，强行加水印音只会牺牲听感。explicit_label 对音频是空操作。
+            apply_provenance(
+                upload_path, job_id=job_id, external_ref=request.get("external_ref"),
+                explicit_label=False, settings=settings, work_dir=directory,
+            )
             data = {
                 "external_ref": request.get("external_ref") or job_id,
                 "run_id": "",

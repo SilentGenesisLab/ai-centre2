@@ -1069,3 +1069,47 @@ class HuanwangaiAdapterTests(unittest.TestCase):
         body = {"status": "FAILURE", "failReason": "Banned prompt detected"}
 
         self.assertEqual(_error_detail(body, "upstream generation failed"), "Banned prompt detected")
+
+
+class RequestModelCoverageTests(unittest.TestCase):
+    """能力库的种子与 API 的手写字面量是**两处真值**，这条测试把它们钉在一起。
+
+    2026-10-13 的教训：huanwangai 渠道加进了种子（渠道/型号/绑定/适配器/探针全做了），
+    唯独 api.py 里 `ImageGenerationRequest.model` 与 `.channel` 两个字面量没跟上 ——
+    结果能力库里一切正常，**实际调用却是 422**。上一轮的测试全打在适配层上，
+    没有一条会碰请求模型，所以全绿。
+
+    所以这里反过来断言：种子里声明的每个生图型号、以及它绑定的每个渠道，
+    都必须能构造出一个合法的请求。
+    """
+
+    def _store(self):
+        return CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
+
+    def test_every_image_model_selects_a_store_model(self):
+        from control_plane.api import ImageGenerationRequest
+
+        store = self._store()
+        models = [m for m in store.models() if m["capability_type"] == "image_generation"]
+        self.assertTrue(models, "种子里一个生图型号都没有，测试失去意义")
+
+        for model in models:
+            with self.subTest(model=model["code"]):
+                request = ImageGenerationRequest(prompt="x", model=model["code"])
+                self.assertEqual(request.model, model["code"])
+
+    def test_every_bound_channel_of_an_image_model_is_accepted(self):
+        from control_plane.api import ImageGenerationRequest
+
+        store = self._store()
+        checked = 0
+        for model in store.models():
+            if model["capability_type"] != "image_generation":
+                continue
+            for code in store.channel_order(model["code"], "auto"):
+                with self.subTest(model=model["code"], channel=code):
+                    request = ImageGenerationRequest(
+                        prompt="x", model=model["code"], channel=code)
+                    self.assertEqual(request.channel, code)
+                checked += 1
+        self.assertGreater(checked, 0, "一个生图绑定都没查到，测试失去意义")

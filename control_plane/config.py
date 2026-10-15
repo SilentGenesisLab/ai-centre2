@@ -191,6 +191,19 @@ class Settings(BaseSettings):
     image_upscale_upload_timeout_seconds: float = 300
     image_upscale_wait_timeout_seconds: float = 3600
     image_upscale_result_expires_seconds: int = 604800
+    # AI 生成内容标识（算法备案）。隐式标识对生成类产物**恒开**；显式角标由请求方
+    # 传 explicit_label 控制（默认关）。
+    # 三项企业信息留空时，隐式标识仍会写入 Label 与本地可推导的字段，但会在作业结果里
+    # 如实标注「企业信息未配置」—— 不静默写一份半截载荷。
+    # Producer 与版本号是平台自己的名字/版本，不敏感，给默认值让功能开箱可用。
+    aigc_content_producer: str = "SilentGenesisAI"
+    aigc_algorithm_version: str = "sligenai-aigc-v1"
+    # ⚠️ **统一社会信用代码故意留空，只能从环境变量给。**
+    # 它是真实法人主体的法定标识，而这个仓库是公开的 —— 不把「哪个主体」和这个公开
+    # 代码库绑死。放在服务器 .env 里（.env 已被 .gitignore 忽略）。
+    # 留空时隐式标识照常写 Label 与本地可推导字段，但会在作业结果里标注
+    # 「企业信息未配置」—— 不静默写一份半截载荷。
+    aigc_content_propagator: str = ""
     h3_work_dir: Path = Path("/home/donxu/ai-centre/runtime/minimax-h3")
     h3_db_path: Path = Path("/home/donxu/ai-centre/runtime/minimax-h3/h3.db")
     h3_max_video_bytes: int = 512 * 1024 * 1024

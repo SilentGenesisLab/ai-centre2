@@ -71,6 +71,7 @@ from .audio_generation_jobs import AudioGenerationJobClient
 from .decision_generation_jobs import DecisionGenerationJobClient
 from .generation_tasks import _compatible as generation_request_compatible
 from .generation_tasks import probe_channel
+from .provenance import read_provenance
 from .oss_storage import OssStorage
 from .tts.base import (
     PermanentTTSProviderError,
@@ -690,18 +691,31 @@ class VideoGenerationRequest(BaseModel):
     resolution: Literal["480p", "720p", "768p", "1080p", "2K"] = "720p"
     aspect_ratio: Literal["9:16", "16:9", "1:1", "4:3", "3:4"] = "9:16"
     sound: bool = False
+    # AI 生成显式标识（算法备案）：转 true 才在画面上叠「AI生成」角标（左上角）。
+    # **默认关**是按用户的要求 —— 存量调用方不该突然多一个角标。
+    # 隐式标识（写进文件元数据）不受这个开关影响，恒开。
+    # 音频忽略此字段：音频只做隐式，见 provenance 模块的说明。
+    explicit_label: bool = Field(default=False, description="是否叠加可见的「AI生成」角标（图片/视频有效）。")
     external_ref: str | None = Field(default=None, max_length=256)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ImageGenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model: Literal["gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1"] = "gpt-image-2"
-    channel: Literal["grsai","teamorouter","wuyinkeji","auto"] = "grsai"
+    # 这两个字面量是**手写的清单**，与 ai_capabilities 里的种子是两处真值 —— 加型号/渠道时
+    # 漏了这里，能力库里有、请求却 422（huanwangai 就这么漏过一次）。tests/test_ai_capabilities.py
+    # 里有一条测试反过来钉住：种子里的每个生图型号与渠道都必须能构造出合法请求。
+    model: Literal["gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney"] = "gpt-image-2"
+    channel: Literal["grsai","teamorouter","wuyinkeji","huanwangai","auto"] = "grsai"
     prompt: str = Field(min_length=1,max_length=10000)
     reference_image_urls: list[str] = Field(default_factory=list,max_length=9)
     aspect_ratio: Literal["1:1","2:3","3:2","3:4","4:3","9:16","16:9"] = "1:1"
     image_size: Literal["1K","2K","4K"] = "1K"
+    # AI 生成显式标识（算法备案）：转 true 才在画面上叠「AI生成」角标（左上角）。
+    # **默认关**是按用户的要求 —— 存量调用方不该突然多一个角标。
+    # 隐式标识（写进文件元数据）不受这个开关影响，恒开。
+    # 音频忽略此字段：音频只做隐式，见 provenance 模块的说明。
+    explicit_label: bool = Field(default=False, description="是否叠加可见的「AI生成」角标（图片/视频有效）。")
     external_ref: str | None = Field(default=None,max_length=256)
     metadata: dict[str,Any] = Field(default_factory=dict)
 
@@ -722,6 +736,11 @@ class AudioGenerationRequest(BaseModel):
     music_model: Literal["chirp-hawk","chirp-hawk-wild","chirp-goose"] = Field(default="chirp-hawk", description="音乐的 mv：hawk 通用、hawk-wild 更跳脱、goose 更轻。")
     sound_model: Literal["chirp-crow","chirp-fenix"] = Field(default="chirp-crow", description="音效的 mv（上游只收这两个）。")
     loop: bool = Field(default=False, description="音效是否做成可无缝循环。")
+    # AI 生成显式标识（算法备案）：转 true 才在画面上叠「AI生成」角标（左上角）。
+    # **默认关**是按用户的要求 —— 存量调用方不该突然多一个角标。
+    # 隐式标识（写进文件元数据）不受这个开关影响，恒开。
+    # 音频忽略此字段：音频只做隐式，见 provenance 模块的说明。
+    explicit_label: bool = Field(default=False, description="是否叠加可见的「AI生成」角标（图片/视频有效）。")
     external_ref: str | None = Field(default=None, max_length=256)
     metadata: dict[str,Any] = Field(default_factory=dict)
 
@@ -4936,6 +4955,53 @@ async def create_upload(file: UploadFile = File(...)) -> dict[str, Any]:
     （包括供应商结果所在的 ai-video-kernel/）。落点由 OSS_ADMIN_UPLOAD_PREFIX 决定。
     """
     return await _store_uploaded_file(file, None)
+
+
+@app.post(
+    "/v1/provenance/inspect",
+    tags=["文件上传"],
+    summary="读取文件里的 AI 生成标识",
+    dependencies=[Depends(require_service_token)],
+)
+async def inspect_provenance(file: UploadFile = File(...)) -> dict[str, Any]:
+    """上传一个文件，把里面写着的 AIGC 标识读出来。
+
+    这是隐式标识的**解码端**：写进去的东西要能被读回来，否则核验无从谈起。
+
+    只读、**不落 OSS**（临时文件读完就删）：这是个排查/核验用的口子，
+    不该顺手把用户的东西传到对象存储上。也正因为不落盘，它不返回任何 URL。
+    """
+    directory = get_settings().control_runtime_dir / "provenance-inspect"
+    directory.mkdir(parents=True, exist_ok=True)
+    temporary = directory / f"{uuid4().hex}.inspect"
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with temporary.open("wb") as output:
+            while chunk := await file.read(4 * 1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, "文件不能超过512MiB")
+                digest.update(chunk)
+                output.write(chunk)
+        if size == 0:
+            raise HTTPException(422, "文件不能为空")
+        found = await asyncio.to_thread(read_provenance, temporary)
+        return {
+            "filename": file.filename or "",
+            "size": size,
+            "sha256": digest.hexdigest(),
+            # `found: false` 是一个正常答案 —— 这个接口要能对着任意文件回答
+            # 「有没有标识」，没有不是错误。
+            "found": found is not None,
+            "container": found["container"] if found else None,
+            "where": found["where"] if found else None,
+            "payload": found["payload"] if found else None,
+            "parseable": found["parseable"] if found else False,
+            "raw": found["raw"] if found else None,
+        }
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 @app.post("/internal/admin/storage/upload",include_in_schema=False,dependencies=[Depends(require_service_token)])

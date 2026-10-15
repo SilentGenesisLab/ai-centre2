@@ -195,6 +195,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         ("POST", "/v1/audio-generations/jobs"): RouteInfo("audio_generation", "generate", True, True),
         ("POST", "/v1/decision-generations/jobs"): RouteInfo("decision_generation", "decide", True, True),
         ("POST", "/v1/uploads"): RouteInfo("storage", "upload_public"),
+        ("POST", "/v1/provenance/inspect"): RouteInfo("storage", "inspect_provenance"),
         ("POST", "/internal/admin/storage/upload"): RouteInfo("storage", "upload"),
         ("POST", "/internal/admin/subtitle/detect"): RouteInfo("subtitle", "detect", True),
     }

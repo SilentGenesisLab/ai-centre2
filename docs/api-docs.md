@@ -295,6 +295,7 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
 | `aspect_ratio` | 否 | `1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9` | `1:1` |
 | `image_size` | 否 | `1K`、`2K`、`4K` | `1K` |
+| `explicit_label` | 否 | 是否在左上角叠加「AI生成」角标（见第 10 节） | `false` |
 | `external_ref` | 否 | 最多256字符 | `null` |
 | `metadata` | 否 | JSON对象 | `{}` |
 
@@ -1074,7 +1075,97 @@ curl -sS \
 
 选路规则与 §1.5 一致（目前只有 `teamorouter` 一条绑定，暂时无处可换）。有一处不同要留意：**答案已经拿到之后的失败不会再换渠道重问**——上游每次调用都重新计费，而定型判定是概率输出，第二次未必给同一份答案，手上这份比换一家更值钱。
 
-## 10. 异步任务通用处理
+## 10. AI 生成内容标识（算法备案）
+
+生成类产物（**图像生成 / 通用视频生成 / MiniMax H3 / 音乐与音效**）会带上两类标识。
+
+### 10.1 隐式标识（溯源，恒开）
+
+写进**文件容器本身的元数据**，不改变画面与听感，可以用第 10.3 节的接口读回来核验。
+
+| 容器 | 写在哪 |
+|---|---|
+| PNG | `iTXt` 块（UTF-8，关键字 `AIGC`） |
+| JPEG | `COM` 段 |
+| MP3 | ID3v2 的 `TXXX` 帧 |
+| MP4 / MOV | `comment` 元数据 |
+
+内容是这段 JSON：
+
+```json
+{ "AIGC": {
+  "Label": "1",
+  "ContentProducer": "生成合成服务提供者的名称或编码",
+  "ProduceID": "算法服务版本号 + 内容 ID 的 MD5",
+  "ReservedCode1": "文件名 + 生成时间的 MD5",
+  "PropagateID": "时间戳 + 调用方标识的 MD5（见下）",
+  "ContentPropagator": "企业社会信用代码",
+  "ReservedCode2": "hash:<信用代码的 MD5>"
+}}
+```
+
+字段由服务端配置（`AIGC_CONTENT_PRODUCER` / `AIGC_CONTENT_PROPAGATOR` / `AIGC_ALGORITHM_VERSION`），当前默认：
+
+| 配置项 | 默认值 |
+|---|---|
+| `AIGC_CONTENT_PRODUCER` | `SilentGenesisAI` |
+| `AIGC_CONTENT_PROPAGATOR` | 空（**只能由环境变量给**） |
+| `AIGC_ALGORITHM_VERSION` | `sligenai-aigc-v1` |
+
+> 统一社会信用代码是政府发的 18 位法定标识，**必须与备案主体一致**，且**只从环境变量
+> 注入**（不进公开仓库）。没配置时 `ContentPropagator` 为空、`ReservedCode2` 也为空，
+> 作业结果里会标注「企业信息未配置」。改动等于变更备案主体，`ReservedCode2` 会跟着变。
+
+**两点如实说明，别当它是完整实现：**
+
+1. **`PropagateID` 是替代项。** 规范要的是「时间戳 + 用户ID + 手机号」，而中台不知道调用方的用户是谁，手上只有 `external_ref`。当前用的是「时间戳 + external_ref」。等有了用户体系再换。
+2. **企业信息没配置时**，仍会写入 `Label` 与本地可推导的字段，但**不会静默假装完整** —— 作业结果里会带上 `企业信息未配置` 的说明。
+
+### 10.2 显式标识（画面角标，默认关）
+
+请求里传 **`explicit_label: true`** 才会在**左上角**叠加「AI生成」角标。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/image-generations/jobs"   -H "Authorization: Bearer $API_KEY"   -H 'Content-Type: application/json'   --data-raw '{"model":"nano-banana-2","prompt":"一只猫","explicit_label":true}'
+```
+
+- **默认关**：存量调用方不会突然多一个角标。
+- **只对图片与视频有效**。音频忽略这个字段 —— 音频上没有公认的可见标识做法，强行插水印音只会牺牲听感；音频的标识一律走隐式。
+- 角标宽度取画面宽的 12%（上限 22%，避免小图上喧宾夺主），位置固定左上角。
+
+### 10.3 读回标识
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/provenance/inspect"   -H "Authorization: Bearer $API_KEY"   -F "file=@downloaded.png"
+```
+
+返回：
+
+```json
+{
+  "filename": "downloaded.png",
+  "size": 123456,
+  "sha256": "…",
+  "found": true,
+  "container": "png",
+  "where": "PNG iTXt",
+  "payload": { "AIGC": { … } },
+  "parseable": true,
+  "raw": "{\"AIGC\":{…}}"
+}
+```
+
+- **`found: false` 是正常答案**，不是错误 —— 这个接口要能对着任意文件回答「有没有标识」。
+- `parseable: false` 表示读到了内容但不是我们的 JSON（可能是别的工具写的 `comment`），原文在 `raw` 里。
+- 该接口**只读、不落对象存储**：它是核验用的口子，不顺手把文件传到 OSS 上。
+
+### 10.4 已知边界
+
+- **标识依赖中台在本地留一份产物**（生成结果会先落到内核存储再给出 `result_urls`）。若部署没配 `KERNEL_UPLOAD_URL`，生成链路会直接透传上游链接，那条路上**没有本地文件可标**。
+- **下游二次转码可能抹掉元数据**。平台自己压缩、转封装、截图都可能丢掉容器的 `comment`/`iTXt`。要长期溯源，得连原始文件一起留档。
+- 处理类能力（视频超分、调色、唇形驱动、人脸处理、切片、水印处理等）**不加标识**。
+
+## 11. 异步任务通用处理
 
 ### 10.1 状态
 
@@ -1114,7 +1205,7 @@ done
 - 其他接口建议设置唯一 `external_ref`，但它不一定阻止重复提交。
 - 网络超时后先查询已有任务或使用业务侧去重，再决定是否重试。
 
-## 11. HTTP 状态码与排错
+## 12. HTTP 状态码与排错
 
 | HTTP状态码 | 含义 | 建议 |
 |---:|---|---|
@@ -1139,14 +1230,14 @@ done
 4. JSON 中字段名被转义成 `voice\_profile\_id`。
 5. 用 `curl` 访问同步音频接口却没有 `--output`，导致二进制内容打印到终端。
 
-## 12. 在线资源
+## 13. 在线资源
 
 - 本文档：`https://aicentre2.sligenai.cn:8443/api-docs.md`
 - Swagger：`https://aicentre2.sligenai.cn:8443/docs`
 - OpenAPI JSON：`https://aicentre2.sligenai.cn:8443/openapi.json`
 - 管理后台中文说明：`https://aicentre2.sligenai.cn:8443/admin/external-api.html`
 
-## 13. 安全说明
+## 14. 安全说明
 
 - API Key 泄露后应立即停用并重新签发。
 - 不要在工单、群聊或公开文档中粘贴完整 API Key 和 OSS 签名 URL。
