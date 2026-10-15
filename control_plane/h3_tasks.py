@@ -27,6 +27,7 @@ from .h3_workflow import (
     validate_part_durations,
 )
 from .media_fetch import AUDIO_MEDIA, IMAGE_MEDIA, VIDEO_MEDIA, download_public_media
+from .provenance import apply_provenance
 
 
 def _utc_now() -> str:
@@ -37,6 +38,15 @@ def _upload_result(path: Path, request: dict[str, Any], job_id: str, stage: str)
     settings = get_settings()
     if not settings.kernel_upload_url or not settings.kernel_api_token:
         raise RuntimeError("kernel upload is not configured")
+    # AI 生成标识（算法备案）：**在这里打，不在 generation_tasks 里**。
+    # H3 是自有 worker，产物本来就是本地文件、也由这里自己上传内核 ——
+    # 让它再被 generation_tasks 下载一遍纯属浪费。所以 minimax-h3 不在
+    # OSS_PERSISTED_MODELS 里，但标识一步都不能少（见 SELF_PERSISTED_MODELS）。
+    apply_provenance(
+        path, job_id=job_id, external_ref=request.get("external_ref"),
+        explicit_label=bool(request.get("explicit_label")), settings=settings,
+        work_dir=path.parent,
+    )
     data = {
         "external_ref": request.get("external_ref") or job_id,
         "run_id": "",

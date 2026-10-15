@@ -17,8 +17,8 @@ from .ai_capabilities import CapabilityStore
 from .celery_app import celery_app
 from .concurrency import job_slot
 from .config import get_settings
-from .provenance import apply_provenance
-from .media_fetch import VIDEO_MEDIA, download_public_media
+from .provenance import apply_provenance, detect_kind
+from .media_fetch import IMAGE_MEDIA, VIDEO_MEDIA, MediaSpec, download_public_media
 
 RETRYABLE={408,429,500,502,503,504}
 SUCCESS_STATES = {"completed", "succeeded", "success"}
@@ -32,7 +32,29 @@ FAILURE_STATES = {"fail", "failed", "failure", "error", "cancelled", "canceled"}
 #     而 RunningHub 的 H3 没有「静音生成」这个参数（audioMode 里没有静音档），
 #     所以它的 sound=false 只能靠转存时摘。
 # kernel_upload_url 没配置时 _persist_video_results 直接原样返回，所以这里是低风险的。
-OSS_PERSISTED_MODELS = {"seedance-2.0", "seedance-2.5", "minimax-h3-rh-enhanced"}
+# 哪些型号的产物要转存到自有 OSS。
+#
+# 这张表是**转存 + 打 AI 标识的共同前置**：标识只能加在本地的文件上，所以「不转存」
+# 等价于「打不上标识」。生图原先不在这张表里（结果直接透传上游链接），
+# 于是异步生图（grsai / wuyinkeji / huanwangai）的产物一个标识都没有 ——
+# 2026-10-16 部署时由一次真实生成测出来。现在补上。
+#
+# 这张表与能力库是两处真值：加新型号时漏了这里，表现为「功能都在、就是没标识」，
+# 没有任何报错。tests/test_ai_capabilities.py 里有一条测试反过来钉住：
+# 能力库里每个 image_generation 型号都必须在这张表里。
+OSS_PERSISTED_MODELS = {
+    # 视频
+    "seedance-2.0", "seedance-2.5", "minimax-h3-rh-enhanced",
+    # 图片
+    "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
+    "nano-banana-2", "nanobanana-2.1", "midjourney",
+}
+# 产物由各自的 worker 自己上传内核（本地文件在那边，不必再下载一遍），
+# 所以不在这张表里 —— 但**标识已经在各自的 worker 内打好了**，不是漏了。
+# 覆盖测试断言的是：每个生图/生视频型号都落在 (OSS_PERSISTED_MODELS ∪ SELF_PERSISTED_MODELS) 里。
+SELF_PERSISTED_MODELS = {
+    "minimax-h3",              # 见 h3_tasks._upload_result
+}
 PIXEL_ASPECTS={
     "1K":{"1:1":"1024x1024","2:3":"832x1248","3:2":"1248x832","3:4":"768x1024","4:3":"1024x768","9:16":"768x1344","16:9":"1344x768"},
     "2K":{"1:1":"2048x2048","2:3":"1664x2496","3:2":"2496x1664","3:4":"1536x2048","4:3":"2048x1536","9:16":"1152x2048","16:9":"2048x1152"},
@@ -499,6 +521,13 @@ def _sync_image_results(
         shutil.rmtree(directory, ignore_errors=True)
 
 
+GENERATION_RESULT_MEDIA = MediaSpec(
+    suffixes=IMAGE_MEDIA.suffixes | VIDEO_MEDIA.suffixes,
+    content_types={**IMAGE_MEDIA.content_types, **VIDEO_MEDIA.content_types},
+    equivalent_suffixes=(IMAGE_MEDIA.equivalent_suffixes + VIDEO_MEDIA.equivalent_suffixes),
+)
+
+
 def _persist_video_results(
     urls: list[str], request: dict[str, Any], job_id: str
 ) -> list[str]:
@@ -514,11 +543,19 @@ def _persist_video_results(
                 url,
                 directory,
                 f"result-{index}",
-                VIDEO_MEDIA,
+                # 图片与视频共用这一条路：用合并的 spec，否则生图的 png 会被
+                # 后缀校验挡掉。音频不走这里（_persist_audio_results 有自己的路）。
+                GENERATION_RESULT_MEDIA,
                 settings.video_generation_result_max_bytes,
                 settings.video_generation_download_timeout_seconds,
             )
-            upload_path = _prepare_video_for_upload(downloaded.path, request)
+            # **只对视频做去音轨**：_prepare_video_for_upload 是为「上游多给了音轨、
+            # 但调用方 sound=false」准备的，对 png 跑 ffmpeg -map 0:v:0 会直接失败。
+            upload_path = (
+                _prepare_video_for_upload(downloaded.path, request)
+                if detect_kind(downloaded.path) == "mp4"
+                else downloaded.path
+            )
             # 顺序要紧：先去音轨（上面那步）再打标识，否则改的是被丢掉的那份。
             apply_provenance(
                 upload_path, job_id=job_id, external_ref=request.get("external_ref"),
@@ -544,7 +581,7 @@ def _persist_video_results(
                         "file": (
                             upload_path.name,
                             stream,
-                            downloaded.content_type or "video/mp4",
+                            downloaded.content_type or "application/octet-stream",
                         )
                     },
                     timeout=httpx.Timeout(

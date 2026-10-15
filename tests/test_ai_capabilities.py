@@ -645,7 +645,10 @@ class GenerationFallbackTests(unittest.TestCase):
         }
         store = FakeJobStore(self.capabilities, request)
         client = FakePostClient(responses)
-        settings = Mock(video_generation_blank_image_url="")
+        # kernel_upload_url 显式关掉，理由同上：这几条测的是渠道兜底，
+        # 不是转存与打标。裸 Mock() 会让它成真值，于是走进转存去下载假的 https://oss/1.png。
+        settings = Mock(video_generation_blank_image_url="",
+                        kernel_upload_url=None, kernel_api_token=None)
         sync_patch = (
             patch("control_plane.generation_tasks._sync_image_results", side_effect=sync)
             if isinstance(sync, Exception)
@@ -683,7 +686,11 @@ class GenerationFallbackTests(unittest.TestCase):
         with (
             patch("control_plane.generation_tasks._store", return_value=store),
             patch("control_plane.generation_tasks.httpx.Client", return_value=client),
-            patch("control_plane.generation_tasks.get_settings", return_value=Mock(video_generation_blank_image_url="")),
+            # kernel_upload_url 显式关掉：这两条测的是**适配器行为**（提交/轮询/取结果），
+            # 不是转存与打标。用裸 Mock() 会让它变成真值，于是走进转存、去下载
+            # 测试里那个假的 https://o/a.png 而失败（2026-10-16 生图加入转存表后暴露）。
+            patch("control_plane.generation_tasks.get_settings",
+                  return_value=Mock(video_generation_blank_image_url="", kernel_upload_url=None, kernel_api_token=None)),
         ):
             _generate(None, "job-1")
 
@@ -754,7 +761,11 @@ class VideoFallsBackToJmapiTests(unittest.TestCase):
         with (
             patch("control_plane.generation_tasks._store", return_value=store),
             patch("control_plane.generation_tasks.httpx.Client", return_value=client),
-            patch("control_plane.generation_tasks.get_settings", return_value=Mock(video_generation_blank_image_url="")),
+            # kernel_upload_url 显式关掉：这两条测的是**适配器行为**（提交/轮询/取结果），
+            # 不是转存与打标。用裸 Mock() 会让它变成真值，于是走进转存、去下载
+            # 测试里那个假的 https://o/a.png 而失败（2026-10-16 生图加入转存表后暴露）。
+            patch("control_plane.generation_tasks.get_settings",
+                  return_value=Mock(video_generation_blank_image_url="", kernel_upload_url=None, kernel_api_token=None)),
             patch("control_plane.generation_tasks._persist_video_results", side_effect=lambda urls, req, jid: urls),
             patch("control_plane.generation_tasks.time.sleep", return_value=None),
         ):
@@ -946,7 +957,11 @@ class WuyinkejiEndToEndTests(unittest.TestCase):
         with (
             patch("control_plane.generation_tasks._store", return_value=store),
             patch("control_plane.generation_tasks.httpx.Client", return_value=client),
-            patch("control_plane.generation_tasks.get_settings", return_value=Mock(video_generation_blank_image_url="")),
+            # kernel_upload_url 显式关掉：这两条测的是**适配器行为**（提交/轮询/取结果），
+            # 不是转存与打标。用裸 Mock() 会让它变成真值，于是走进转存、去下载
+            # 测试里那个假的 https://o/a.png 而失败（2026-10-16 生图加入转存表后暴露）。
+            patch("control_plane.generation_tasks.get_settings",
+                  return_value=Mock(video_generation_blank_image_url="", kernel_upload_url=None, kernel_api_token=None)),
             patch("control_plane.generation_tasks.time.sleep", return_value=None),
         ):
             _generate(None, "job-1")
@@ -1113,3 +1128,40 @@ class RequestModelCoverageTests(unittest.TestCase):
                     self.assertEqual(request.channel, code)
                 checked += 1
         self.assertGreater(checked, 0, "一个生图绑定都没查到，测试失去意义")
+
+
+class OssPersistedModelCoverageTests(unittest.TestCase):
+    """转存白名单必须覆盖能力库里**每一个**生图型号。
+
+    这张表是「转存 + 打 AI 标识」的共同前置：标识只能加在本地文件上，
+    所以型号漏在这张表外 = 产物没有标识，而且**没有任何报错**。
+    2026-10-16 一次真实生成测出来的：midjourney 出图成功、链接也有，
+    但标识一个都没有（结果直接透传了上游链接）。
+    """
+
+    def test_every_image_model_is_persisted(self):
+        from control_plane.generation_tasks import OSS_PERSISTED_MODELS, SELF_PERSISTED_MODELS
+
+        store = CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
+        models = [m["code"] for m in store.models() if m["capability_type"] == "image_generation"]
+        self.assertTrue(models, "种子里一个生图型号都没有，测试失去意义")
+
+        covered = OSS_PERSISTED_MODELS | SELF_PERSISTED_MODELS
+        missing = sorted(set(models) - covered)
+        self.assertEqual(
+            missing, [],
+            f"这些生图型号既不在转存表里、也没有自转存 worker，产物不会有 AI 标识：{missing}",
+        )
+
+    def test_every_video_model_is_persisted(self):
+        from control_plane.generation_tasks import OSS_PERSISTED_MODELS, SELF_PERSISTED_MODELS
+
+        store = CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
+        models = [m["code"] for m in store.models() if m["capability_type"] == "video_generation"]
+
+        covered = OSS_PERSISTED_MODELS | SELF_PERSISTED_MODELS
+        missing = sorted(set(models) - covered)
+        self.assertEqual(
+            missing, [],
+            f"这些视频型号既不在转存表里、也没有自转存 worker，产物不会有 AI 标识：{missing}",
+        )
