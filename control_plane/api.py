@@ -1049,7 +1049,7 @@ def get_audio_generation_jobs() -> AudioGenerationJobClient:
 
 @lru_cache(maxsize=1)
 def get_text_generation_jobs() -> TextGenerationJobClient:
-    return TextGenerationJobClient(get_settings())
+    return TextGenerationJobClient(get_settings(),get_capability_store())
 
 
 @lru_cache(maxsize=1)
