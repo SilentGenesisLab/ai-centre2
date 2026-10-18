@@ -1215,6 +1215,9 @@ export function AdminConsole({
           {section === "image-upscale" && (
             <ImageUpscale setError={setError} showNotice={showNotice} />
           )}
+          {section === "text-gen" && (
+            <TextGeneration setError={setError} showNotice={showNotice} />
+          )}
           {section === "provenance" && (
             <ProvenanceInspect setError={setError} showNotice={showNotice} />
           )}
@@ -4845,6 +4848,133 @@ function ImageUpscale({
 }
 
 
+
+function TextGeneration({
+  setError,
+  showNotice,
+}: {
+  setError: (value: string) => void;
+  showNotice: (value: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [jobId, setJobId] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setResult(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      const created = await apiRequest<Record<string, unknown>>(
+        "control",
+        "/v1/text-generations/jobs",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "deepseek-v4-flash",
+            prompt: String(form.get("prompt") || ""),
+            system: String(form.get("system") || "") || null,
+            temperature: Number(form.get("temperature")),
+            max_tokens: Number(form.get("max_tokens")),
+            explicit_label: form.get("explicit_label") === "true",
+          }),
+        },
+      );
+      const id = String(created.job_id || "");
+      setJobId(id);
+      // 秒级任务，直接轮询到出结果，省掉用户手点「查询」
+      for (let i = 0; i < 40; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const status = await apiRequest<Record<string, unknown>>(
+          "control",
+          `/v1/text-generations/jobs/${id}`,
+        );
+        if (status.status === "succeeded" || status.status === "failed") {
+          setResult(status);
+          showNotice(status.status === "succeeded" ? "生成完成" : "生成失败");
+          break;
+        }
+        if (i === 39) setResult(status);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "生成失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const upstream = (result?.upstream_response || null) as Record<string, unknown> | null;
+  return (
+    <>
+      <PageHeading
+        eyebrow="TEXT GENERATION · DEEPSEEK FLASH"
+        title="文本生成"
+        description="火山方舟 DeepSeek flash。产物自带 AI 生成标识：隐式部分是不可见字符（可被「内容标识核验」读回），显式尾注由下方开关控制。"
+      />
+      <div className="two-column">
+        <Panel title="创建任务" eyebrow="NEW JOB">
+          <form className="stack-form" onSubmit={submit}>
+            <label>
+              提示词
+              <textarea name="prompt" rows={4} required placeholder="用一句话写一条关于秋天的产品标语" />
+            </label>
+            <label>
+              系统提示（可选）
+              <input name="system" placeholder="你是资深品牌文案" />
+            </label>
+            <div className="field-row">
+              <label>
+                temperature
+                <input name="temperature" type="number" min="0" max="2" step="0.1" defaultValue="0.7" />
+              </label>
+              <label>
+                max_tokens
+                <input name="max_tokens" type="number" min="1" max="8192" defaultValue="512" />
+              </label>
+            </div>
+            <label className="toggle-row">
+              <span>
+                <strong>追加可见尾注「AI生成」</strong>
+                <small>隐式标识不受这个开关影响，恒开</small>
+              </span>
+              <input name="explicit_label" type="checkbox" value="true" />
+            </label>
+            <button className="primary-button" disabled={busy}>
+              {busy ? "生成中…" : "生成"}
+            </button>
+          </form>
+        </Panel>
+        <Panel title="生成结果" eyebrow="RESULT">
+          {upstream ? (
+            <div className="stack-form">
+              <p>
+                <span className="status-badge is-good">已生成</span>{" "}
+                <small>作业 {jobId.slice(0, 8)} · 渠道 {String(result?.channel || "—")}</small>
+              </p>
+              <label>
+                可见正文
+                <textarea readOnly rows={5} value={String(upstream.plain || "")} />
+              </label>
+              <small>
+                隐式标识：{String((upstream.aigc as Record<string, unknown>)?.implicit ? "已写入" : "未写入")}
+                {" · "}
+                显式尾注：{String((upstream.aigc as Record<string, unknown>)?.explicit ? "已追加" : "未追加")}
+              </small>
+              <small>
+                usage：{JSON.stringify(upstream.usage)}
+              </small>
+            </div>
+          ) : (
+            <p>填好提示词后点「生成」。</p>
+          )}
+          <ResultBox value={result} empty="结果会显示在这里。" />
+        </Panel>
+      </div>
+    </>
+  );
+}
+
 function ProvenanceInspect({
   setError,
   showNotice,
@@ -4853,7 +4983,7 @@ function ProvenanceInspect({
   showNotice: (value: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"upload" | "url">("upload");
+  const [mode, setMode] = useState<"upload" | "url" | "text">("upload");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [lastForm, setLastForm] = useState<FormData | null>(null);
 
@@ -4886,6 +5016,13 @@ function ProvenanceInspect({
         return;
       }
       body.append("url", url);
+    } else if (mode === "text") {
+      const raw = String(form.get("text") || "");
+      if (!raw) {
+        setError("请粘贴文本");
+        return;
+      }
+      body.append("text", raw);
     } else {
       const picked = form.get("file");
       if (!(picked instanceof File) || !picked.size) {
@@ -4918,12 +5055,13 @@ function ProvenanceInspect({
                 name="mode"
                 value={mode}
                 onChange={(event) => {
-                  setMode(event.target.value as "upload" | "url");
+                  setMode(event.target.value as "upload" | "url" | "text");
                   setResult(null);
                 }}
               >
                 <option value="upload">本地上传</option>
                 <option value="url">公网 URL</option>
+                <option value="text">粘贴文本</option>
               </Select>
             </label>
             {mode === "upload" ? (
@@ -4935,10 +5073,15 @@ function ProvenanceInspect({
                   accept="image/*,video/*,audio/*,.png,.jpg,.jpeg,.webp,.bmp,.mp4,.mov,.mkv,.webm,.mp3,.wav,.m4a,.aac,.flac,.ogg"
                 />
               </label>
-            ) : (
+            ) : mode === "url" ? (
               <label>
                 素材 URL（公网 HTTPS）
                 <input name="url" type="url" placeholder="https://.../result.png" />
+              </label>
+            ) : (
+              <label>
+                粘贴文本（原文或生成结果都可以，含不可见标识）
+                <textarea name="text" rows={6} placeholder="把带标识的文本原样粘进来" />
               </label>
             )}
             <div className="button-row">

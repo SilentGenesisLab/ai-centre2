@@ -5,6 +5,7 @@ const POLICIES: Record<BackendName, Array<{ methods: string[]; pattern: RegExp }
     { methods: ["GET"], pattern: /^\/health$/ },
     { methods: ["POST"], pattern: /^\/v1\/asr\/transcriptions\/upload$/ },
     { methods: ["POST"], pattern: /^\/v1\/provenance\/inspect$/ },
+    { methods: ["GET", "POST"], pattern: /^\/v1\/text-generations\/jobs(?:\/[0-9a-f-]+(?:\/cancel)?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/lipsync\/jobs(?:\/upload|\/[0-9a-f-]+(?:\/(?:video|logs|cancel))?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/video-scenes\/jobs(?:\/wait|\/[0-9a-f-]+(?:\/cancel)?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/v1\/video-depth\/jobs(?:\/wait|\/[0-9a-f-]+(?:\/cancel)?)?$/ },

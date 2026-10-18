@@ -243,6 +243,45 @@ curl -sS -X POST "$BASE_URL/v1/ocr/batch" \
 
 `bbox` 为 `[x1, y1, x2, y2]` 像素坐标；`regions=[]` 表示识别整张图片。
 
+### 3.3 文本生成（火山方舟 DeepSeek flash）
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Bearer $API_KEY"   -H 'Content-Type: application/json'   --data-raw '{
+    "model": "deepseek-v4-flash",
+    "prompt": "用一句话写一条关于秋天的产品标语",
+    "system": "你是资深品牌文案",
+    "temperature": 0.7,
+    "max_tokens": 512,
+    "explicit_label": false
+  }'
+```
+
+| 字段 | 必填 | 说明 |
+|---|---:|---|
+| `model` | 否 | 目前只有 `deepseek-v4-flash` |
+| `channel` | 否 | `ark` 或 `auto` |
+| `prompt` | 是 | 用户消息，1～20000 字 |
+| `system` | 否 | 系统提示 |
+| `temperature` | 否 | 0～2；传 `0` 是确定性输出（会原样传给上游，不会被当成"未设置"） |
+| `max_tokens` | 否 | 1～8192，默认 1024 |
+| `explicit_label` | 否 | 是否在正文末尾追加可见的「AI生成」尾注，默认 `false` |
+
+结果在 `GET /v1/text-generations/jobs/{job_id}` 的 `upstream_response` 里：
+
+| 字段 | 说明 |
+|---|---|
+| `text` | **打过标识的最终文本**（可见正文 + 可选尾注 + 不可见载荷），可直接交付 |
+| `plain` | 可见正文（不含不可见标识），方便展示或做后续处理 |
+| `aigc` | `{implicit, explicit, missing_fields}`，说明这次标了什么 |
+| `usage` | 上游的 token 用量 |
+
+**隐式标识恒开**，与 `explicit_label` 无关：它用 Unicode 标签字符（U+E0000–U+E007F）
+把 AIGC 载荷编码在正文末尾，肉眼不可见、能扛复制粘贴。用
+`POST /v1/provenance/inspect` 传 `text=<那段文本>` 可以读回来。
+
+> 边界：这种标识扛不住**主动清洗**（富文本编辑器、部分网关会剥掉标签字符）。
+> 剥掉之后标识就没了 —— 这是文本标识的固有代价，不是实现问题。
+
 ## 4. 生图接口
 
 ### 4.1 创建图像生成任务

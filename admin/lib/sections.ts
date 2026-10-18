@@ -2,7 +2,7 @@ export const SECTIONS = [
   { id: "overview", label: "数据分析" }, { id: "calls", label: "任务日志" },
   { id: "billing", label: "计费中心" }, { id: "api-keys", label: "API Key 管理" },
   { id: "channels", label: "渠道管理" }, { id: "ai-models", label: "模型管理" },
-  { id: "asr", label: "语音识别" }, { id: "ocr", label: "OCR 与字幕" },
+  { id: "text-gen", label: "文本生成" }, { id: "asr", label: "语音识别" }, { id: "ocr", label: "OCR 与字幕" },
   { id: "tts", label: "语音合成" }, { id: "separation", label: "音频分离" },
   { id: "lipsync", label: "唇形驱动" }, { id: "face", label: "人脸处理" },
   { id: "scene", label: "视频切片" }, { id: "depth", label: "视频深度推理" },
@@ -31,6 +31,7 @@ export const NAVIGATION: NavigationItem[] = [
   ] },
   { id: "production", label: "生产任务", icon: "production", children: [
     { id: "text", label: "文本", icon: "text", children: [
+      { id: "text-gen", label: "文本生成", icon: "text", href: "text-gen" },
       { id: "asr", label: "语音识别", icon: "asr", href: "asr" },
       { id: "ocr", label: "OCR 与字幕", icon: "ocr", href: "ocr" },
     ] },
