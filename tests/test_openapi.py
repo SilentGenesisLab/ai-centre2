@@ -86,6 +86,7 @@ class OpenApiTests(unittest.TestCase):
                 "视频调色",
                 "视频超分",
                 "图片超分",
+                "文本生成",
                 "MiniMax H3视频生成",
             ],
         )

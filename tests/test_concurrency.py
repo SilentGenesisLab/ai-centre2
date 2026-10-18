@@ -406,6 +406,7 @@ class UnitReaderTests(StoreTestCase):
                 "audio_separation",
                 "color_grade",
                 "image_upscale",
+                "text_generation",
             },
         )
         for item in payload["items"]:
@@ -427,6 +428,7 @@ class TaskBudgetTests(StoreTestCase):
         import control_plane.generation_tasks  # noqa: F401
         import control_plane.image_upscale_tasks  # noqa: F401
         import control_plane.scene_tasks  # noqa: F401
+        import control_plane.text_generation_tasks  # noqa: F401
         import control_plane.video_review_tasks  # noqa: F401
         import control_plane.video_upscale_tasks  # noqa: F401
         import control_plane.watermark_tasks  # noqa: F401

@@ -69,6 +69,11 @@ def _store():
     s=get_settings(); return CapabilityStore(s.ai_capabilities_db_path,s.service_token)
 def _headers(binding:dict[str,Any])->dict[str,str]:
     key=binding.get("credential",""); kind=binding.get("auth_type","none")
+    if not key and binding.get("adapter")=="ark":
+        # 方舟的密钥和视频拉片共用同一把（同一个火山账号）。**不复制第二份**：
+        # 复制等于两个地方轮换、迟早对不上。渠道自己填了凭据就以渠道为准。
+        settings=get_settings()
+        key=settings.video_review_ark_api_key.get_secret_value() if settings.video_review_ark_api_key else ""
     if not key and binding.get("adapter")=="runninghub":
         # RunningHub 的 token 是部署级环境变量（超分子系统在用同一个），**不落能力库**：
         # 复制第二份等于两处轮换、迟早对不上。渠道自己填了凭据就以渠道为准。

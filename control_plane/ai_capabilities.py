@@ -83,6 +83,7 @@ class CapabilityStore:
             ("teamorouter", "TeamORouter", "third_party", "teamorouter", "https://api.teamorouter.com", 0, 70),
             ("wuyinkeji", "速创", "third_party", "wuyinkeji", "https://api.wuyinkeji.com", 0, 80),
             ("huanwangai", "幻网AI", "third_party", "huanwangai", "https://api.huanwangai.com", 0, 90),
+            ("ark", "火山方舟", "third_party", "ark", "https://ark.cn-beijing.volces.com/api/v3", 0, 100),
         ]
         for code, name, kind, adapter, url, enabled, priority in presets:
             db.execute("INSERT OR IGNORE INTO channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -129,6 +130,8 @@ class CapabilityStore:
             # 免得 auto 在有参考图的请求上把这一家选进来、再被 `_compatible` 筛掉。
             # 调用方仍可在 prompt 里写 `--sref <公网URL>`（MJ 自己去取），那条路不经过我们。
             ("midjourney", "Midjourney", "image_generation", ["text"], "image"),
+            # 第一种 text_generation 能力：自由文本生成（此前平台只有结构化判定）。
+            ("deepseek-v4-flash", "DeepSeek V4.1 Flash", "text_generation", ["text"], "text"),
             # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
             ("suno-v6", "Suno v6 音乐", "audio_generation", ["text"], "audio"),
             ("suno-sound", "Suno 音效", "audio_generation", ["text"], "audio"),
@@ -184,6 +187,10 @@ class CapabilityStore:
           # upstream_model 是 botType，同一个渠道以后加 Niji 就是再挂一行绑定、不改代码。
           # images:0 —— 这一版不做垫图（见模型清单里的说明）。
           ("midjourney","huanwangai","MID_JOURNEY","/mj/submit/imagine","/mj/task/{task_id}/fetch",{"images":0,"videos":0,"audios":0},1,90),
+          # 火山方舟（DeepSeek flash）：OpenAI 兼容的 /chat/completions，同步返回。
+          # 型号用 260910 而不是最新的 261017 —— 后者账号没开通（ModelNotOpen），
+          # 实测能调通的是 260910。
+          ("deepseek-v4-flash","ark","deepseek-v4-1-flash-260910","/chat/completions","",{"images":0,"videos":0,"audios":0},1,100),
           # TeamORouter 是 OpenAI 兼容的**同步**生图端点：POST /v1/images/generations 直接
           # 回 `data[0].b64_json`（PNG 的 base64），没有 task id、没有 status、没有 url 字段
           # （2026-09-30 实测，1K 约 37s）。所以这条绑定的 query_path 是空的——永远不会去轮询，
@@ -267,7 +274,7 @@ class CapabilityStore:
         return self.channel(channel_id)
 
     def delete_channel(self, channel_id:str)->None:
-        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji","huanwangai"}: raise ValueError("preset channel cannot be deleted; disable it instead")
+        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji","huanwangai","ark"}: raise ValueError("preset channel cannot be deleted; disable it instead")
         with self._db() as db: db.execute("UPDATE channels SET enabled=0,deleted_at=?,updated_at=? WHERE id=?",(now(),now(),channel_id))
 
     def models(self)->list[dict[str,Any]]:

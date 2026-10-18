@@ -69,10 +69,11 @@ from .api_keys import ApiKeyStore
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient
 from .audio_generation_jobs import AudioGenerationJobClient
+from .text_generation_jobs import TextGenerationJobClient
 from .decision_generation_jobs import DecisionGenerationJobClient
 from .generation_tasks import _compatible as generation_request_compatible
 from .generation_tasks import probe_channel
-from .provenance import read_provenance
+from .provenance import read_provenance, read_text_provenance
 from .oss_storage import OssStorage
 from .tts.base import (
     PermanentTTSProviderError,
@@ -202,6 +203,12 @@ app.openapi_tags.append(
     {
         "name": "图片超分",
         "description": "本地 SeedVR2 修复式图片放大，一次可提交多张参考图。",
+    }
+)
+app.openapi_tags.append(
+    {
+        "name": "文本生成",
+        "description": "火山方舟 DeepSeek flash 的自由文本生成，产物自带 AI 生成标识。",
     }
 )
 app.openapi_tags.append(
@@ -746,6 +753,28 @@ class AudioGenerationRequest(BaseModel):
     metadata: dict[str,Any] = Field(default_factory=dict)
 
 
+class TextGenerationRequest(BaseModel):
+    """自由文本生成（火山方舟 / DeepSeek flash）。
+
+    平台此前只有 `decision_generation`（结构化判定），这是第一种真正的文本生成。
+    返回的 `text` **已经打好标识**：隐式部分是不可见字符（肉眼看不见、可被核验接口读回），
+    显式部分由 `explicit_label` 控制（默认关，按平台约定）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    model: Literal["deepseek-v4-flash"] = "deepseek-v4-flash"
+    channel: Literal["ark", "auto"] = "auto"
+    prompt: str = Field(min_length=1, max_length=20000)
+    system: str | None = Field(default=None, max_length=8000)
+    # 允许 0（确定性输出），所以默认值给 0.7 但同时接受 None（不传给上游）。
+    temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=1024, ge=1, le=8192)
+    # AI 生成显式标识：转 true 才在正文末尾追加可见尾注（默认关）。
+    explicit_label: bool = Field(default=False, description="是否在正文末尾追加可见的「AI生成」尾注。")
+    external_ref: str | None = Field(default=None, max_length=256)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class DecisionGenerationRequest(BaseModel):
     """定型决策：给一段 state + 一组问题，拿回一组带置信度的定型答案。
 
@@ -1016,6 +1045,11 @@ def get_generation_jobs() -> GenerationJobClient:
 @lru_cache(maxsize=1)
 def get_audio_generation_jobs() -> AudioGenerationJobClient:
     return AudioGenerationJobClient(get_settings(),get_capability_store())
+
+
+@lru_cache(maxsize=1)
+def get_text_generation_jobs() -> TextGenerationJobClient:
+    return TextGenerationJobClient(get_settings())
 
 
 @lru_cache(maxsize=1)
@@ -4907,6 +4941,36 @@ async def cancel_decision_generation_job(job_id:UUID)->dict[str,Any]:
     except CapabilityNotFound as exc:raise HTTPException(404,"decision generation job not found") from exc
 
 
+async def _validate_text_generation_request(request:TextGenerationRequest)->None:
+    """只拦「渠道不可用」这类本地判得准的错；prompt 的语义交给上游。"""
+    store=get_capability_store()
+    for code in store.channel_order(request.model,request.channel):
+        try: binding=await asyncio.to_thread(store.binding,request.model,code)
+        except CapabilityNotFound: continue
+        if generation_request_compatible(binding,request.model_dump()) and binding["enabled"] and binding["channel_enabled"] and binding["health_status"]=="online": return
+    raise HTTPException(422,"no enabled, healthy channel supports this model")
+
+
+@app.post("/v1/text-generations/jobs",tags=["文本生成"],summary="创建文本生成任务",status_code=202,dependencies=[Depends(require_service_token)])
+async def create_text_generation_job(request:TextGenerationRequest)->dict[str,Any]:
+    await _validate_text_generation_request(request)
+    try: jid=await asyncio.to_thread(get_text_generation_jobs().submit,request.model_dump())
+    except Exception as exc: raise HTTPException(503,"unable to enqueue text generation job") from exc
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/text-generations/jobs/{jid}"}
+
+
+@app.get("/v1/text-generations/jobs/{job_id}",tags=["文本生成"],summary="查询文本生成任务",dependencies=[Depends(require_service_token)])
+async def get_text_generation_job(job_id:UUID)->dict[str,Any]:
+    try:return await asyncio.to_thread(get_text_generation_jobs().status,str(job_id))
+    except CapabilityNotFound as exc:raise HTTPException(404,"text generation job not found") from exc
+
+
+@app.post("/v1/text-generations/jobs/{job_id}/cancel",tags=["文本生成"],summary="取消文本生成任务",dependencies=[Depends(require_service_token)])
+async def cancel_text_generation_job(job_id:UUID)->dict[str,Any]:
+    try:return await asyncio.to_thread(get_text_generation_jobs().cancel,str(job_id))
+    except CapabilityNotFound as exc:raise HTTPException(404,"text generation job not found") from exc
+
+
 @app.get("/internal/admin/storage/status",include_in_schema=False,dependencies=[Depends(require_service_token)])
 async def admin_storage_status()->dict[str,Any]:
     try:return OssStorage.from_env().status()
@@ -4967,6 +5031,7 @@ async def create_upload(file: UploadFile = File(...)) -> dict[str, Any]:
 async def inspect_provenance(
     file: UploadFile | None = File(default=None),
     url: str | None = Form(default=None, max_length=4096),
+    text: str | None = Form(default=None, max_length=200000),
 ) -> dict[str, Any]:
     """读一个图片/视频/音频里的 AIGC 标识（隐式标识的解码端）。
 
@@ -4980,8 +5045,24 @@ async def inspect_provenance(
     `found: false` 是正常答案 —— 这个接口要能对着任意文件回答「有没有标识」，
     没有不是错误。
     """
-    if bool(file) == bool(url):
-        raise HTTPException(422, "file 与 url 必须且只能给一个")
+    if bool(file) + bool(url) + bool(text) != 1:
+        raise HTTPException(422, "file、url、text 必须且只能给一个")
+
+    # 文本没有容器：隐式标识是写在字符里的不可见标签，直接从字符串读。
+    if text:
+        payload = read_text_provenance(text)
+        return {
+            "filename": "",
+            "source": "text",
+            "size": len(text.encode("utf-8")),
+            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "found": payload is not None,
+            "container": "text",
+            "where": "Unicode 标签字符" if payload else None,
+            "payload": payload,
+            "parseable": payload is not None,
+            "raw": None,
+        }
 
     directory = get_settings().control_runtime_dir / "provenance-inspect"
     directory.mkdir(parents=True, exist_ok=True)

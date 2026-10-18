@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Centre text generation worker (Volcengine Ark / DeepSeek flash)
+After=network-online.target redis.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/donxu/ai-centre
+EnvironmentFile=/home/donxu/ai-centre/.env
+# 文本生成是秒级的同步 HTTP 调用，不占 GPU、不开子进程模型，所以用默认的 prefork 池
+# 开 8 并发足够（与视频/图片那些「一个任务吃一张卡」的 worker 不是一回事）。
+# 单独一个队列是为了别排在长视频任务后面 —— 一条 4 秒的 seedance 能占几分钟。
+ExecStart=/home/donxu/ai-centre/.venv-control/bin/celery -A control_plane.celery_app:celery_app worker -Q text_generation -n text-generation@%%h --concurrency=8 --loglevel=INFO
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

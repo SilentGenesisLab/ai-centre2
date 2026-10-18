@@ -198,6 +198,9 @@ class Settings(BaseSettings):
     # Producer 与版本号是平台自己的名字/版本，不敏感，给默认值让功能开箱可用。
     aigc_content_producer: str = "SilentGenesisAI"
     aigc_algorithm_version: str = "sligenai-aigc-v1"
+    # 文本生成时追加的**可见**尾注（显式标识）。规范允许放开头或结尾，
+    # 这里放结尾：放开头会破坏「前 N 个字就是答案」这类下游用法。
+    aigc_text_label: str = "【AI生成】"
     # ⚠️ **统一社会信用代码故意留空，只能从环境变量给。**
     # 它是真实法人主体的法定标识，而这个仓库是公开的 —— 不把「哪个主体」和这个公开
     # 代码库绑死。放在服务器 .env 里（.env 已被 .gitignore 忽略）。

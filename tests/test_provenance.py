@@ -14,6 +14,9 @@ os.environ.setdefault("SERVICE_TOKEN", "test")
 from control_plane.provenance import (
     ID3_DESCRIPTION,
     PNG_KEYWORD,
+    embed_text_provenance,
+    read_text_provenance,
+    strip_text_provenance,
     apply_provenance,
     build_aigc_payload,
     detect_kind,
@@ -505,6 +508,36 @@ class InspectEndpointTests(unittest.TestCase):
         self.assertEqual(body["source"], "url")
         self.assertEqual(body["payload"]["AIGC"]["ContentProducer"], "T")
 
+
+    def test_text_input_reads_the_invisible_marker(self):
+        """核验接口也要能直接吃一段文本 —— 文本标识的核验对象就是字符串本身。"""
+        marked = embed_text_provenance(
+            "这是模型生成的正文。",
+            {"AIGC": {"Label": "1", "ContentProducer": "SilentGenesisAI"}},
+        )
+
+        response = self._client().post(
+            "/v1/provenance/inspect",
+            headers={"Authorization": "Bearer test"},
+            data={"text": marked},
+        )
+
+        body = response.json()
+        self.assertTrue(body["found"], body)
+        self.assertEqual(body["source"], "text")
+        self.assertEqual(body["container"], "text")
+        self.assertEqual(body["payload"]["AIGC"]["ContentProducer"], "SilentGenesisAI")
+
+    def test_plain_text_reports_not_found(self):
+        response = self._client().post(
+            "/v1/provenance/inspect",
+            headers={"Authorization": "Bearer test"},
+            data={"text": "一段没有标识的普通文本"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["found"])
+
     def test_a_private_url_is_refused_before_downloading(self):
         # 防 SSRF：公网校验在下载之前，内网地址根本不会去取。
         from control_plane.media_fetch import MediaFetchError
@@ -522,3 +555,81 @@ class InspectEndpointTests(unittest.TestCase):
 
         self.assertGreaterEqual(response.status_code, 400)
         self.assertLess(response.status_code, 500)
+
+
+class TextProvenanceTests(unittest.TestCase):
+    """文本没有容器，隐式标识写在字符里（Unicode 标签字符）。
+
+    这一组的重点是：**肉眼所见不变**、能读回、以及摘掉后能还原成原文。
+    """
+
+    PAYLOAD = {"AIGC": {"Label": "1", "ContentProducer": "SilentGenesisAI",
+                        "ContentPropagator": "91440300MAK2F3UL8W"}}
+
+    def test_round_trip(self):
+        marked = embed_text_provenance("这是一段生成的文本。", self.PAYLOAD)
+
+        self.assertEqual(read_text_provenance(marked), self.PAYLOAD)
+
+    def test_the_visible_text_is_unchanged(self):
+        body = "这是一段生成的文本。"
+        marked = embed_text_provenance(body, self.PAYLOAD)
+
+        # 原来的字一个不少、顺序不变
+        self.assertTrue(marked.startswith(body))
+        # 可见字符（非标签字符）与原文完全一致
+        visible = "".join(c for c in marked if not (0xE0000 <= ord(c) <= 0xE007F))
+        self.assertEqual(visible, body)
+
+    def test_strip_restores_the_original(self):
+        body = "这是一段生成的文本。"
+        marked = embed_text_provenance(body, self.PAYLOAD)
+
+        self.assertEqual(strip_text_provenance(marked), body)
+
+    def test_plain_text_has_no_marker(self):
+        self.assertIsNone(read_text_provenance("没有标识的普通文本"))
+
+    def test_a_truncated_marker_is_not_mistaken_for_content(self):
+        # 只留开头哨兵、没有结尾 —— 应当认作「没有」，而不是解出半截乱码。
+        marked = embed_text_provenance("正文", self.PAYLOAD)
+        self.assertIsNone(read_text_provenance(marked[:-1]))
+
+    def test_size_overhead_is_one_char_per_byte(self):
+        # 选标签字符而不是零宽空格，就是为了这个：零宽空格要 8 个字符换 1 个字节。
+        body = "x"
+        marked = embed_text_provenance(body, self.PAYLOAD)
+        payload_json = json.dumps(self.PAYLOAD, ensure_ascii=False, separators=(",", ":"))
+        overhead = len(marked) - len(body)
+        # 哨兵两个 + 载荷 UTF-8 字节数（中文按 3 字节算）
+        self.assertEqual(overhead, len(payload_json.encode("utf-8")) + 2)
+
+
+class TextGenerationUpstreamTests(unittest.TestCase):
+    """上游解析：结构不对要返回 None，而不是把空串当成功。"""
+
+    def test_extracts_content(self):
+        from control_plane.text_generation_tasks import _text
+
+        body = {"choices": [{"message": {"role": "assistant", "content": "你好"}}]}
+        self.assertEqual(_text(body), "你好")
+
+    def test_blank_content_is_not_a_success(self):
+        from control_plane.text_generation_tasks import _text
+
+        self.assertIsNone(_text({"choices": [{"message": {"content": "   "}}]}))
+        self.assertIsNone(_text({"choices": []}))
+        self.assertIsNone(_text({}))
+
+    def test_payload_is_openai_compatible(self):
+        from control_plane.text_generation_tasks import _payload
+
+        binding = {"upstream_model": "deepseek-v4-1-flash-260910"}
+        request = {"prompt": "写一句标语", "system": "你是文案", "temperature": 0, "max_tokens": 64}
+        payload = _payload(binding, request)
+
+        self.assertEqual(payload["model"], "deepseek-v4-1-flash-260910")
+        self.assertEqual(payload["messages"][0], {"role": "system", "content": "你是文案"})
+        self.assertEqual(payload["messages"][1], {"role": "user", "content": "写一句标语"})
+        # temperature=0 必须原样传给上游（判 None 不判真假），否则「确定性」就丢了
+        self.assertEqual(payload["temperature"], 0)

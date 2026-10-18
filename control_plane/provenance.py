@@ -438,6 +438,73 @@ def build_aigc_payload(
     )
 
 
+# ---------------------------------------------------------------- 文本
+
+# 文本没有容器，隐式标识只能写进**字符本身**。
+#
+# 用 Unicode 的「标签字符」段（U+E0000–U+E007F）：它把 ASCII 0x00–0x7F 一一映射成
+# 不可见码位，一个字节换一个字符，既不改变肉眼所见，也不会像零宽空格那样成倍膨胀
+# （那套做法一个字节要 8 个字符，300 字节的载荷会变成 2400 个不可见字符）。
+#
+# 代价：有些系统会在清洗时把这段剥掉（富文本编辑器、部分 API 网关）。剥掉了标识就没了，
+# 这是这种做法的固有边界 —— 它能扛复制粘贴，扛不住主动清洗。
+_TAG_BASE = 0xE0000
+_TAG_START = chr(0xE0001)      # LANGUAGE TAG
+_TAG_END = chr(0xE007F)        # CANCEL TAG
+
+
+def _to_unicode_tags(text: str) -> str:
+    return "".join(chr(_TAG_BASE + byte) for byte in text.encode("utf-8"))
+
+
+def _from_unicode_tags(tags: str) -> str | None:
+    data = bytearray()
+    for char in tags:
+        code = ord(char) - _TAG_BASE
+        if not 0 <= code <= 0x7F:
+            return None
+        data.append(code)
+    try:
+        return bytes(data).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+def embed_text_provenance(body: str, payload: dict[str, Any]) -> str:
+    """把 AIGC 载荷以不可见标签字符追加到文本末尾。"""
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return body + _TAG_START + _to_unicode_tags(text) + _TAG_END
+
+
+def read_text_provenance(body: str) -> dict[str, Any] | None:
+    """从文本里读回 AIGC 载荷。没有、或已损坏，都返回 None。"""
+    start = body.find(_TAG_START)
+    if start < 0:
+        return None
+    end = body.find(_TAG_END, start + 1)
+    if end < 0:
+        return None
+    decoded = _from_unicode_tags(body[start + 1 : end])
+    if not decoded:
+        return None
+    try:
+        payload = json.loads(decoded)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def strip_text_provenance(body: str) -> str:
+    """把不可见标识摘掉，还原成纯文本（便于展示与比对）。"""
+    start = body.find(_TAG_START)
+    if start < 0:
+        return body
+    end = body.find(_TAG_END, start + 1)
+    if end < 0:
+        return body
+    return body[:start] + body[end + 1 :]
+
+
 # ---------------------------------------------------------------- 显式角标
 
 LABEL_ASSET = Path(__file__).with_name("assets") / "aigc-label.png"

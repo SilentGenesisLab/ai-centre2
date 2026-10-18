@@ -194,6 +194,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         ("POST", "/v1/image-generations/jobs"): RouteInfo("image_generation", "generate", True, True),
         ("POST", "/v1/audio-generations/jobs"): RouteInfo("audio_generation", "generate", True, True),
         ("POST", "/v1/decision-generations/jobs"): RouteInfo("decision_generation", "decide", True, True),
+        ("POST", "/v1/text-generations/jobs"): RouteInfo("text_generation", "generate", True, True),
         ("POST", "/v1/uploads"): RouteInfo("storage", "upload_public"),
         ("POST", "/v1/provenance/inspect"): RouteInfo("storage", "inspect_provenance"),
         ("POST", "/internal/admin/storage/upload"): RouteInfo("storage", "upload"),
@@ -218,6 +219,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         (re.compile(r"^/v1/image-generations/jobs/[^/]+$"), RouteInfo("image_generation", "status", status_query=True)),
         (re.compile(r"^/v1/audio-generations/jobs/[^/]+$"), RouteInfo("audio_generation", "status", status_query=True)),
         (re.compile(r"^/v1/decision-generations/jobs/[^/]+$"), RouteInfo("decision_generation", "status", status_query=True)),
+        (re.compile(r"^/v1/text-generations/jobs/[^/]+$"), RouteInfo("text_generation", "status", status_query=True)),
         (re.compile(r"^/v1/lipsync/jobs/[^/]+/cancel$"), RouteInfo("lipsync", "cancel", cancel=True)),
         (re.compile(r"^/v1/face-mosaic/jobs/[^/]+/cancel$"), RouteInfo("face", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-scenes/jobs/[^/]+/cancel$"), RouteInfo("scene", "cancel", cancel=True)),
@@ -1302,7 +1304,7 @@ class ObservabilityStore:
         unit_type = str(payload["unit_type"]).strip()
         fixed_fee = Decimal(str(payload.get("fixed_fee", "0")))
         unit_price = Decimal(str(payload.get("unit_price", "0")))
-        if service not in {"asr", "tts", "ocr", "subtitle", "lipsync", "face", "scene", "watermark", "depth", "upscale", "image_upscale", "separation", "h3", "video_review"}:
+        if service not in {"asr", "tts", "ocr", "subtitle", "lipsync", "face", "scene", "watermark", "depth", "upscale", "image_upscale", "separation", "h3", "video_review", "text_generation"}:
             raise ValueError("unsupported service")
         if unit_type not in {"task", "audio_minute", "1000_chars", "image", "video_minute", "output_second"}:
             raise ValueError("unsupported unit type")

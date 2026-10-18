@@ -71,7 +71,12 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(channels["huanwangai"]["deployment_type"],"third_party")
         self.assertEqual(channels["huanwangai"]["base_url"],"https://api.huanwangai.com")
         self.assertFalse(channels["huanwangai"]["credential_configured"])
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney","suno-v6","suno-sound","jev"})
+        # 火山方舟（Ark）：文本生成走它。密钥**不落库**，复用视频拉片那把
+        # （VIDEO_REVIEW_ARK_API_KEY，同一个火山账号，一处轮换）。
+        self.assertFalse(channels["ark"]["enabled"])
+        self.assertEqual(channels["ark"]["auth_type"],"none")
+        self.assertEqual(channels["ark"]["base_url"],"https://ark.cn-beijing.volces.com/api/v3")
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney","deepseek-v4-flash","suno-v6","suno-sound","jev"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)

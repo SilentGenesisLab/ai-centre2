@@ -141,6 +141,12 @@ MODULES: tuple[ConcurrencyModule, ...] = (
         job_default=1,
     ),
     ConcurrencyModule(
+        module="text_generation", label="文本生成", queue="text_generation",
+        service="ai-centre-text-generation-worker.service", task="control_plane.text_generation",
+        job_default=4,
+        job_note="秒级同步调用、不占 GPU，所以默认允许 4 并发；与图像/视频的闸门互不影响",
+    ),
+    ConcurrencyModule(
         module="image_upscale", label="图片超分", queue="image_upscale",
         service="ai-centre-image-upscale-worker.service", task="control_plane.image_upscale",
         job_default=1, job_adjustable=False,
