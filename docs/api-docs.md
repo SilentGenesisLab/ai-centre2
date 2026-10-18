@@ -1135,15 +1135,24 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs"   -H "Authorization: Bear
 
 ### 10.3 读回标识
 
+两种输入**二选一**：本地上传，或公网 HTTPS 直链（服务端去取）。
+
 ```bash
+# 本地上传
 curl -sS -X POST "$BASE_URL/v1/provenance/inspect"   -H "Authorization: Bearer $API_KEY"   -F "file=@downloaded.png"
+
+# 公网直链（比如中台 OSS 上的产物）
+curl -sS -X POST "$BASE_URL/v1/provenance/inspect"   -H "Authorization: Bearer $API_KEY"   -F "url=https://oss.example.com/result.png"
 ```
+
+两个都给、或都不给，都回 422。URL 走公开 IP 校验（防 SSRF），内网地址不会去取。
 
 返回：
 
 ```json
 {
   "filename": "downloaded.png",
+  "source": "upload",
   "size": 123456,
   "sha256": "…",
   "found": true,

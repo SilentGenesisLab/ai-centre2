@@ -10,7 +10,7 @@ export const SECTIONS = [
   { id: "image-upscale", label: "图片超分" },
   { id: "h3", label: "MiniMax H3 生成" }, { id: "image", label: "图像能力" },
   { id: "music", label: "音乐生成" },
-  { id: "storage", label: "OSS 对象存储" },
+  { id: "storage", label: "OSS 对象存储" }, { id: "provenance", label: "内容标识核验" },
   { id: "resources", label: "GPU 与服务" }, { id: "concurrency", label: "并发与调度" },
   { id: "models", label: "模型与音色" },
   { id: "audit", label: "操作审计" }, { id: "project", label: "项目状态" },
@@ -53,6 +53,7 @@ export const NAVIGATION: NavigationItem[] = [
     ] },
     { id: "other", label: "其他", icon: "production", children: [
       { id: "storage", label: "OSS 对象存储", icon: "storage", href: "storage" },
+      { id: "provenance", label: "内容标识核验", icon: "shield", href: "provenance" },
     ] },
   ] },
   { id: "resources", label: "GPU 与服务", icon: "gpu", href: "resources" },

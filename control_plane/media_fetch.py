@@ -219,6 +219,20 @@ def _suffix_for_response(
     raise MediaFetchError(415, "remote media extension conflicts with its content type")
 
 
+# 核验用的「全都收」spec：标识可能写在图片、视频或音频里，而调用方给的 URL
+# 不一定带对的扩展名（上游常常是没后缀的直链），所以这里三种容器都认。
+# 它只用于**只读的核验**，不参与任何生成/落库链路。
+PROVENANCE_MEDIA = MediaSpec(
+    suffixes=IMAGE_MEDIA.suffixes | VIDEO_MEDIA.suffixes | AUDIO_MEDIA.suffixes,
+    content_types={**IMAGE_MEDIA.content_types, **VIDEO_MEDIA.content_types, **AUDIO_MEDIA.content_types},
+    equivalent_suffixes=(
+        IMAGE_MEDIA.equivalent_suffixes
+        + VIDEO_MEDIA.equivalent_suffixes
+        + AUDIO_MEDIA.equivalent_suffixes
+    ),
+)
+
+
 def download_public_media(
     url: str,
     directory: Path,

@@ -1215,6 +1215,9 @@ export function AdminConsole({
           {section === "image-upscale" && (
             <ImageUpscale setError={setError} showNotice={showNotice} />
           )}
+          {section === "provenance" && (
+            <ProvenanceInspect setError={setError} showNotice={showNotice} />
+          )}
           {section === "h3" && (
             <MiniMaxH3 setError={setError} showNotice={showNotice} />
           )}
@@ -4837,6 +4840,164 @@ function ImageUpscale({
         </Panel>
       </div>
       <RecentTasks service="image_upscale" setError={setError} />
+    </>
+  );
+}
+
+
+function ProvenanceInspect({
+  setError,
+  showNotice,
+}: {
+  setError: (value: string) => void;
+  showNotice: (value: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"upload" | "url">("upload");
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [lastForm, setLastForm] = useState<FormData | null>(null);
+
+  async function send(body: FormData) {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await apiRequest<Record<string, unknown>>(
+        "control",
+        "/v1/provenance/inspect",
+        { method: "POST", body },
+      );
+      setResult(response);
+      showNotice(response.found ? "检测到内容标识" : "未发现内容标识");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "检测失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const body = new FormData();
+    if (mode === "url") {
+      const url = String(form.get("url") || "").trim();
+      if (!url) {
+        setError("请填写素材 URL");
+        return;
+      }
+      body.append("url", url);
+    } else {
+      const picked = form.get("file");
+      if (!(picked instanceof File) || !picked.size) {
+        setError("请选择文件");
+        return;
+      }
+      body.append("file", picked);
+    }
+    setLastForm(body);
+    await send(body);
+  }
+
+  const found = result?.found === true;
+  const payload = result?.payload as Record<string, unknown> | null | undefined;
+  const aigc = (payload?.AIGC || null) as Record<string, unknown> | null;
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="AIGC PROVENANCE"
+        title="内容标识核验"
+        description="读取图片 / 视频 / 音频里写入的 AI 生成标识（隐式标识）。支持本地上传或公网 HTTPS 直链；只读，不落对象存储。"
+      />
+      <div className="two-column">
+        <Panel title="检测输入" eyebrow="INSPECT">
+          <form className="stack-form" onSubmit={submit}>
+            <label>
+              输入方式
+              <Select
+                name="mode"
+                value={mode}
+                onChange={(event) => {
+                  setMode(event.target.value as "upload" | "url");
+                  setResult(null);
+                }}
+              >
+                <option value="upload">本地上传</option>
+                <option value="url">公网 URL</option>
+              </Select>
+            </label>
+            {mode === "upload" ? (
+              <label>
+                素材文件
+                <input
+                  name="file"
+                  type="file"
+                  accept="image/*,video/*,audio/*,.png,.jpg,.jpeg,.webp,.bmp,.mp4,.mov,.mkv,.webm,.mp3,.wav,.m4a,.aac,.flac,.ogg"
+                />
+              </label>
+            ) : (
+              <label>
+                素材 URL（公网 HTTPS）
+                <input name="url" type="url" placeholder="https://.../result.png" />
+              </label>
+            )}
+            <div className="button-row">
+              <button className="primary-button" disabled={busy}>
+                {busy ? "检测中…" : "检测"}
+              </button>
+              {lastForm && (
+                <button type="button" disabled={busy} onClick={() => void send(lastForm)}>
+                  重新检测
+                </button>
+              )}
+            </div>
+          </form>
+        </Panel>
+        <Panel title="检测结果" eyebrow="RESULT">
+          {result ? (
+            <>
+              <p>
+                <span className={`status-badge ${found ? "is-good" : "is-bad"}`}>
+                  {found ? "发现标识" : "未发现"}
+                </span>{" "}
+                <small>
+                  {found
+                    ? String(result.where || "")
+                    : "这是一个正常结果，不是错误 —— 没写过标识的文件当然读不出来"}
+                </small>
+              </p>
+              {found && aigc && (
+                <div className="table-wrap">
+                  <table>
+                    <tbody>
+                      {Object.entries(aigc).map(([key, value]) => (
+                        <tr key={key}>
+                          <td>
+                            <strong>{key}</strong>
+                          </td>
+                          <td>
+                            <small>{String(value || "—")}</small>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="stack-form">
+                <small>容器 {String(result.container || "—")}</small>
+                <small>
+                  {String(result.size || 0)} 字节 · 来源 {String(result.source || "—")}
+                </small>
+                <small>sha256 {String(result.sha256 || "").slice(0, 32)}…</small>
+              </div>
+            </>
+          ) : (
+            <p>选择文件或填写 URL 后点「检测」。</p>
+          )}
+          <ResultBox value={result} empty="检测结果会显示在这里。" />
+        </Panel>
+      </div>
     </>
   );
 }

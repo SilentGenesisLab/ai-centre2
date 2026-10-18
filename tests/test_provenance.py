@@ -419,3 +419,106 @@ class PersistHookTests(unittest.TestCase):
         self.assertEqual(marker.call_count, 1, "音频产物没有被打标识")
         # 音频永远不做显式标识，哪怕请求方传了 true
         self.assertFalse(marker.call_args.kwargs["explicit_label"])
+
+
+class InspectEndpointTests(unittest.TestCase):
+    """核验接口要同时收本地上传与公网 URL，且**二选一**。
+
+    它是页面「内容标识核验」的后端：既要从本地拖一个文件进来，
+    也要能贴一条上游产物的直链（很多时候文件就在 OSS 上，人不一定下载得下来）。
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _client(self):
+        from fastapi.testclient import TestClient
+        from control_plane.api import app
+        return TestClient(app)
+
+    def test_neither_file_nor_url_is_rejected(self):
+        response = self._client().post(
+            "/v1/provenance/inspect", headers={"Authorization": "Bearer test"})
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("必须且只能给一个", response.json()["detail"])
+
+    def test_both_file_and_url_are_rejected(self):
+        path = self.root / "a.png"
+        _png(path)
+        with path.open("rb") as stream:
+            response = self._client().post(
+                "/v1/provenance/inspect",
+                headers={"Authorization": "Bearer test"},
+                data={"url": "https://cdn.example/a.png"},
+                files={"file": ("a.png", stream, "image/png")},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("必须且只能给一个", response.json()["detail"])
+
+    def test_upload_path_reports_the_marking(self):
+        path = self.root / "marked.png"
+        _png(path)
+        write_png_text(path, '{"AIGC":{"Label":"1"}}')
+        with path.open("rb") as stream:
+            response = self._client().post(
+                "/v1/provenance/inspect",
+                headers={"Authorization": "Bearer test"},
+                files={"file": ("marked.png", stream, "image/png")},
+            )
+
+        body = response.json()
+        self.assertTrue(body["found"])
+        self.assertEqual(body["source"], "upload")
+        self.assertEqual(body["payload"]["AIGC"]["Label"], "1")
+        self.assertTrue(body["sha256"])
+
+    def test_url_path_downloads_then_reads(self):
+        """URL 分支：服务端去取，再用同一套解析读标识。"""
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        path = self.root / "fetched.png"
+        _png(path)
+        write_png_text(path, '{"AIGC":{"Label":"1","ContentProducer":"T"}}')
+
+        async def fake_download(*_args, **_kwargs):
+            return SimpleNamespace(path=path, size=path.stat().st_size, content_type="image/png")
+
+        with (
+            patch("control_plane.api.validate_public_https_url", return_value=None),
+            patch("control_plane.api.download_public_media_async", side_effect=fake_download),
+        ):
+            response = self._client().post(
+                "/v1/provenance/inspect",
+                headers={"Authorization": "Bearer test"},
+                data={"url": "https://cdn.example/fetched.png"},
+            )
+
+        body = response.json()
+        self.assertTrue(body["found"], body)
+        self.assertEqual(body["source"], "url")
+        self.assertEqual(body["payload"]["AIGC"]["ContentProducer"], "T")
+
+    def test_a_private_url_is_refused_before_downloading(self):
+        # 防 SSRF：公网校验在下载之前，内网地址根本不会去取。
+        from control_plane.media_fetch import MediaFetchError
+        from unittest.mock import patch
+
+        def refuse(_url):
+            raise MediaFetchError(400, "url must be public")
+
+        with patch("control_plane.api.validate_public_https_url", side_effect=refuse):
+            response = self._client().post(
+                "/v1/provenance/inspect",
+                headers={"Authorization": "Bearer test"},
+                data={"url": "https://127.0.0.1/a.png"},
+            )
+
+        self.assertGreaterEqual(response.status_code, 400)
+        self.assertLess(response.status_code, 500)

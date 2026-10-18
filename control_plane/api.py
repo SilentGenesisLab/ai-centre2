@@ -42,6 +42,7 @@ from .media_fetch import (
     download_public_media_async,
     sniff_media_suffix,
     validate_public_https_url,
+    PROVENANCE_MEDIA,
 )
 from .scene_jobs import SceneJobClient, SceneJobNotFound
 from .video_review_jobs import VideoReviewJobClient, VideoReviewJobNotFound
@@ -4963,36 +4964,65 @@ async def create_upload(file: UploadFile = File(...)) -> dict[str, Any]:
     summary="读取文件里的 AI 生成标识",
     dependencies=[Depends(require_service_token)],
 )
-async def inspect_provenance(file: UploadFile = File(...)) -> dict[str, Any]:
-    """上传一个文件，把里面写着的 AIGC 标识读出来。
+async def inspect_provenance(
+    file: UploadFile | None = File(default=None),
+    url: str | None = Form(default=None, max_length=4096),
+) -> dict[str, Any]:
+    """读一个图片/视频/音频里的 AIGC 标识（隐式标识的解码端）。
 
-    这是隐式标识的**解码端**：写进去的东西要能被读回来，否则核验无从谈起。
+    写进去的东西要能被读回来，否则核验无从谈起。
 
-    只读、**不落 OSS**（临时文件读完就删）：这是个排查/核验用的口子，
-    不该顺手把用户的东西传到对象存储上。也正因为不落盘，它不返回任何 URL。
+    **两种输入二选一**：
+    - `file`：本地上传
+    - `url`：公网 HTTPS 直链（服务端去取，走公开 IP 校验，防 SSRF）
+
+    只读、**不落 OSS**：这是排查/核验用的口子，不该顺手把用户的东西传到对象存储上。
+    `found: false` 是正常答案 —— 这个接口要能对着任意文件回答「有没有标识」，
+    没有不是错误。
     """
+    if bool(file) == bool(url):
+        raise HTTPException(422, "file 与 url 必须且只能给一个")
+
     directory = get_settings().control_runtime_dir / "provenance-inspect"
     directory.mkdir(parents=True, exist_ok=True)
-    temporary = directory / f"{uuid4().hex}.inspect"
-    digest = hashlib.sha256()
-    size = 0
+    temporary: Path | None = None
+    downloaded: Path | None = None
     try:
-        with temporary.open("wb") as output:
-            while chunk := await file.read(4 * 1024 * 1024):
-                size += len(chunk)
-                if size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(413, "文件不能超过512MiB")
+        if url:
+            try:
+                await asyncio.to_thread(validate_public_https_url, url)
+            except MediaFetchError as exc:
+                raise HTTPException(exc.status_code, exc.detail) from exc
+            media = await download_public_media_async(
+                url, directory, f"{uuid4().hex}-probe",
+                PROVENANCE_MEDIA, MAX_UPLOAD_BYTES, 300,
+            )
+            downloaded = media.path
+            path, size, filename = media.path, media.size, (url.rsplit("/", 1)[-1] or url)
+        else:
+            temporary = directory / f"{uuid4().hex}.inspect"
+            size = 0
+            with temporary.open("wb") as output:
+                while chunk := await file.read(4 * 1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(413, "文件不能超过512MiB")
+                    output.write(chunk)
+            if size == 0:
+                raise HTTPException(422, "文件不能为空")
+            path, filename = temporary, (file.filename or "")
+
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            while chunk := stream.read(4 * 1024 * 1024):
                 digest.update(chunk)
-                output.write(chunk)
-        if size == 0:
-            raise HTTPException(422, "文件不能为空")
-        found = await asyncio.to_thread(read_provenance, temporary)
+
+        found = await asyncio.to_thread(read_provenance, path)
         return {
-            "filename": file.filename or "",
+            "filename": filename,
+            "source": "url" if url else "upload",
             "size": size,
             "sha256": digest.hexdigest(),
-            # `found: false` 是一个正常答案 —— 这个接口要能对着任意文件回答
-            # 「有没有标识」，没有不是错误。
             "found": found is not None,
             "container": found["container"] if found else None,
             "where": found["where"] if found else None,
@@ -5001,7 +5031,10 @@ async def inspect_provenance(file: UploadFile = File(...)) -> dict[str, Any]:
             "raw": found["raw"] if found else None,
         }
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        if downloaded is not None:
+            downloaded.unlink(missing_ok=True)
 
 
 @app.post("/internal/admin/storage/upload",include_in_schema=False,dependencies=[Depends(require_service_token)])
