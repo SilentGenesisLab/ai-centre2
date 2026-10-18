@@ -114,6 +114,11 @@ class CapabilityStore:
         # 幻网 AI 同样是**裸** Authorization（`sk-mj-...`，不带 Bearer 前缀）。实测查询端点
         # 带不带前缀都收，但按上游文档 curl 的形式配，少一个变量。
         db.execute("UPDATE channels SET auth_type='authorization',updated_at=? WHERE code='huanwangai' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
+        # 火山方舟用标准的 `Authorization: Bearer <key>`。密钥本身不落库（复用
+        # VIDEO_REVIEW_ARK_API_KEY），但 auth_type 必须摆正 —— 预设默认是 'none'，
+        # 不改的话 _headers 即使回落到环境变量里的 key，最后也会因为 kind='none' 返回空头，
+        # 表现为探针 401「key 无效」（2026-10-18 部署时踩到）。
+        db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='ark' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
             ("minimax-h3-rh-enhanced", "MiniMax H3 RunningHub 增强版", "video_generation", ["text","image","video","audio"], "video"),
