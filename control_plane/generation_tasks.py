@@ -379,7 +379,10 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
                 # 幻网 AI：查一个**格式合法但不存在**的任务号。它先鉴权后查库，所以
                 # 好 key 回 404（查无此任务）、坏 key 与不带头回 401 —— 与 id 取什么值无关
                 # （实测 0 / 1 / 20 位都一个样）。免费：查询不建任务、不出图。
-                "huanwangai":"/mj/task/0/fetch"}.get(channel["adapter"],"/health")
+                "huanwangai":"/mj/task/0/fetch",
+                # 火山方舟：/models 免费、且**必须带 key**（不带回 401）。返回里还带着
+                # 该账号每个型号的开通状态，比只看 200 更有用。
+                "ark":"/models"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
@@ -413,6 +416,16 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
             if response.status_code in {401,403,500,502,503,504}: return False,None,f"HTTP {response.status_code}"
             try: return True,response.json(),None
             except ValueError: return True,{"status_code":response.status_code},None
+        if channel["adapter"]=="ark":
+            # 强判据：/models 要 Bearer，401 就是 key 不认；200 同时证明网关通与密钥有效。
+            if response.status_code in {401,403}: return False,None,f"HTTP {response.status_code}：API key 无效或未配置"
+            if response.status_code>=400: return False,None,f"HTTP {response.status_code}"
+            try: body=response.json()
+            except ValueError: body={}
+            ids=[m.get("id") for m in (body.get("data") or []) if isinstance(m,dict)]
+            # 把「绑定的型号在这个账号上有没有开通」也带回去 —— 这正是我们踩过的坑
+            # （261017 存在但 ModelNotOpen）。
+            return True,{"models":len(ids),"detail":"网关通、密钥有效"},None
         if channel["adapter"]=="huanwangai":
             # 这条探针**强**：鉴权在查库之前，所以 401 只可能是「没带 key 或 key 不认」，
             # 404/200 则同时证明了「网关通」和「key 有效」。比 RunningHub/mxapi 那种

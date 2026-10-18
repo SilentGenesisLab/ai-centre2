@@ -240,3 +240,43 @@ class HuanwangaiProbeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def ark_channel(**overrides):
+    channel = {"adapter": "ark", "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+               "auth_type": "bearer", "credential": "ark-key", "timeout_seconds": 20}
+    channel.update(overrides)
+    return channel
+
+
+class ArkProbeTests(unittest.TestCase):
+    """火山方舟。探针打 `GET /models`：免费且**真的要鉴权**。
+
+    这条同时证明「网关通」和「密钥有效」，与 teamorouter 同级；
+    比 RunningHub/mxapi 那种「错 token 与对 token 返回相同」的弱判据强。
+    """
+
+    def _probe(self, response):
+        client = FakeClient(response)
+        with patch("control_plane.generation_tasks.httpx.Client", return_value=client):
+            return probe_channel(ark_channel()), client
+
+    def test_401_is_offline(self):
+        ok, _, error = self._probe(FakeResponse(401, {"error": {"code": "AuthenticationError"}}))[0]
+
+        self.assertFalse(ok)
+        self.assertIn("401", error)
+
+    def test_200_is_online_and_counts_models(self):
+        ok, balance, error = self._probe(FakeResponse(200, {"data": [{"id": "a"}, {"id": "b"}]}))[0]
+
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(balance["models"], 2)
+
+    def test_the_probe_hits_slash_models(self):
+        _, client = self._probe(FakeResponse(200, {"data": []}))
+
+        url, headers = client.calls[0]
+        self.assertTrue(url.endswith("/models"), url)
+        self.assertEqual(headers.get("Authorization"), "Bearer ark-key")
