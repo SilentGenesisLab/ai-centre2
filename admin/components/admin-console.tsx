@@ -5030,10 +5030,12 @@ function ProvenanceInspect({
   const [preview, setPreview] = useState<ProvenancePreview | null>(null);
 
   useEffect(() => {
+    // 依赖只认 url：结果回来时只更新 kind，url 不变，不能把它 revoke 掉。
+    const url = preview?.revoke ? preview.url : null;
     return () => {
-      if (preview?.revoke) URL.revokeObjectURL(preview.url);
+      if (url) URL.revokeObjectURL(url);
     };
-  }, [preview]);
+  }, [preview?.url, preview?.revoke]);
 
   async function send(body: FormData) {
     setBusy(true);
