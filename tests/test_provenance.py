@@ -226,7 +226,7 @@ class PayloadTests(unittest.TestCase):
         self.assertEqual(aigc["ContentPropagator"], "91310000MA1FL2XXXX")
         self.assertTrue(aigc["ReservedCode2"].startswith("hash:"))
         # 三个 ID 都是 md5（32 位十六进制）
-        for key in ("ProduceID", "ReservedCode1", "PropagateID"):
+        for key in ("ProduceID", "ReservedCode1", "PropagatorID"):
             self.assertRegex(aigc[key], r"^[0-9a-f]{32}$")
         self.assertEqual(missing, [])
 

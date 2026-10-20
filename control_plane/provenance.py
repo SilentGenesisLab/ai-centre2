@@ -399,10 +399,10 @@ def build_aigc_payload(
     | ProduceID | 算法服务版本号 + 生成内容 ID | `md5(算法版本 + job_id)` |
     | ReservedCode1 | 文件名 + 文件生成时间 | `md5(文件名 + 时间)` |
     | ContentPropagator | 企业社会信用代码 | 配置项，可留空 |
-    | PropagateID | 时间戳 + 用户 ID + 手机号 | **替代项**，见下 |
+    | PropagatorID | 时间戳 + 用户 ID + 手机号 | **替代项**，见下 |
     | ReservedCode2 | 加密后的信用代码 | `hash:md5(信用代码)` |
 
-    **`PropagateID` 是替代实现，不是规范实现。** 规范要的是「时间戳+用户ID+手机号」，
+    **`PropagatorID` 是替代实现，不是规范实现。** 规范要的是「时间戳+用户ID+手机号」，
     而中台压根不知道调用方的用户是谁 —— 手上只有 `external_ref`。这里用
     `时间戳 + external_ref + 渠道` 代替。等中台有了用户体系（或调用方开始传身份字段）
     再换成真的。**不假装这里是完整的**。
@@ -429,7 +429,7 @@ def build_aigc_payload(
                 "ProduceID": _md5(version, job_id),
                 "ReservedCode1": _md5(filename, stamp.isoformat()),
                 # 替代项：没有用户 ID 与手机号，用 external_ref 顶上（见 docstring）。
-                "PropagateID": _md5(str(stamp.timestamp()), external_ref or job_id),
+                "PropagatorID": _md5(str(stamp.timestamp()), external_ref or job_id),
                 "ContentPropagator": propagator,
                 "ReservedCode2": "hash:" + _md5(propagator) if propagator else "",
             }

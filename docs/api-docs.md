@@ -1140,7 +1140,7 @@ curl -sS \
   "ContentProducer": "生成合成服务提供者的名称或编码",
   "ProduceID": "算法服务版本号 + 内容 ID 的 MD5",
   "ReservedCode1": "文件名 + 生成时间的 MD5",
-  "PropagateID": "时间戳 + 调用方标识的 MD5（见下）",
+  "PropagatorID": "时间戳 + 调用方标识的 MD5（见下）",
   "ContentPropagator": "企业社会信用代码",
   "ReservedCode2": "hash:<信用代码的 MD5>"
 }}
@@ -1160,7 +1160,7 @@ curl -sS \
 
 **两点如实说明，别当它是完整实现：**
 
-1. **`PropagateID` 是替代项。** 规范要的是「时间戳 + 用户ID + 手机号」，而中台不知道调用方的用户是谁，手上只有 `external_ref`。当前用的是「时间戳 + external_ref」。等有了用户体系再换。
+1. **`PropagatorID` 是替代项。** 规范要的是「时间戳 + 用户ID + 手机号」，而中台不知道调用方的用户是谁，手上只有 `external_ref`。当前用的是「时间戳 + external_ref」。等有了用户体系再换。
 2. **企业信息没配置时**，仍会写入 `Label` 与本地可推导的字段，但**不会静默假装完整** —— 作业结果里会带上 `企业信息未配置` 的说明。
 
 ### 10.2 显式标识（画面角标，默认关）
