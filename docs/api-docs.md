@@ -1146,16 +1146,16 @@ curl -sS \
 }}
 ```
 
-字段由服务端配置（`AIGC_CONTENT_PRODUCER` / `AIGC_CONTENT_PROPAGATOR` / `AIGC_ALGORITHM_VERSION`），当前默认：
+字段由服务端配置（`AIGC_CONTENT_PRODUCER` / `AIGC_CONTENT_PROPAGATOR` / `AIGC_ALGORITHM_VERSION`）：
 
-| 配置项 | 默认值 |
+| 配置项 | 取值 |
 |---|---|
-| `AIGC_CONTENT_PRODUCER` | `SilentGenesisAI` |
-| `AIGC_CONTENT_PROPAGATOR` | 空（**只能由环境变量给**） |
+| `AIGC_CONTENT_PRODUCER` | 企业统一社会信用代码（**只由环境变量给**） |
+| `AIGC_CONTENT_PROPAGATOR` | 企业统一社会信用代码（与上一项同值，**只由环境变量给**） |
 | `AIGC_ALGORITHM_VERSION` | `sligenai-aigc-v1` |
 
 > 统一社会信用代码是政府发的 18 位法定标识，**必须与备案主体一致**，且**只从环境变量
-> 注入**（不进公开仓库）。没配置时 `ContentPropagator` 为空、`ReservedCode2` 也为空，
+> 注入**（不进公开仓库）。没配置时这两个字段为空、`ReservedCode2` 也为空，
 > 作业结果里会标注「企业信息未配置」。改动等于变更备案主体，`ReservedCode2` 会跟着变。
 
 **两点如实说明，别当它是完整实现：**

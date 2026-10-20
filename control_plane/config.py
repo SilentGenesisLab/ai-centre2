@@ -195,8 +195,8 @@ class Settings(BaseSettings):
     # 传 explicit_label 控制（默认关）。
     # 三项企业信息留空时，隐式标识仍会写入 Label 与本地可推导的字段，但会在作业结果里
     # 如实标注「企业信息未配置」—— 不静默写一份半截载荷。
-    # Producer 与版本号是平台自己的名字/版本，不敏感，给默认值让功能开箱可用。
-    aigc_content_producer: str = "SilentGenesisAI"
+    # Producer 与 Propagator 现在都用企业统一社会信用代码明码，只从环境变量给。
+    aigc_content_producer: str = ""
     aigc_algorithm_version: str = "sligenai-aigc-v1"
     # 文本生成时追加的**可见**尾注（显式标识）。规范允许放开头或结尾，
     # 这里放结尾：放开头会破坏「前 N 个字就是答案」这类下游用法。

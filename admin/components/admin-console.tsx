@@ -4975,6 +4975,47 @@ function TextGeneration({
   );
 }
 
+type ProvenancePreviewKind = "image" | "video" | "audio" | "text";
+
+type ProvenancePreview = {
+  url: string;
+  kind: ProvenancePreviewKind | null;
+  name: string;
+  text?: string;
+  revoke: boolean;
+};
+
+const PREVIEW_KIND_BY_CONTAINER: Record<string, ProvenancePreviewKind> = {
+  png: "image",
+  jpeg: "image",
+  jpg: "image",
+  webp: "image",
+  bmp: "image",
+  gif: "image",
+  mp4: "video",
+  mov: "video",
+  mkv: "video",
+  webm: "video",
+  mp3: "audio",
+  wav: "audio",
+  flac: "audio",
+  m4a: "audio",
+  aac: "audio",
+  ogg: "audio",
+};
+
+function previewKindFromType(type: string): ProvenancePreviewKind | null {
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  return null;
+}
+
+function previewKindFromName(name: string): ProvenancePreviewKind | null {
+  const match = /\.([a-z0-9]+)(?:[?#].*)?$/i.exec(name);
+  return match ? PREVIEW_KIND_BY_CONTAINER[match[1].toLowerCase()] ?? null : null;
+}
+
 function ProvenanceInspect({
   setError,
   showNotice,
@@ -4986,6 +5027,13 @@ function ProvenanceInspect({
   const [mode, setMode] = useState<"upload" | "url" | "text">("upload");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [lastForm, setLastForm] = useState<FormData | null>(null);
+  const [preview, setPreview] = useState<ProvenancePreview | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (preview?.revoke) URL.revokeObjectURL(preview.url);
+    };
+  }, [preview]);
 
   async function send(body: FormData) {
     setBusy(true);
@@ -4997,6 +5045,8 @@ function ProvenanceInspect({
         { method: "POST", body },
       );
       setResult(response);
+      const kind = PREVIEW_KIND_BY_CONTAINER[String(response.container || "").toLowerCase()];
+      if (kind) setPreview((current) => (current ? { ...current, kind } : current));
       showNotice(response.found ? "检测到内容标识" : "未发现内容标识");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "检测失败");
@@ -5016,6 +5066,7 @@ function ProvenanceInspect({
         return;
       }
       body.append("url", url);
+      setPreview({ url, kind: previewKindFromName(url), name: url, revoke: false });
     } else if (mode === "text") {
       const raw = String(form.get("text") || "");
       if (!raw) {
@@ -5023,6 +5074,7 @@ function ProvenanceInspect({
         return;
       }
       body.append("text", raw);
+      setPreview({ url: "", kind: "text", name: "粘贴的文本", text: raw, revoke: false });
     } else {
       const picked = form.get("file");
       if (!(picked instanceof File) || !picked.size) {
@@ -5030,6 +5082,12 @@ function ProvenanceInspect({
         return;
       }
       body.append("file", picked);
+      setPreview({
+        url: URL.createObjectURL(picked),
+        kind: previewKindFromType(picked.type) ?? previewKindFromName(picked.name),
+        name: picked.name,
+        revoke: true,
+      });
     }
     setLastForm(body);
     await send(body);
@@ -5097,6 +5155,19 @@ function ProvenanceInspect({
           </form>
         </Panel>
         <Panel title="检测结果" eyebrow="RESULT">
+          {preview && preview.kind && (
+            <div className="provenance-preview">
+              {preview.kind === "image" && (
+                <img src={preview.url} alt={preview.name} />
+              )}
+              {preview.kind === "video" && (
+                <video src={preview.url} controls playsInline preload="metadata" />
+              )}
+              {preview.kind === "audio" && <audio src={preview.url} controls preload="metadata" />}
+              {preview.kind === "text" && <pre className="result-box">{preview.text}</pre>}
+              <small className="preview-name">{preview.name}</small>
+            </div>
+          )}
           {result ? (
             <>
               <p>
@@ -5126,6 +5197,12 @@ function ProvenanceInspect({
                     </tbody>
                   </table>
                 </div>
+              )}
+              {found && typeof result.raw === "string" && result.raw && (
+                <details className="provenance-raw">
+                  <summary>容器内原始内容（{String(result.where || "—")}）</summary>
+                  <pre className="result-box">{result.raw}</pre>
+                </details>
               )}
               <div className="stack-form">
                 <small>容器 {String(result.container || "—")}</small>

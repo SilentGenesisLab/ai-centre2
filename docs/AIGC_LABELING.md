@@ -77,11 +77,11 @@
 ```json
 { "AIGC": {
   "Label": "1",
-  "ContentProducer": "SilentGenesisAI",
+  "ContentProducer": "<企业统一社会信用代码>",
   "ProduceID": "24465a2a66a7f1d965e468ff041694b1",
   "ReservedCode1": "4a4b54a8c658a699505dcebce9c9d625",
   "PropagateID": "e2b93a26595d986bb3eff5dab98f834a",
-  "ContentPropagator": "91440300MAK2F3UL8W",
+  "ContentPropagator": "<企业统一社会信用代码>",
   "ReservedCode2": "hash:2e90a4b0836ac098dee4363aff4ea16b"
 }}
 ```
@@ -89,11 +89,11 @@
 | 字段 | 含义 | 我们放的值 |
 |---|---|---|
 | `Label` | 标识类型 | 固定 `"1"`＝属于生成合成内容 |
-| `ContentProducer` | 生成合成服务提供者 | 服务端配置（平台名称或编码） |
+| `ContentProducer` | 生成合成服务提供者 | 企业统一社会信用代码（服务端环境变量注入） |
 | `ProduceID` | 算法版本 + 内容 ID | `md5(算法版本 + 作业ID)` |
 | `ReservedCode1` | 文件名 + 生成时间 | `md5(文件名 + 时间戳)` |
 | `PropagateID` | 时间戳 + 用户ID + 手机号 | **替代项**，见下 |
-| `ContentPropagator` | 企业社会信用代码 | 服务端配置，`91440300MAK2F3UL8W` |
+| `ContentPropagator` | 企业社会信用代码 | 与 `ContentProducer` 同值（服务端环境变量注入） |
 | `ReservedCode2` | 信用代码的哈希 | `hash:md5(信用代码)` |
 
 **`PropagateID` 是替代实现，不是完整实现。** 规范要的是「时间戳 + 用户ID + 手机号」，而中台不知道调用方的用户是谁，只有 `external_ref`。当前用的是「时间戳 + external_ref」。**如果你们需要严格合规，要把真实的用户标识通过 `external_ref` 传进来**（或等平台补用户体系）。

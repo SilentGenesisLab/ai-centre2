@@ -296,6 +296,13 @@ input[type="range"] { accent-color: var(--accent); border: 0; box-shadow: none; 
 .benchmark-list .benchmark-gain strong { color: var(--accent); }
 
 .table-wrap { overflow-x: auto; }
+.provenance-preview { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px; margin-bottom: 18px; padding: 12px; }
+.provenance-preview img, .provenance-preview video { border-radius: 8px; display: block; max-height: 360px; max-width: 100%; }
+.provenance-preview audio { width: 100%; }
+.provenance-preview .preview-name { color: var(--muted); font-size: 8px; overflow-wrap: anywhere; }
+.provenance-preview .result-box { margin: 0; }
+.provenance-raw { margin-top: 16px; }
+.provenance-raw summary { color: var(--muted); cursor: pointer; font-size: 9px; }
 table { border-collapse: collapse; width: 100%; }
 th { border-bottom: 1px solid var(--line); color: #92969e; font-size: 8px; letter-spacing: .07em; padding: 0 12px 11px; text-align: left; text-transform: uppercase; white-space: nowrap; }
 td { border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; padding: 13px 12px; vertical-align: middle; }
