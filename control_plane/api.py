@@ -5170,6 +5170,31 @@ async def admin_generation_job(job_id:UUID)->dict[str,Any]:
     except CapabilityNotFound as exc:raise HTTPException(404,"generation job not found") from exc
 
 
+@app.get("/internal/admin/ai-capabilities/job-logs",include_in_schema=False,dependencies=[Depends(require_service_token)])
+async def admin_generation_job_logs(capability_type:str|None=None,model:str|None=None,channel:str|None=None,
+                                    status:str|None=None,keyword:str|None=None,from_date:str|None=None,
+                                    to_date:str|None=None,page:int=Query(default=1,ge=1),
+                                    page_size:int=Query(default=50,ge=1,le=200))->dict[str,Any]:
+    return await asyncio.to_thread(get_capability_store().query_job_logs,capability_type=capability_type,
+                                   model=model,channel=channel,status=status,keyword=keyword,
+                                   from_date=from_date,to_date=to_date,page=page,page_size=page_size)
+
+
+@app.get("/internal/admin/ai-capabilities/job-logs/stats",include_in_schema=False,dependencies=[Depends(require_service_token)])
+async def admin_generation_job_log_stats(capability_type:str|None=None,model:str|None=None,channel:str|None=None,
+                                         status:str|None=None,keyword:str|None=None,from_date:str|None=None,
+                                         to_date:str|None=None)->dict[str,Any]:
+    return await asyncio.to_thread(get_capability_store().job_log_stats,capability_type=capability_type,
+                                   model=model,channel=channel,status=status,keyword=keyword,
+                                   from_date=from_date,to_date=to_date)
+
+
+@app.get("/internal/admin/ai-capabilities/job-logs/{job_id}",include_in_schema=False,dependencies=[Depends(require_service_token)])
+async def admin_generation_job_log(job_id:UUID)->dict[str,Any]:
+    try:return await asyncio.to_thread(get_capability_store().job,str(job_id),include_request=True)
+    except CapabilityNotFound as exc:raise HTTPException(404,"generation job not found") from exc
+
+
 async def _validate_h3_urls(request: H3VideoJobRequest) -> None:
     try:
         for value in (*request.reference_video_urls, *request.reference_image_urls, *request.reference_audio_urls):

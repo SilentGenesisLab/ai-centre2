@@ -6,7 +6,8 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -69,6 +70,10 @@ class CapabilityStore:
               FOREIGN KEY(model_id) REFERENCES models(id), FOREIGN KEY(channel_id) REFERENCES channels(id));
             CREATE INDEX IF NOT EXISTS idx_generation_jobs_status ON generation_jobs(status,created_at);
             """)
+            # Added after the first deployments: keep existing rows readable instead of rebuilding.
+            columns = {row[1] for row in db.execute("PRAGMA table_info(generation_jobs)")}
+            if "attempts_json" not in columns:
+                db.execute("ALTER TABLE generation_jobs ADD COLUMN attempts_json TEXT")
             self._seed(db)
 
     def _seed(self, db: sqlite3.Connection) -> None:
@@ -332,10 +337,145 @@ class CapabilityStore:
     def job(self,jid:str,include_request:bool=False)->dict[str,Any]:
         with self._db() as db: row=db.execute("SELECT j.*,m.code model,c.code channel FROM generation_jobs j JOIN models m ON m.id=j.model_id LEFT JOIN channels c ON c.id=j.channel_id WHERE j.id=?",(jid,)).fetchone()
         if not row: raise CapabilityNotFound(jid)
-        out=dict(row); out["result_urls"]=json.loads(out.pop("result_urls_json") or "[]"); out["upstream_response"]=json.loads(out.pop("upstream_response_json") or "null")
+        out=dict(row); out["result_urls"]=json.loads(out.pop("result_urls_json") or "[]"); out["upstream_response"]=json.loads(out.pop("upstream_response_json") or "null"); out["attempts"]=json.loads(out.pop("attempts_json",None) or "[]")
         req=json.loads(out.pop("request_json")); out["request"]=req if include_request else {"prompt":{"present":bool(req.get("prompt")),"characters":len(req.get("prompt",""))},"reference_images":len(req.get("reference_image_urls",[])),"reference_videos":len(req.get("reference_video_urls",[])),"reference_audios":len(req.get("reference_audio_urls",[]))}
         return out
 
     def list_jobs(self,limit:int=100)->list[dict[str,Any]]:
         with self._db() as db: ids=[r[0] for r in db.execute("SELECT id FROM generation_jobs ORDER BY created_at DESC LIMIT ?",(limit,))]
         return [self.job(i) for i in ids]
+
+    @staticmethod
+    def _job_log_filters(*, capability_type:str|None=None, model:str|None=None, channel:str|None=None,
+                         status:str|None=None, keyword:str|None=None, from_date:str|None=None,
+                         to_date:str|None=None)->tuple[str,list[Any]]:
+        clauses=["1=1"]; params:list[Any]=[]
+        if capability_type: clauses.append("m.capability_type=?"); params.append(capability_type)
+        if model: clauses.append("m.code=?"); params.append(model)
+        if channel: clauses.append("c.code=?"); params.append(channel)
+        if status: clauses.append("j.status=?"); params.append(status)
+        if from_date: clauses.append("j.created_at>=?"); params.append(f"{from_date}T00:00:00")
+        if to_date:
+            end=(datetime.fromisoformat(to_date)+timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
+            clauses.append("j.created_at<?"); params.append(end)
+        if keyword:
+            like=f"%{keyword}%"
+            clauses.append("(j.id LIKE ? OR m.code LIKE ? OR c.code LIKE ? OR j.error LIKE ? OR j.request_json LIKE ?)")
+            params.extend([like]*5)
+        return " AND ".join(clauses),params
+
+    @staticmethod
+    def _reason_key(message:Any)->str:
+        text=" ".join(str(message or "").split())
+        return text[:120]+("…" if len(text)>120 else "")
+
+    def query_job_logs(self,*,page:int=1,page_size:int=50,**filters:Any)->dict[str,Any]:
+        """Paged job log rows without the heavy request/upstream payloads."""
+        where,params=self._job_log_filters(**filters)
+        page=max(1,int(page)); page_size=min(200,max(1,int(page_size)))
+        with self._db() as db:
+            total=db.execute(f"SELECT COUNT(*) FROM generation_jobs j JOIN models m ON m.id=j.model_id LEFT JOIN channels c ON c.id=j.channel_id WHERE {where}",params).fetchone()[0]
+            rows=db.execute(
+                f"""SELECT j.id,m.code model,m.name model_name,m.capability_type,
+                           c.code channel,c.name channel_name,j.requested_channel,
+                           j.status,j.stage,j.created_at,j.started_at,j.finished_at,
+                           j.elapsed_seconds,j.fallback_count,j.error,j.result_urls_json,
+                           j.attempts_json,j.upstream_task_id
+                    FROM generation_jobs j
+                    JOIN models m ON m.id=j.model_id
+                    LEFT JOIN channels c ON c.id=j.channel_id
+                    WHERE {where} ORDER BY j.created_at DESC LIMIT ? OFFSET ?""",
+                [*params,page_size,(page-1)*page_size],
+            ).fetchall()
+        items=[]
+        for row in rows:
+            item=dict(row)
+            item["result_urls"]=json.loads(item.pop("result_urls_json") or "[]")
+            item["attempts"]=json.loads(item.pop("attempts_json",None) or "[]")
+            items.append(item)
+        return {"items":items,"total":total,"page":page,"page_size":page_size}
+
+    def job_log_stats(self,**filters:Any)->dict[str,Any]:
+        """Success rate, per-channel attempts, daily volume and top failure reasons."""
+        where,params=self._job_log_filters(**filters)
+        with self._db() as db:
+            rows=db.execute(
+                f"""SELECT j.id,m.code model,m.capability_type,c.code channel,c.name channel_name,
+                           j.status,j.created_at,j.elapsed_seconds,j.error,j.attempts_json
+                    FROM generation_jobs j JOIN models m ON m.id=j.model_id
+                    LEFT JOIN channels c ON c.id=j.channel_id WHERE {where}""",
+                params,
+            ).fetchall()
+            channel_names={row["code"]:row["name"] for row in db.execute("SELECT code,name FROM channels")}
+        status_counts=Counter(row["status"] for row in rows)
+        durations=[row["elapsed_seconds"] for row in rows if row["elapsed_seconds"] is not None]
+        by_capability:dict[str,dict[str,Any]]={}
+        by_channel:dict[str,dict[str,Any]]={}
+        daily:dict[str,dict[str,Any]]={}
+        reasons:Counter[str]=Counter()
+
+        def channel_bucket(code:str,name:str|None)->dict[str,Any]:
+            return by_channel.setdefault(code,{"channel":code,"channel_name":name or code,"attempts":0,"succeeded":0,"failed":0,"elapsed_ms":[]})
+
+        for row in rows:
+            capability=row["capability_type"] or "unknown"
+            cap=by_capability.setdefault(capability,{"capability_type":capability,"total":0,"succeeded":0,"failed":0,"cancelled":0})
+            cap["total"]+=1
+            if row["status"] in ("succeeded","failed","cancelled"): cap[row["status"]]+=1
+            day=(row["created_at"] or "")[:10]
+            daily_row=daily.setdefault(day,{"date":day,"total":0,"succeeded":0,"failed":0,"cancelled":0})
+            daily_row["total"]+=1
+            if row["status"] in ("succeeded","failed","cancelled"): daily_row[row["status"]]+=1
+
+            attempts=json.loads(row["attempts_json"] or "[]")
+            if attempts:
+                for attempt in attempts:
+                    code=str(attempt.get("channel") or "unknown")
+                    bucket=channel_bucket(code,channel_names.get(code))
+                    bucket["attempts"]+=1
+                    if attempt.get("outcome")=="success":
+                        bucket["succeeded"]+=1
+                        if attempt.get("elapsed_ms") is not None: bucket["elapsed_ms"].append(attempt["elapsed_ms"])
+                    elif attempt.get("outcome")=="failed":
+                        bucket["failed"]+=1
+                        if attempt.get("error"): reasons[self._reason_key(attempt["error"])]+=1
+            elif row["error"]:
+                # Rows written before attempts_json existed only carry the joined error text.
+                for part in str(row["error"]).split("; "):
+                    code,_,message=part.partition(":")
+                    code=(code.strip() or row["channel"] or "unknown") if message else (row["channel"] or "unknown")
+                    bucket=channel_bucket(code,channel_names.get(code))
+                    bucket["attempts"]+=1; bucket["failed"]+=1
+                    if message: reasons[self._reason_key(message)]+=1
+            elif row["channel"] and row["status"] in ("succeeded","failed"):
+                bucket=channel_bucket(row["channel"],row["channel_name"])
+                bucket["attempts"]+=1
+                bucket["succeeded" if row["status"]=="succeeded" else "failed"]+=1
+
+        def rate(succeeded:int,total:int)->float:
+            return round(succeeded/total,4) if total else 0.0
+
+        channel_rows=[]
+        for bucket in by_channel.values():
+            durations_ms=bucket.pop("elapsed_ms")
+            bucket["success_rate"]=rate(bucket["succeeded"],bucket["attempts"])
+            bucket["avg_elapsed_ms"]=round(sum(durations_ms)/len(durations_ms)) if durations_ms else None
+            channel_rows.append(bucket)
+        capability_rows=[]
+        for bucket in by_capability.values():
+            bucket["success_rate"]=rate(bucket["succeeded"],bucket["total"])
+            capability_rows.append(bucket)
+        total=len(rows); succeeded=status_counts.get("succeeded",0)
+        return {
+            "total":total,
+            "succeeded":succeeded,
+            "failed":status_counts.get("failed",0),
+            "cancelled":status_counts.get("cancelled",0),
+            "running":sum(status_counts.get(key,0) for key in ("queued","running")),
+            "success_rate":rate(succeeded,total),
+            "avg_elapsed_seconds":round(sum(durations)/len(durations),2) if durations else None,
+            "by_channel":sorted(channel_rows,key=lambda item:-item["attempts"]),
+            "by_capability":sorted(capability_rows,key=lambda item:-item["total"]),
+            "daily":sorted(daily.values(),key=lambda item:item["date"]),
+            "failure_reasons":[{"reason":reason,"count":count} for reason,count in reasons.most_common(10)],
+        }

@@ -1264,6 +1264,7 @@ export function AdminConsole({
           )}
           {section === "channels" && <ChannelManagement setError={setError} showNotice={showNotice} />}
           {section === "ai-models" && <AiModelManagement setError={setError} />}
+          {section === "ai-job-logs" && <AiJobLogs setError={setError} />}
           {BUSINESS_SECTIONS[section] && (
             <RecentTasks
               service={BUSINESS_SECTIONS[section]!}
@@ -1290,6 +1291,354 @@ function ChannelManagement({setError,showNotice}:{setError:(v:string)=>void;show
   async function save(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);const fd=new FormData(event.currentTarget);const credential=String(fd.get("credential")||"");const body={name:String(fd.get("name")),...(editing?{}:{code:String(fd.get("code"))}),deployment_type:String(fd.get("deployment_type")),adapter:String(fd.get("adapter")),base_url:String(fd.get("base_url")),...(credential?{credential}:{}),auth_type:String(fd.get("auth_type")),priority:Number(fd.get("priority")),timeout_seconds:Number(fd.get("timeout_seconds"))};try{await apiRequest("control",editing?`/internal/admin/ai-capabilities/channels/${editing.id}`:"/internal/admin/ai-capabilities/channels",{method:editing?"PATCH":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});showNotice("渠道配置已保存");setEditing(null);setCreating(false);await load()}catch(e){setError(uiError(e))}finally{setBusy(false)}}
   async function action(item:AiChannel,action:"test"|"toggle"|"delete"){setBusy(true);try{if(action==="test")await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}/test`,{method:"POST"});else if(action==="toggle")await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:!item.enabled})});else await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}`,{method:"DELETE"});showNotice(action==="test"?"连接检测完成":"渠道状态已更新");await load()}catch(e){setError(uiError(e))}finally{setBusy(false)}}
   return <><div className="page-title-row"><div><span className="eyebrow">AI CAPABILITIES</span><h2>渠道管理</h2><p>统一管理本地部署和第三方接口。密钥加密保存且仅显示尾部。</p></div><button className="primary-button" onClick={()=>setCreating(true)}>新增渠道</button></div><Panel title="模型与生成渠道" eyebrow={`${items.length} CHANNELS`}><div className="table-shell"><table><thead><tr><th>渠道</th><th>类型</th><th>连接配置</th><th>状态</th><th>优先级</th><th>操作</th></tr></thead><tbody>{items.map(item=><tr key={item.id}><td><strong>{item.name}</strong><small>{item.code}</small></td><td>{item.deployment_type==="local"?"本地部署":"第三方接口"}</td><td><span>{item.base_url||"未配置地址"}</span><small>{item.credential_configured?`密钥 ····${item.credential_tail||""}`:"未配置密钥"}</small></td><td><StatusBadge status={item.enabled?item.health_status:"disabled"}/>{item.last_error&&<small>{item.last_error}</small>}</td><td>{item.priority}</td><td><div className="button-row"><button disabled={busy} onClick={()=>void action(item,"test")}>测试连接</button><button onClick={()=>setEditing(item)}>编辑</button><button disabled={busy} onClick={()=>void action(item,"toggle")}>{item.enabled?"停用":"启用"}</button>{!["local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji","huanwangai"].includes(item.code)&&<button className="danger-button" onClick={()=>void action(item,"delete")}>删除</button>}</div></td></tr>)}</tbody></table></div></Panel>{(creating||editing)&&<Modal title={editing?`编辑 ${editing.name}`:"新增渠道"} onClose={()=>{setCreating(false);setEditing(null)}}><form className="form-grid" onSubmit={save}><label>名称<input name="name" required defaultValue={editing?.name}/></label>{!editing&&<label>唯一编码<input name="code" required pattern="[a-z][a-z0-9_-]+"/></label>}<label>部署类型<Select name="deployment_type" defaultValue={editing?.deployment_type||"third_party"}><option value="third_party">第三方接口</option><option value="local">本地部署</option></Select></label><label>协议适配器<Select name="adapter" defaultValue={editing?.adapter||"jmapi"}><option value="jmapi">jmapi</option><option value="libtv">libtv</option><option value="grsai">GRSAI</option><option value="mxapi">mxapi（Suno 音乐）</option><option value="local_h3">本地 MiniMax H3</option><option value="runninghub">RunningHub</option><option value="teamorouter">TeamORouter</option><option value="wuyinkeji">速创 wuyinkeji</option><option value="huanwangai">幻网AI huanwangai（Midjourney）</option></Select></label><label className="full-span">Base URL<input name="base_url" type="url" defaultValue={editing?.base_url}/></label><label>鉴权方式<Select name="auth_type" defaultValue="none"><option value="none">无</option><option value="bearer">Bearer</option><option value="x-api-key">X-API-Key</option><option value="authorization">Authorization（裸值，不带 Bearer）</option></Select></label><label>密钥<input name="credential" type="password" placeholder={editing?.credential_configured?"留空则保持原密钥":"可选"}/></label><label>优先级<input name="priority" type="number" min="1" max="1000" defaultValue={editing?.priority||100}/></label><label>超时（秒）<input name="timeout_seconds" type="number" min="5" max="14400" defaultValue={editing?.timeout_seconds||1800}/></label><div className="button-row full-span"><button type="button" onClick={()=>{setCreating(false);setEditing(null)}}>取消</button><button className="primary-button" disabled={busy}>{busy?"保存中…":"保存"}</button></div></form></Modal>}</>
+}
+
+type AiJobLogAttempt = { channel: string; outcome: string; error?: string | null; elapsed_ms?: number | null; at?: string };
+type AiJobLogRow = {
+  id: string; model: string; model_name: string; capability_type: string;
+  channel?: string | null; channel_name?: string | null; requested_channel: string;
+  status: string; stage: string; created_at: string; elapsed_seconds?: number | null;
+  fallback_count: number; error?: string | null; result_urls: string[];
+  attempts: AiJobLogAttempt[]; upstream_task_id?: string | null;
+};
+type AiJobLogDetail = AiJobLogRow & { request?: Record<string, unknown>; upstream_response?: unknown };
+type AiJobLogStats = {
+  total: number; succeeded: number; failed: number; cancelled: number; running: number;
+  success_rate: number; avg_elapsed_seconds: number | null;
+  by_channel: Array<{ channel: string; channel_name: string; attempts: number; succeeded: number; failed: number; success_rate: number; avg_elapsed_ms: number | null }>;
+  by_capability: Array<{ capability_type: string; total: number; succeeded: number; failed: number; cancelled: number; success_rate: number }>;
+  daily: Array<{ date: string; total: number; succeeded: number; failed: number; cancelled: number }>;
+  failure_reasons: Array<{ reason: string; count: number }>;
+};
+
+const AI_CAPABILITY_LABELS: Record<string, string> = {
+  image_generation: "图像", video_generation: "视频", audio_generation: "音乐",
+  text_generation: "文本", decision_generation: "决策",
+};
+
+function aiMediaKind(url: string): "image" | "video" | "audio" | "link" {
+  const clean = url.split("?")[0].toLowerCase();
+  if (/\.(png|jpe?g|webp|gif|bmp)$/.test(clean)) return "image";
+  if (/\.(mp4|mov|webm|mkv|m4v)$/.test(clean)) return "video";
+  if (/\.(mp3|wav|m4a|aac|ogg|flac)$/.test(clean)) return "audio";
+  return "link";
+}
+
+function aiSeconds(value?: number | null) {
+  return value == null ? "—" : `${value.toFixed(1)}s`;
+}
+
+function AiJobLogs({ setError }: { setError: (value: string) => void }) {
+  const [rows, setRows] = useState<AiJobLogRow[]>([]);
+  const [stats, setStats] = useState<AiJobLogStats | null>(null);
+  const [models, setModels] = useState<AiModel[]>([]);
+  const [channels, setChannels] = useState<AiChannel[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [capability, setCapability] = useState("");
+  const [model, setModel] = useState("");
+  const [channel, setChannel] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [from, setFrom] = useState(UI_THIRTY_DAYS_AGO);
+  const [to, setTo] = useState(UI_TODAY);
+  const [detail, setDetail] = useState<AiJobLogDetail | null>(null);
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => {
+    apiRequest<{ items: AiModel[] }>("control", "/internal/admin/ai-capabilities/models")
+      .then((result) => setModels(result.items)).catch(() => {});
+    apiRequest<{ items: AiChannel[] }>("control", "/internal/admin/ai-capabilities/channels")
+      .then((result) => setChannels(result.items)).catch(() => {});
+  }, []);
+
+  const load = useCallback(async () => {
+    try {
+      const filters = new URLSearchParams({ from_date: from, to_date: to });
+      if (capability) filters.set("capability_type", capability);
+      if (model) filters.set("model", model);
+      if (channel) filters.set("channel", channel);
+      if (statusFilter) filters.set("status", statusFilter);
+      if (keyword.trim()) filters.set("keyword", keyword.trim());
+      const listQuery = new URLSearchParams(filters);
+      listQuery.set("page", String(page));
+      listQuery.set("page_size", String(pageSize));
+      const [list, summary] = await Promise.all([
+        apiRequest<{ items: AiJobLogRow[]; total: number }>(
+          "control", `/internal/admin/ai-capabilities/job-logs?${listQuery}`,
+        ),
+        apiRequest<AiJobLogStats>(
+          "control", `/internal/admin/ai-capabilities/job-logs/stats?${filters}`,
+        ),
+      ]);
+      setRows(list.items);
+      setTotal(list.total);
+      setStats(summary);
+    } catch (reason) {
+      setError(uiError(reason, "渠道任务日志加载失败"));
+    }
+  }, [from, to, capability, model, channel, statusFilter, keyword, page, pageSize, setError]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  async function openDetail(row: AiJobLogRow) {
+    try {
+      setDetail(await apiRequest<AiJobLogDetail>(
+        "control", `/internal/admin/ai-capabilities/job-logs/${row.id}`,
+      ));
+    } catch (reason) {
+      setError(uiError(reason, "任务详情加载失败"));
+    }
+  }
+
+  const daily = (stats?.daily ?? []).slice(-14).reverse();
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="AI CAPABILITIES"
+        title="渠道任务日志"
+        description="图像、视频、音乐生成的渠道结果、成功率、尝试链与用量。数据来自生成作业库。"
+      />
+      <div className="metric-grid">
+        <div className="metric-card accent">
+          <span>任务数</span>
+          <strong>{stats?.total ?? "—"}</strong>
+          <small>{from} ~ {to}</small>
+        </div>
+        <div className="metric-card">
+          <span>成功率</span>
+          <strong>{stats ? `${(stats.success_rate * 100).toFixed(1)}%` : "—"}</strong>
+          <small>成功 {stats?.succeeded ?? 0} · 失败 {stats?.failed ?? 0} · 取消 {stats?.cancelled ?? 0}</small>
+        </div>
+        <div className="metric-card">
+          <span>平均耗时</span>
+          <strong>{aiSeconds(stats?.avg_elapsed_seconds)}</strong>
+          <small>按已结束任务计</small>
+        </div>
+        <div className="metric-card">
+          <span>进行中</span>
+          <strong>{stats?.running ?? 0}</strong>
+          <small>排队 + 执行</small>
+        </div>
+      </div>
+
+      <Panel title="筛选条件" eyebrow="FILTERS">
+        <div className="record-filters">
+          <label>
+            开始
+            <input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(1); }} />
+          </label>
+          <label>
+            结束
+            <input type="date" value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} />
+          </label>
+          <label>
+            能力类型
+            <Select value={capability} onChange={(event) => { setCapability(event.target.value); setPage(1); }}>
+              <option value="">全部</option>
+              {["image_generation", "video_generation", "audio_generation"].map((item) => (
+                <option key={item} value={item}>{AI_CAPABILITY_LABELS[item]}</option>
+              ))}
+            </Select>
+          </label>
+          <label>
+            型号
+            <Select value={model} onChange={(event) => { setModel(event.target.value); setPage(1); }}>
+              <option value="">全部</option>
+              {models.map((item) => <option key={item.id} value={item.code}>{item.code}</option>)}
+            </Select>
+          </label>
+          <label>
+            渠道
+            <Select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}>
+              <option value="">全部</option>
+              {channels.map((item) => <option key={item.id} value={item.code}>{item.name}</option>)}
+            </Select>
+          </label>
+          <label>
+            状态
+            <Select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
+              <option value="">全部</option>
+              {["queued", "running", "succeeded", "failed", "cancelled"].map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </Select>
+          </label>
+          <label className="filter-search">
+            关键词
+            <input
+              value={keyword}
+              onChange={(event) => { setKeyword(event.target.value); setPage(1); }}
+              placeholder="任务 ID / 错误 / prompt"
+            />
+          </label>
+          <button className="primary-button" onClick={() => void load()}>查询</button>
+        </div>
+      </Panel>
+
+      <Panel title="渠道成功率" eyebrow={`${stats?.by_channel.length ?? 0} CHANNELS`}>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>渠道</th><th>尝试</th><th>成功</th><th>失败</th><th>成功率</th><th>平均耗时</th></tr>
+            </thead>
+            <tbody>
+              {(stats?.by_channel ?? []).length === 0 && (
+                <tr><td colSpan={6} className="empty-cell">窗口内没有渠道调用</td></tr>
+              )}
+              {(stats?.by_channel ?? []).map((item) => (
+                <tr key={item.channel}>
+                  <td><strong>{item.channel_name}</strong><small>{item.channel}</small></td>
+                  <td>{item.attempts}</td>
+                  <td>{item.succeeded}</td>
+                  <td>{item.failed}</td>
+                  <td>{(item.success_rate * 100).toFixed(1)}%</td>
+                  <td>{item.avg_elapsed_ms == null ? "—" : aiSeconds(item.avg_elapsed_ms / 1000)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      <div className="two-column">
+        <Panel title="按天用量" eyebrow="DAILY">
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>日期</th><th>任务</th><th>成功</th><th>失败</th></tr></thead>
+              <tbody>
+                {daily.length === 0 && <tr><td colSpan={4} className="empty-cell">窗口内没有作业</td></tr>}
+                {daily.map((item) => (
+                  <tr key={item.date}>
+                    <td>{item.date}</td><td>{item.total}</td><td>{item.succeeded}</td><td>{item.failed}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+        <Panel title="失败原因 Top" eyebrow="FAILURES">
+          {(stats?.failure_reasons ?? []).length === 0 && <p className="empty-note">窗口内没有失败记录</p>}
+          <div className="provider-list">
+            {(stats?.failure_reasons ?? []).map((item) => (
+              <article key={item.reason}>
+                <div><strong>{item.count} 次</strong><small>{item.reason}</small></div>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="任务明细" eyebrow={`${total} RECORDS`}>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr><th>时间</th><th>型号</th><th>渠道尝试</th><th>状态</th><th>耗时</th><th>结果</th><th>错误</th></tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && <tr><td colSpan={7} className="empty-cell">没有匹配的任务</td></tr>}
+              {rows.map((row) => {
+                const chain = (row.attempts.length
+                  ? row.attempts.map((attempt) => attempt.channel)
+                  : [row.channel || row.requested_channel]).join(" → ");
+                const firstImage = row.result_urls.find((url) => aiMediaKind(url) === "image");
+                return (
+                  <tr key={row.id}>
+                    <td>
+                      <button className="table-link" onClick={() => void openDetail(row)}>{formatTime(row.created_at)}</button>
+                      <small>{row.id.slice(0, 8)}</small>
+                    </td>
+                    <td><strong>{row.model}</strong><small>{AI_CAPABILITY_LABELS[row.capability_type] || row.capability_type}</small></td>
+                    <td className="wrap">{chain}</td>
+                    <td><StatusBadge status={row.status} /></td>
+                    <td>{aiSeconds(row.elapsed_seconds)}</td>
+                    <td>
+                      {firstImage
+                        ? <img className="job-thumb" src={firstImage} alt="生成结果" loading="lazy" />
+                        : row.result_urls.length ? `${row.result_urls.length} 个文件` : "—"}
+                    </td>
+                    <td className="wrap">{row.error ? row.error.slice(0, 120) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="record-pagination">
+          <span>第 {page} / {pages} 页 · 共 {total} 条</span>
+          <Select value={String(pageSize)} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+            {[20, 50, 100].map((size) => <option key={size} value={String(size)}>{size} 条/页</option>)}
+          </Select>
+          <button disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>上一页</button>
+          <button disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button>
+        </div>
+      </Panel>
+
+      {detail && (
+        <div className="drawer-backdrop" onClick={() => setDetail(null)}>
+          <aside className="detail-drawer" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <p className="eyebrow">{detail.model} · {AI_CAPABILITY_LABELS[detail.capability_type] || detail.capability_type}</p>
+                <h2>{detail.id}</h2>
+              </div>
+              <button onClick={() => setDetail(null)}>×</button>
+            </header>
+            <div className="benchmark-list">
+              <div><span>状态</span><strong>{detail.status}</strong></div>
+              <div><span>最终渠道</span><strong>{detail.channel || detail.requested_channel}</strong></div>
+              <div><span>耗时</span><strong>{aiSeconds(detail.elapsed_seconds)}</strong></div>
+              <div><span>创建时间</span><strong>{formatTime(detail.created_at)}</strong></div>
+            </div>
+            <h3>渠道尝试</h3>
+            {detail.attempts.length === 0
+              ? <p className="empty-note">该任务没有尝试链记录（历史任务）</p>
+              : (
+                <div className="provider-list">
+                  {detail.attempts.map((attempt, index) => (
+                    <article key={`${attempt.channel}-${index}`}>
+                      <div>
+                        <strong>{attempt.channel}</strong>
+                        <small>{attempt.at || ""}{attempt.elapsed_ms != null ? ` · ${attempt.elapsed_ms}ms` : ""}</small>
+                      </div>
+                      <StatusBadge status={attempt.outcome === "success" ? "succeeded" : "failed"} />
+                      <pre>{attempt.error || "成功"}</pre>
+                    </article>
+                  ))}
+                </div>
+              )}
+            <h3>生成结果</h3>
+            {detail.result_urls.length === 0
+              ? <p className="empty-note">没有结果文件</p>
+              : detail.result_urls.map((url) => {
+                const kind = aiMediaKind(url);
+                return (
+                  <div className="provenance-preview" key={url}>
+                    {kind === "image" && <img src={url} alt="生成结果" />}
+                    {kind === "video" && <video src={url} controls playsInline preload="metadata" />}
+                    {kind === "audio" && <audio src={url} controls preload="metadata" />}
+                    {kind === "link" && <a href={url} target="_blank" rel="noreferrer">打开结果文件</a>}
+                    <small className="preview-name">
+                      <a href={url} target="_blank" rel="noreferrer">{url}</a>
+                    </small>
+                  </div>
+                );
+              })}
+            {detail.error && <><h3>错误</h3><pre className="result-box">{detail.error}</pre></>}
+            <h3>请求摘要</h3>
+            <pre className="result-box">{JSON.stringify(detail.request ?? null, null, 2)}</pre>
+            <h3>上游响应</h3>
+            <pre className="result-box">{JSON.stringify(detail.upstream_response ?? null, null, 2)}</pre>
+          </aside>
+        </div>
+      )}
+    </>
+  );
 }
 
 function AiModelManagement({setError}:{setError:(v:string)=>void}) {

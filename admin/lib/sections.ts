@@ -2,6 +2,7 @@ export const SECTIONS = [
   { id: "overview", label: "数据分析" }, { id: "calls", label: "任务日志" },
   { id: "billing", label: "计费中心" }, { id: "api-keys", label: "API Key 管理" },
   { id: "channels", label: "渠道管理" }, { id: "ai-models", label: "模型管理" },
+  { id: "ai-job-logs", label: "渠道任务日志" },
   { id: "text-gen", label: "文本生成" }, { id: "asr", label: "语音识别" }, { id: "ocr", label: "OCR 与字幕" },
   { id: "tts", label: "语音合成" }, { id: "separation", label: "音频分离" },
   { id: "lipsync", label: "唇形驱动" }, { id: "face", label: "人脸处理" },
@@ -28,6 +29,7 @@ export const NAVIGATION: NavigationItem[] = [
   { id: "ai-capabilities", label: "AI 能力", icon: "models", children: [
     { id: "channels", label: "渠道管理", icon: "resources", href: "channels" },
     { id: "ai-models", label: "模型管理", icon: "models", href: "ai-models" },
+    { id: "ai-job-logs", label: "渠道任务日志", icon: "logs", href: "ai-job-logs" },
   ] },
   { id: "production", label: "生产任务", icon: "production", children: [
     { id: "text", label: "文本", icon: "text", children: [

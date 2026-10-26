@@ -450,6 +450,16 @@ def _generate_audio(job_id: str) -> dict[str, Any]:
         started_at=datetime.now(timezone.utc).isoformat(),
     )
     failures: list[str] = []
+    attempts: list[dict[str, Any]] = []
+
+    def _record_attempt(code: str, outcome: str, error: str | None = None,
+                        started_at: float | None = None) -> None:
+        attempts.append({"channel": code, "outcome": outcome,
+                         "error": (" ".join(str(error).split())[:240] or None) if error else None,
+                         "elapsed_ms": round((time.monotonic() - started_at) * 1000) if started_at is not None else None,
+                         "at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+        store.update_job(job_id, attempts_json=json.dumps(attempts, ensure_ascii=False))
+
     for index, code in enumerate(order):
         try:
             binding = store.binding(request["model"], code)
@@ -463,6 +473,7 @@ def _generate_audio(job_id: str) -> dict[str, Any]:
         ):
             continue
         submitted = False
+        attempt_started = time.monotonic()
         try:
             store.update_job(
                 job_id, channel_id=binding["channel_id"], stage="submitting", fallback_count=index
@@ -506,15 +517,22 @@ def _generate_audio(job_id: str) -> dict[str, Any]:
                 ),
             )
             submitted = True
-            return _poll_songs(store, job_id, request, binding, task_ids, started)
+            # 音乐的上游任务号到手不代表发货，等轮询结束后再定性这一次渠道尝试。
+            result = _poll_songs(store, job_id, request, binding, task_ids, started)
+            succeeded = result.get("status") == "succeeded"
+            _record_attempt(code, "success" if succeeded else "failed",
+                            None if succeeded else result.get("error"), attempt_started)
+            return result
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
             # 提交成功之后（含轮询途中）的失败不再换渠道：上游那两首还在生成，重投就是再买一份。
             failures.append(f"{code}:{type(exc).__name__}")
+            _record_attempt(code, "failed", type(exc).__name__, attempt_started)
             if submitted:
                 break
             continue
         except Exception as exc:
             failures.append(f"{code}:{str(exc)[:200]}")
+            _record_attempt(code, "failed", str(exc), attempt_started)
             if submitted:
                 break
             continue

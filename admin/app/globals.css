@@ -301,6 +301,7 @@ input[type="range"] { accent-color: var(--accent); border: 0; box-shadow: none; 
 .provenance-preview audio { width: 100%; }
 .provenance-preview .preview-name { color: var(--muted); font-size: 8px; overflow-wrap: anywhere; }
 .provenance-preview .result-box { margin: 0; }
+.job-thumb { border: 1px solid var(--line); border-radius: 7px; display: block; height: 54px; object-fit: cover; width: 54px; }
 .provenance-raw { margin-top: 16px; }
 .provenance-raw summary { color: var(--muted); cursor: pointer; font-size: 9px; }
 table { border-collapse: collapse; width: 100%; }

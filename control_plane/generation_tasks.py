@@ -710,11 +710,19 @@ def _generate(self,job_id:str)->dict[str,Any]:
     order=store.channel_order(req["model"],req.get("channel"))
     store.update_job(job_id,status="running",stage="selecting_channel",started_at=datetime.now(timezone.utc).isoformat())
     failures=[]
+    attempts: list[dict[str,Any]]=[]
+    def _record_attempt(code:str,outcome:str,error:str|None=None,started_at:float|None=None)->None:
+        # 成功任务也要记：只留 fallback_count 看不出被跳过的是哪家、为什么失败。
+        attempts.append({"channel":code,"outcome":outcome,"error":(" ".join(str(error).split())[:240] or None) if error else None,
+                         "elapsed_ms":round((time.monotonic()-started_at)*1000) if started_at is not None else None,
+                         "at":datetime.now(timezone.utc).isoformat(timespec="seconds")})
+        store.update_job(job_id,attempts_json=json.dumps(attempts,ensure_ascii=False))
     for index,code in enumerate(order):
         try: binding=store.binding(req["model"],code)
         except Exception: continue
         if not binding["enabled"] or not binding["channel_enabled"] or binding["health_status"]!="online" or not _compatible(binding,req): continue
         submitted = False
+        attempt_started=time.monotonic()
         try:
             store.update_job(job_id,channel_id=binding["channel_id"],stage="submitting",fallback_count=index)
             timeout=httpx.Timeout(binding["timeout_seconds"],connect=20)
@@ -747,6 +755,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                         f"upstream returned no image: "
                         f"{_error_detail(body, 'no image in response')[:160]}"
                     )
+                _record_attempt(code,"success",None,attempt_started)
                 return _finish_success(store,job_id,req,"","completed",urls,started)
             if not tid:
                 message=_error_detail(body,"upstream response did not contain task id")
@@ -759,6 +768,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     f"{_error_detail(body, 'upstream generation failed')[:160]}"
                 )
             if inline_urls and inline_state in SUCCESS_STATES:
+                _record_attempt(code,"success",None,attempt_started)
                 return _finish_success(store,job_id,req,tid,inline_state,inline_urls,started)
             store.update_job(job_id,upstream_task_id=tid,stage="polling",upstream_response_json=json.dumps({"accepted":True,"status_code":response.status_code}))
             deadline=time.monotonic()+binding["timeout_seconds"]
@@ -790,6 +800,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                 state=_state(status, binding["adapter"]); urls=_result(status)
                 if state in SUCCESS_STATES:
                     if urls:
+                        _record_attempt(code,"success",None,attempt_started)
                         return _finish_success(store,job_id,req,tid,state,urls,started)
                     missing_result_polls += 1
                     if missing_result_polls >= 3:
@@ -806,14 +817,17 @@ def _generate(self,job_id:str)->dict[str,Any]:
         except (httpx.TimeoutException,httpx.NetworkError) as exc:
             # 提交成功之后的超时/断连不再换渠道：上游那一单可能还在跑，重投就是再买一份。
             failures.append(f"{code}:{type(exc).__name__}")
+            _record_attempt(code,"failed",type(exc).__name__,attempt_started)
             if submitted:break
             continue
         except UpstreamTerminalError as exc:
             # 上游明确判失败（任务不会再有结果了），换下一家试。
             failures.append(f"{code}:{str(exc)[:200]}")
+            _record_attempt(code,"failed",str(exc),attempt_started)
             continue
         except Exception as exc:
             failures.append(f"{code}:{str(exc)[:200]}")
+            _record_attempt(code,"failed",str(exc),attempt_started)
             if submitted:break
             continue
     elapsed=round(time.monotonic()-started,3); store.update_job(job_id,status="failed",stage="failed",error="; ".join(failures) or "no enabled compatible channel",finished_at=datetime.now(timezone.utc).isoformat(),elapsed_seconds=elapsed)

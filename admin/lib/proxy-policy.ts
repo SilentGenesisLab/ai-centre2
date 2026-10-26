@@ -18,6 +18,7 @@ const POLICIES: Record<BackendName, Array<{ methods: string[]; pattern: RegExp }
     { methods: ["GET", "POST"], pattern: /^\/v1\/audio-generations\/jobs(?:\/[0-9a-f-]+(?:\/cancel)?)?$/ },
     { methods: ["GET", "POST"], pattern: /^\/internal\/admin\/storage\/(?:status|upload)$/ },
     { methods: ["GET", "POST"], pattern: /^\/internal\/admin\/ai-capabilities\/(?:channels|models|jobs)(?:\/[0-9a-f-]+(?:\/test)?)?$/ },
+    { methods: ["GET"], pattern: /^\/internal\/admin\/ai-capabilities\/job-logs(?:\/stats|\/[0-9a-f-]+)?$/ },
     { methods: ["PATCH", "DELETE"], pattern: /^\/internal\/admin\/ai-capabilities\/channels\/[0-9a-f-]+$/ },
     { methods: ["GET"], pattern: /^\/v1\/video-generations\/minimax-h3\/workers\/status$/ },
     { methods: ["GET"], pattern: /^\/internal\/admin\/h3\/jobs(?:\/[0-9a-f-]+)?$/ },
