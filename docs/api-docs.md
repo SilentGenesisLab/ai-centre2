@@ -328,8 +328,8 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2`、`nanobanana-2.1`、`midjourney` | `gpt-image-2` |
-| `channel` | 否 | `grsai`、`teamorouter`、`wuyinkeji`、`huanwangai`、`auto` | `grsai` |
+| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2`、`nanobanana-2.1`、`midjourney`、`moss-image` | `gpt-image-2` |
+| `channel` | 否 | `grsai`、`teamorouter`、`wuyinkeji`、`huanwangai`、`moss-local`、`auto` | `grsai` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
 | `aspect_ratio` | 否 | `1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9` | `1:1` |
@@ -412,6 +412,27 @@ curl -sS -X POST \
 - **状态是英文词**：`SUCCESS` / `FAILURE` / `IN_PROGRESS`，中台的状态表直接认（`FAILURE` 因此补进了 `FAILURE_STATES`）。
 - **失败原因在 `failReason`**（camelCase），中台已把它接进错误详情。
 - **探针是强判据**：鉴权发生在查库之前，所以探一个不存在的任务号时，`401` = key 不认、`404` = 网关通且 key 有效、`200` = 通。这一条同时证明了「网关通」与「密钥有效」，与 `teamorouter` 同级。
+
+### 4.6 本地渠道（moss-local，MOSS-Image）
+
+`channel` 传 `moss-local`、`model` 传 `moss-image`，走**本机 GPU 上自部署**的
+MOSS-Image-SFT（OpenMOSS，Apache-2.0）。它不消耗第三方额度，也不出公网。
+
+| `model` | 上游型号 | 参考图 | 尺寸 |
+|---|---|---|---|
+| `moss-image` | `moss-image` | **不支持**（纯文生图） | 只支持 `1K`、`2K` |
+
+- **它是独立型号，只能点名调用**。`auto` 不会把它当成别家模型的兜底 —— 换个模型等于换一张
+  画风不同的图，静默换掉比失败更难查。
+- **强在文字与排版**：中文多行文字、数字（订单号/金额/日期）、以及 JSON layout 按 bbox 定位
+  排版都是它的长处；写实人物与场景也够用。弱在**被曲面/小尺寸挤压的小字**（例如表盘铭文）会糊。
+- **尺寸上限**：`image_size` 只接受 `1K`/`2K`。`4K` 是 16.6 Mpx，本机显存跑不动，请求会直接
+  `422`（没有兼容渠道），不会先收下再失败。同一个模型换别家跑 4K 是允许的。
+- **速度**：1K 约 **37 秒/张**，2K 约 **200 秒/张**（1024² 峰值显存约 11.6 GB）。
+  服务空闲 30 分钟会把模型挪回内存，下一次请求首图多花约 3 秒。
+- **可复现**：同一 prompt + 宽高在同一个版本上输出逐字节相同（内部固定 seed）。
+- **同步返回**：与 `teamorouter` 一样，提交时不产生任务号，中台在提交返回处就收下成品、
+  打 AI 标识、转存对象存储，再给 `result_urls`。
 
 ## 5. 生视频接口
 

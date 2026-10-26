@@ -47,7 +47,7 @@ OSS_PERSISTED_MODELS = {
     "seedance-2.0", "seedance-2.5", "minimax-h3-rh-enhanced",
     # 图片
     "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
-    "nano-banana-2", "nanobanana-2.1", "midjourney",
+    "nano-banana-2", "nanobanana-2.1", "midjourney", "moss-image",
 }
 # 产物由各自的 worker 自己上传内核（本地文件在那边，不必再下载一遍），
 # 所以不在这张表里 —— 但**标识已经在各自的 worker 内打好了**，不是漏了。
@@ -134,6 +134,13 @@ def _payload(
         # OpenAI 兼容的生图请求体。尺寸必须由我们**算准**：这个端点对 size 不做校验，
         # 传 999x999 它照样回 200（实测会静默出一张默认尺寸的图），所以映射错了不会报错，
         # 只会安静地给错尺寸。PIXEL_ASPECTS 就是 grsai 那三个模型在用的同一张表，直接复用。
+        size=PIXEL_ASPECTS.get(request.get("image_size","1K"),PIXEL_ASPECTS["1K"])
+        return {"model":binding["upstream_model"],"prompt":request["prompt"],"n":1,
+                "size":size.get(request.get("aspect_ratio","1:1"),size["1:1"])}
+    if binding["adapter"]=="local_openai_image":
+        # 本地 MOSS-Image：同样是 OpenAI 兼容的同步口，尺寸映射照抄上一段（同一张表）。
+        # 差别只在地址是本机 8300，以及它**会**校验 size（非 16 倍数回 400），所以映射错了
+        # 是响亮的失败，不是静默出小图。
         size=PIXEL_ASPECTS.get(request.get("image_size","1K"),PIXEL_ASPECTS["1K"])
         return {"model":binding["upstream_model"],"prompt":request["prompt"],"n":1,
                 "size":size.get(request.get("aspect_ratio","1:1"),size["1:1"])}
@@ -359,6 +366,12 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
             return False
     elif resolution == "768p":
         return False
+    # 尺寸档位同理：只在绑定显式声明 image_sizes 时才校验。MOSS-Image 是本机 GPU0 上的
+    # 模型，4K（16.6 Mpx）跑不动，声明了 ["1K","2K"] 就应该在这被挡掉 —— auto 换别家、
+    # 点名时由 _validate_image_generation_request 回 422，而不是让本地服务收下再 OOM。
+    sizes = c.get("image_sizes")
+    if sizes is not None and str(r.get("image_size") or "1K") not in sizes:
+        return False
     # jmapi 的 Seedance 2.0 VIP 契约不收 480p，但**不再把它排除出候选** ——
     # 改成由 `_effective_resolution` 把这个请求升到 720p 再发给它。原先直接排除的后果是
     # 480p 只剩 libtv 一家，libtv 账号一耗尽就整单失败、连兜底都没有（2026-10-07）。
@@ -376,6 +389,9 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
 def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
     if not channel.get("base_url"): return False,None,"Base URL未配置"
     path={"jmapi":"/jmapi/v1/keys","libtv":"/libtv/api/v1/video/balances","grsai":"/v1/draw/result","local_h3":"/health","mxapi":"/api/v2/music/task?id=0","runninghub":"/openapi/v2/query","teamorouter":"/v1/models","wuyinkeji":"/api/async/detail?id=image_00000000-0000-0000-0000-000000000000",
+                # 本地 MOSS-Image：/v1/models 是 OpenAI 兼容口里最便宜且真能证明「服务在、
+                # 模型在」的一个（比 /health 多证了模型页可读），不触发加载、不占显存。
+                "local_openai_image":"/v1/models",
                 # 幻网 AI：查一个**格式合法但不存在**的任务号。它先鉴权后查库，所以
                 # 好 key 回 404（查无此任务）、坏 key 与不带头回 401 —— 与 id 取什么值无关
                 # （实测 0 / 1 / 20 位都一个样）。免费：查询不建任务、不出图。
@@ -400,10 +416,12 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
             if isinstance(body,dict) and int(body.get("code") or 0)==1602: return False,body,"HEADER_API_KEY_NOT_FOUND"
             if response.status_code>=400: return False,None,f"HTTP {response.status_code}"
             return True,body,None
-        if channel["adapter"]=="teamorouter":
+        if channel["adapter"] in {"teamorouter","local_openai_image"}:
             # GET /v1/models 是免费且**真的鉴权**的入口：错 token 回 401、不带头也回 401
             # （2026-09-30 实测）。所以这条比 RunningHub/mxapi 的弱判据强 —— 它同时证明了
             # 「网关通」和「key 有效」，是三条第三方渠道里唯一能证实的一条。
+            # 本地 MOSS-Image 复用同一段判断：它是无鉴权的，401 只会来自我们自己设的
+            # MOSS_IMAGE_TOKEN，判成离线正是对的。
             if response.status_code in {401,403}: return False,None,"HTTP %d：API key 无效或未配置"%response.status_code
             if response.status_code>=400: return False,None,f"HTTP {response.status_code}"
             try: return True,response.json(),None
@@ -743,7 +761,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     f"upstream rejected request: "
                     f"{_error_detail(body, 'request rejected')[:160]}"
                 )
-            if binding["adapter"]=="teamorouter":
+            if binding["adapter"] in {"teamorouter","local_openai_image"}:
                 # 同步端点：响应体里就已经有成品，没有 task id，所以下面的轮询分支对它是死路——
                 # `if not tid` 会把它判成「上游没给任务号」而失败，而**钱已经花了**。
                 # 先落 submitted=True：转存失败属于「图已经生成、我们没接住」，这种情况不能

@@ -713,8 +713,8 @@ class ImageGenerationRequest(BaseModel):
     # 这两个字面量是**手写的清单**，与 ai_capabilities 里的种子是两处真值 —— 加型号/渠道时
     # 漏了这里，能力库里有、请求却 422（huanwangai 就这么漏过一次）。tests/test_ai_capabilities.py
     # 里有一条测试反过来钉住：种子里的每个生图型号与渠道都必须能构造出合法请求。
-    model: Literal["gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney"] = "gpt-image-2"
-    channel: Literal["grsai","teamorouter","wuyinkeji","huanwangai","auto"] = "grsai"
+    model: Literal["gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney","moss-image"] = "gpt-image-2"
+    channel: Literal["grsai","teamorouter","wuyinkeji","huanwangai","moss-local","auto"] = "grsai"
     prompt: str = Field(min_length=1,max_length=10000)
     reference_image_urls: list[str] = Field(default_factory=list,max_length=9)
     aspect_ratio: Literal["1:1","2:3","3:2","3:4","4:3","9:16","16:9"] = "1:1"

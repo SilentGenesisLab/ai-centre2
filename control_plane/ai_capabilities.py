@@ -80,6 +80,11 @@ class CapabilityStore:
         stamp = now()
         presets = [
             ("local", "本地部署", "local", "local_h3", "http://127.0.0.1:8320", 1, 10),
+            # MOSS-Image 落在本机 GPU0（moss-image.service，127.0.0.1:8300），走 OpenAI 兼容的
+            # 同步生图口。协议与 teamorouter 同形，但适配器单开一个值 —— 免得代码里
+            # `adapter=="teamorouter"` 指向 localhost 这种看不懂的东西，也给 _compatible
+            # 留一处按渠道压尺寸的地方。
+            ("moss-local", "MOSS-Image 本地部署", "local", "local_openai_image", "http://127.0.0.1:8300", 1, 10),
             ("jmapi", "jmapi", "third_party", "jmapi", "", 0, 20),
             ("libtv", "libtv", "third_party", "libtv", "", 0, 30),
             ("grsai", "GRSAI", "third_party", "grsai", "https://grsai.dakka.com.cn", 0, 40),
@@ -140,6 +145,10 @@ class CapabilityStore:
             # 免得 auto 在有参考图的请求上把这一家选进来、再被 `_compatible` 筛掉。
             # 调用方仍可在 prompt 里写 `--sref <公网URL>`（MJ 自己去取），那条路不经过我们。
             ("midjourney", "Midjourney", "image_generation", ["text"], "image"),
+            # MOSS-Image（OpenMOSS，Apache-2.0）本地部署：纯文生图，强在中文文字渲染
+            # 与 JSON layout 排版。只声明 text —— 它没有参考图/图生图，声明了反而会被
+            # auto 选进带参考图的请求、再被 _compatible 筛掉。
+            ("moss-image", "MOSS Image", "image_generation", ["text"], "image"),
             # 第一种 text_generation 能力：自由文本生成（此前平台只有结构化判定）。
             ("deepseek-v4-flash", "DeepSeek V4.1 Flash", "text_generation", ["text"], "text"),
             # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
@@ -197,6 +206,12 @@ class CapabilityStore:
           # upstream_model 是 botType，同一个渠道以后加 Niji 就是再挂一行绑定、不改代码。
           # images:0 —— 这一版不做垫图（见模型清单里的说明）。
           ("midjourney","huanwangai","MID_JOURNEY","/mj/submit/imagine","/mj/task/{task_id}/fetch",{"images":0,"videos":0,"audios":0},1,90),
+          # MOSS-Image：同步口（响应体里直接带 b64），没有 task id，所以 query_path 留空 ——
+          # 与 teamorouter 走同一条 _sync_image_results 收结果。
+          # image_sizes 是这条绑定的硬闸门：只开 1K/2K。4K 是 16.6 Mpx，本机 GPU0 跑不动
+          # （实测 2048²=4.19 Mpx 峰值 11.6 GB 已是上限），让它在这里被 _compatible 挡掉，
+          # auto 会去选别家、点名则 422，而不是让 MOSS 收下再 OOM 失败。
+          ("moss-image","moss-local","moss-image","/v1/images/generations","",{"images":0,"videos":0,"audios":0,"image_sizes":["1K","2K"]},1,10),
           # 火山方舟（DeepSeek flash）：OpenAI 兼容的 /chat/completions，同步返回。
           # 型号用 260910 而不是最新的 261017 —— 后者账号没开通（ModelNotOpen），
           # 实测能调通的是 260910。
