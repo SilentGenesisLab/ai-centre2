@@ -372,6 +372,11 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     sizes = c.get("image_sizes")
     if sizes is not None and str(r.get("image_size") or "1K") not in sizes:
         return False
+    # 语音输出同理：只有声明了 audio_output 的绑定才接。Qwen3.8-Omni-Flash 上游直接拒
+    # （400 does not support the modalities parameter containing audio），
+    # 在这里挡掉能让调用方拿到 422 而不是一次计费的失败。
+    if r.get("output_audio") and not c.get("audio_output"):
+        return False
     # jmapi 的 Seedance 2.0 VIP 契约不收 480p，但**不再把它排除出候选** ——
     # 改成由 `_effective_resolution` 把这个请求升到 720p 再发给它。原先直接排除的后果是
     # 480p 只剩 libtv 一家，libtv 账号一耗尽就整单失败、连兜底都没有（2026-10-07）。
@@ -398,7 +403,9 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
                 "huanwangai":"/mj/task/0/fetch",
                 # 火山方舟：/models 免费、且**必须带 key**（不带回 401）。返回里还带着
                 # 该账号每个型号的开通状态，比只看 200 更有用。
-                "ark":"/models"}.get(channel["adapter"],"/health")
+                "ark":"/models",
+                # 阿里云百炼的 compatible-mode 同样有 /models，判据与 ark 一致。
+                "dashscope":"/models"}.get(channel["adapter"],"/health")
     try:
         with httpx.Client(timeout=min(channel["timeout_seconds"],20),follow_redirects=False) as client:
             if channel["adapter"]=="grsai": response=client.post(urljoin(channel["base_url"].rstrip("/")+"/",path.lstrip("/")),headers=_headers(channel),json={"id":"connection-test"})
@@ -434,8 +441,10 @@ def probe_channel(channel:dict[str,Any])->tuple[bool,Any,str|None]:
             if response.status_code in {401,403,500,502,503,504}: return False,None,f"HTTP {response.status_code}"
             try: return True,response.json(),None
             except ValueError: return True,{"status_code":response.status_code},None
-        if channel["adapter"]=="ark":
+        if channel["adapter"] in {"ark","dashscope"}:
             # 强判据：/models 要 Bearer，401 就是 key 不认；200 同时证明网关通与密钥有效。
+            # 百炼的 compatible-mode 也提供 /models（2026-10-28 实测返回 182 个型号），
+            # 同一条判断直接复用。
             if response.status_code in {401,403}: return False,None,f"HTTP {response.status_code}：API key 无效或未配置"
             if response.status_code>=400: return False,None,f"HTTP {response.status_code}"
             try: body=response.json()

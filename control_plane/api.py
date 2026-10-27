@@ -754,16 +754,20 @@ class AudioGenerationRequest(BaseModel):
 
 
 class TextGenerationRequest(BaseModel):
-    """自由文本生成（火山方舟 / DeepSeek flash）。
+    """自由文本生成（火山方舟 / 阿里云百炼）。
 
     平台此前只有 `decision_generation`（结构化判定），这是第一种真正的文本生成。
     返回的 `text` **已经打好标识**：隐式部分是不可见字符（肉眼看不见、可被核验接口读回），
     显式部分由 `explicit_label` 控制（默认关，按平台约定）。
+
+    `output_audio=true` 时额外产出语音：要求模型绑定声明了 `audio_output`（目前只有
+    `qwen3.5-omni-plus`）。语音**只能走流式**拿到 —— 上游在非流式请求里照样按音频计费，
+    但响应体里没有 audio 字段（见 text_generation_tasks 的说明）。
     """
 
     model_config = ConfigDict(extra="forbid")
-    model: Literal["deepseek-v4-flash"] = "deepseek-v4-flash"
-    channel: Literal["ark", "auto"] = "auto"
+    model: Literal["deepseek-v4-flash","qwen3.5-omni-plus","qwen3.8-omni-flash"] = "deepseek-v4-flash"
+    channel: Literal["ark","dashscope","auto"] = "auto"
     prompt: str = Field(min_length=1, max_length=20000)
     system: str | None = Field(default=None, max_length=8000)
     # 允许 0（确定性输出），所以默认值给 0.7 但同时接受 None（不传给上游）。
@@ -771,6 +775,10 @@ class TextGenerationRequest(BaseModel):
     max_tokens: int = Field(default=1024, ge=1, le=8192)
     # AI 生成显式标识：转 true 才在正文末尾追加可见尾注（默认关）。
     explicit_label: bool = Field(default=False, description="是否在正文末尾追加可见的「AI生成」尾注。")
+    # 只有声明了 audio_output 的模型绑定才接这个开关；别的型号传 true 会被 422 挡掉，
+    # 而不是让上游回一个 400。
+    output_audio: bool = Field(default=False, description="同时生成语音（仅 Omni 系列支持）。")
+    voice: str = Field(default="Tina", max_length=64, description="语音音色，透传给上游。")
     external_ref: str | None = Field(default=None, max_length=256)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -796,7 +804,7 @@ class ChannelCreateRequest(BaseModel):
     name: str = Field(min_length=1,max_length=100)
     code: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,63}$")
     deployment_type: Literal["local","third_party"]
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter","wuyinkeji"]
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter","wuyinkeji","dashscope"]
     base_url: str = Field(default="",max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key","authorization"] = "none"
@@ -808,7 +816,7 @@ class ChannelUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None,min_length=1,max_length=100)
     deployment_type: Literal["local","third_party"] | None = None
-    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter","wuyinkeji"] | None = None
+    adapter: Literal["jmapi","libtv","grsai","local_h3","mxapi","runninghub","teamorouter","wuyinkeji","dashscope"] | None = None
     base_url: str | None = Field(default=None,max_length=2048)
     credential: str | None = Field(default=None,max_length=8192)
     auth_type: Literal["none","bearer","x-api-key","authorization"] | None = None

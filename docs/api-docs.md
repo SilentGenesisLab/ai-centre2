@@ -243,7 +243,7 @@ curl -sS -X POST "$BASE_URL/v1/ocr/batch" \
 
 `bbox` 为 `[x1, y1, x2, y2]` 像素坐标；`regions=[]` 表示识别整张图片。
 
-### 3.3 文本生成（火山方舟 DeepSeek flash）
+### 3.3 文本生成（火山方舟 / 阿里云百炼）
 
 ```bash
 curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Bearer $API_KEY"   -H 'Content-Type: application/json'   --data-raw '{
@@ -258,13 +258,23 @@ curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Beare
 
 | 字段 | 必填 | 说明 |
 |---|---:|---|
-| `model` | 否 | 目前只有 `deepseek-v4-flash` |
-| `channel` | 否 | `ark` 或 `auto` |
+| `model` | 否 | `deepseek-v4-flash`（默认）、`qwen3.8-omni-flash`、`qwen3.5-omni-plus` |
+| `channel` | 否 | `auto`（默认）、`ark`、`dashscope` |
 | `prompt` | 是 | 用户消息，1～20000 字 |
 | `system` | 否 | 系统提示 |
 | `temperature` | 否 | 0～2；传 `0` 是确定性输出（会原样传给上游，不会被当成"未设置"） |
 | `max_tokens` | 否 | 1～8192，默认 1024 |
 | `explicit_label` | 否 | 是否在正文末尾追加可见的「AI生成」尾注，默认 `false` |
+| `output_audio` | 否 | 同时生成语音，默认 `false`。**只有 `qwen3.5-omni-plus` 支持**，别的型号传 `true` 会 422 |
+| `voice` | 否 | 音色，默认 `Tina`，原样透传给上游 |
+
+型号与渠道：
+
+| `model` | 可用渠道 | 语音输出 |
+|---|---|:--:|
+| `deepseek-v4-flash` | `ark`（优先）、`dashscope` | — |
+| `qwen3.8-omni-flash` | `dashscope` | **不支持** |
+| `qwen3.5-omni-plus` | `dashscope` | 支持 |
 
 结果在 `GET /v1/text-generations/jobs/{job_id}` 的 `upstream_response` 里：
 
@@ -273,7 +283,8 @@ curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Beare
 | `text` | **打过标识的最终文本**（可见正文 + 可选尾注 + 不可见载荷），可直接交付 |
 | `plain` | 可见正文（不含不可见标识），方便展示或做后续处理 |
 | `aigc` | `{implicit, explicit, missing_fields}`，说明这次标了什么 |
-| `usage` | 上游的 token 用量 |
+| `usage` | 上游的 token 用量（要了语音时，`completion_tokens_details.audio_tokens` 是语音那部分） |
+| `audio` | **只在要了语音时出现**：`{url, duration_seconds, voice, format, source_format}`；MP3 的 https 链接同时也在 `result_urls` 里 |
 
 **隐式标识恒开**，与 `explicit_label` 无关：它用 Unicode 标签字符（U+E0000–U+E007F）
 把 AIGC 载荷编码在正文末尾，肉眼不可见、能扛复制粘贴。用
@@ -281,6 +292,40 @@ curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Beare
 
 > 边界：这种标识扛不住**主动清洗**（富文本编辑器、部分网关会剥掉标签字符）。
 > 剥掉之后标识就没了 —— 这是文本标识的固有代价，不是实现问题。
+
+#### 语音输出（Qwen Omni）的三个坑
+
+1. **只有 `qwen3.5-omni-plus` 能出声。** `qwen3.8-omni-flash` 带上 `modalities:["text","audio"]`
+   会被上游拒：`The current model does not support the modalities parameter containing audio`。
+   平台在提交前就用 `422` 挡掉，不会先计费再报错。
+2. **上游只认流式。** 非流式请求即使写了 `modalities:["text","audio"]`，响应体里的
+   `audio` 也是 `null`，而 `usage` 里照样记 `audio_tokens` —— 也就是**按语音计费但拿不到语音**。
+   平台这一支固定发 `stream:true`，调用方不用管。
+3. **`max_tokens` 管不住语音长度。** 实测传 `max_tokens=64` 仍会生成 75 字正文 + 14.7 秒音频
+   （`finish_reason=stop`）。要限制篇幅只能在 `prompt` / `system` 里写死。
+
+产物形态：上游给的是**裸 PCM**（16 位、单声道、24kHz，没有 RIFF 头，即使请求里写的是
+`format:"wav"`）。平台自己包 WAV 头再转 **MP3** 交付 —— 转 MP3 不只是为了小，也是因为
+`provenance` 至今认不出 WAV，只有 MP3 打得进 AIGC 隐式标识。语音只做隐式标识
+（音频上没有公认的可见加水印做法）。
+
+```bash
+# 要语音：加 output_audio
+curl -sS -X POST "$BASE_URL/v1/text-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "qwen3.5-omni-plus",
+    "channel": "dashscope",
+    "prompt": "用两句话介绍杭州西湖",
+    "output_audio": true,
+    "voice": "Tina"
+  }'
+
+# 轮询到 succeeded 后，upstream_response.audio.url 就是 MP3 的公网链接
+curl -sS "$BASE_URL/v1/text-generations/jobs/<job_id>" -H "Authorization: Bearer $API_KEY"
+```
+
 
 ## 4. 生图接口
 

@@ -1,21 +1,36 @@
-"""文本生成（火山方舟 / DeepSeek flash）。
+"""文本生成（火山方舟 / 阿里云百炼 DeepSeek、Qwen Omni）。
 
 平台原有的四类能力里没有自由文本生成：`decision_generation` 回的是结构化判定，
-不是可发布的内容。这里是第一种 `text_generation`，走 Ark 的 OpenAI 兼容
+不是可发布的内容。这里是第一种 `text_generation`，走 OpenAI 兼容的
 `/chat/completions`（同步返回，没有 task id、没有媒体成品）。
+
+## 语音输出（Qwen Omni）
+
+`output_audio=true` 时额外要语音。**只能走流式**：2026-10-28 实测，非流式请求即使带上
+`modalities:["text","audio"]`，响应体的 `message.audio` 也是 null，而 usage 里照样记
+`audio_tokens` —— 也就是「按音频计费但拿不到音频」。所以这一支固定发 `stream:true`，
+在 SSE 里同时收 `delta.content` 与 `delta.audio.data`。
+
+上游给的是**裸 PCM**（int16 LE / 单声道 / 24kHz），不是 RIFF 容器 —— 即使请求里写的是
+`format:"wav"`。所以这里自己包 WAV 头，再转 MP3 交付（MP3 才打得进 AIGC 隐式标识，
+`provenance.detect_kind` 至今认不出 WAV）。
 
 ## 标识
 
 文本没有容器，所以隐式标识写在**字符本身**（Unicode 标签字符，肉眼不可见），
 显式标识是一条可见的尾注。两者都由请求的 `explicit_label` / 默认策略决定，
-具体实现见 `provenance.embed_text_provenance`。
+具体实现见 `provenance.embed_text_provenance`。语音按平台约定**只做隐式**。
 """
 
 from __future__ import annotations
 
+import base64
 import json
+import shutil
 import time
+import wave
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
@@ -31,7 +46,12 @@ from .generation_tasks import (
     _response_body,
     _store,
 )
-from .provenance import build_aigc_payload, embed_text_provenance
+from .provenance import apply_provenance, build_aigc_payload, embed_text_provenance
+
+# Omni 语音输出的采样参数。上游文档与实测一致：16 位、单声道、24kHz，且没有容器头。
+OMNI_PCM_RATE = 24000
+OMNI_PCM_WIDTH = 2
+OMNI_PCM_CHANNELS = 1
 
 
 def _payload(binding: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
@@ -48,6 +68,12 @@ def _payload(binding: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]
     # temperature 允许为 0（确定性），所以判 None 而不是判真假。
     if request.get("temperature") is not None:
         payload["temperature"] = float(request["temperature"])
+    if request.get("output_audio"):
+        payload["modalities"] = ["text", "audio"]
+        payload["audio"] = {"voice": request.get("voice") or "Tina", "format": "wav"}
+        # 必须流式，理由见模块 docstring：非流式拿不到音频却照样计费。
+        payload["stream"] = True
+        payload["stream_options"] = {"include_usage": True}
     return payload
 
 
@@ -68,6 +94,202 @@ def _text(body: dict[str, Any]) -> str | None:
         return None
     content = message.get("content")
     return content if isinstance(content, str) and content.strip() else None
+
+
+def _decode_audio_parts(parts: list[str]) -> bytes:
+    """把 `delta.audio.data` 的分片还原成 PCM 字节。
+
+    实测（2026-10-28）上游给的是**同一串 base64 的等长切片**：一次 26 块，每块长度都是
+    4 的倍数、都不含 `=`。这种切片直接拼字符串再解一次也对，但那样会把「切片正好落在
+    4 字符组中间」变成解码错误。所以这里累计到 4 的倍数就解一次，两种框法（连续流的切片
+    / 各自独立编码的分片）都还原得对；只认一种的话，上游哪天换了切法就会解出偏移的音频。
+    """
+    buffer = ""
+    decoded: list[bytes] = []
+    for part in parts:
+        buffer += part
+        if "=" in buffer:
+            # 带填充 = 这一块是独立编码的，立刻收口。
+            decoded.append(base64.b64decode(buffer))
+            buffer = ""
+            continue
+        cut = len(buffer) - len(buffer) % 4
+        if cut:
+            decoded.append(base64.b64decode(buffer[:cut]))
+            buffer = buffer[cut:]
+    if buffer:
+        decoded.append(base64.b64decode(buffer + "=" * (-len(buffer) % 4)))
+    return b"".join(decoded)
+
+
+def _consume_sse(lines: Any, model: str) -> dict[str, Any]:
+    """把 SSE 行流(OpenAI chat delta)收成一份 chat-completion 形状的结果。
+
+    拆成纯函数是为了能测：传输层（httpx 的 stream）不进这里，喂一串字符串就能验。
+    """
+    text_parts: list[str] = []
+    audio_parts: list[str] = []
+    usage: dict[str, Any] | None = None
+    finish_reason: str | None = None
+    resolved = model
+
+    for line in lines:
+        if not line or not line.startswith("data:"):
+            continue
+        raw = line[5:].strip()
+        if not raw or raw == "[DONE]":
+            continue
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if event.get("error"):
+            raise RuntimeError(
+                f"upstream rejected request: {_error_detail(event, 'request rejected')[:160]}"
+            )
+        if event.get("usage"):
+            usage = event["usage"]
+        if event.get("model"):
+            resolved = str(event["model"])
+        choices = event.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            continue
+        choice = choices[0]
+        if choice.get("finish_reason"):
+            finish_reason = str(choice["finish_reason"])
+        delta = choice.get("delta") or {}
+        if isinstance(delta.get("content"), str):
+            text_parts.append(delta["content"])
+        audio = delta.get("audio")
+        if isinstance(audio, dict) and audio.get("data"):
+            audio_parts.append(str(audio["data"]))
+
+    text = "".join(text_parts)
+    if not text.strip():
+        raise RuntimeError(
+            f"upstream returned no text (finish_reason={finish_reason or 'unknown'})"
+        )
+    if not audio_parts:
+        # 真发生了说明上游改了契约。这时**必须报错**：静默返回纯文本会让调用方
+        # 以为「语音生成成功了但没给」，而那一单已经按 audio_tokens 计过费。
+        raise RuntimeError(
+            "upstream returned text but no audio chunks; audio output is not available "
+            f"for this model (finish_reason={finish_reason or 'unknown'})"
+        )
+
+    pcm = _decode_audio_parts(audio_parts)
+    return {
+        "model": resolved,
+        "usage": usage,
+        "choices": [{"message": {"role": "assistant", "content": text}}],
+        "_audio": {
+            "pcm": pcm,
+            "duration_seconds": round(
+                len(pcm) / (OMNI_PCM_WIDTH * OMNI_PCM_CHANNELS * OMNI_PCM_RATE), 2
+            ),
+        },
+    }
+
+
+def _stream_with_audio(
+    binding: dict[str, Any], request: dict[str, Any]
+) -> dict[str, Any]:
+    """发一个流式请求，把文本与语音都收齐。
+
+    返回值形如 chat completion，多出来的 `_audio` 键放着裸 PCM 与时长；
+    做成这个形状是为了让下游的取模、标识、写库逻辑原样复用。
+    """
+    with httpx.Client(
+        timeout=httpx.Timeout(binding["timeout_seconds"], connect=20),
+        follow_redirects=False,
+    ) as client:
+        with client.stream(
+            "POST",
+            urljoin(binding["base_url"].rstrip("/") + "/", binding["submit_path"].lstrip("/")),
+            headers=_headers(binding),
+            json=_payload(binding, request),
+        ) as response:
+            if response.status_code >= 400:
+                # 流式响应出错时 body 还没读，要先读完才能拿到错误详情。
+                response.read()
+                try:
+                    error_body = _response_body(response)
+                except ValueError:
+                    error_body = {}
+                raise RuntimeError(
+                    f"upstream HTTP {response.status_code}: "
+                    f"{_error_detail(error_body, 'request rejected')[:160]}"
+                )
+            return _consume_sse(response.iter_lines(), str(binding["upstream_model"]))
+
+
+def _write_wav(pcm: bytes, path: Path) -> None:
+    """把裸 PCM 包成 WAV；万一上游哪天真的给了 RIFF，就原样落盘。"""
+    if pcm[:4] == b"RIFF":
+        path.write_bytes(pcm)
+        return
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(OMNI_PCM_CHANNELS)
+        handle.setsampwidth(OMNI_PCM_WIDTH)
+        handle.setframerate(OMNI_PCM_RATE)
+        handle.writeframes(pcm)
+
+
+def _persist_audio(
+    pcm: bytes, request: dict[str, Any], job_id: str, settings: Any
+) -> str:
+    """PCM → WAV → MP3 → 打标识 → 传对象存储，返回 https 链接。
+
+    与 `audio_generation_tasks._persist_audio_results` 是同一条路（那边的输入是上游给的
+    URL、这里是我们自己拼的字节，所以没法直接复用），转码与上传的形状保持一致。
+    """
+    # 本地导入：audio_generation_tasks 会拉起它自己的依赖，这条链路用不到就别在模块导入时付。
+    from .audio_generation_tasks import _to_mp3
+
+    if not settings.kernel_upload_url or not settings.kernel_api_token:
+        raise RuntimeError("audio output requires kernel_upload_url to be configured")
+    directory = settings.audio_generation_work_dir / job_id
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        wav_path = directory / "result-1.wav"
+        _write_wav(pcm, wav_path)
+        upload_path = _to_mp3(wav_path)
+        # 语音只做隐式标识（音频上没有公认的可见标识做法）。
+        apply_provenance(
+            upload_path,
+            job_id=job_id,
+            external_ref=request.get("external_ref"),
+            explicit_label=False,
+            settings=settings,
+            work_dir=directory,
+        )
+        data = {
+            "external_ref": request.get("external_ref") or job_id,
+            "run_id": "",
+            "campaign_id": "",
+            "project_id": "",
+            "stage": "media.text_generation.audio",
+            "actor": "text-generation-worker",
+        }
+        with upload_path.open("rb") as stream:
+            response = httpx.post(
+                settings.kernel_upload_url,
+                headers={"Authorization": f"Bearer {settings.kernel_api_token}"},
+                data=data,
+                files={"file": (upload_path.name, stream, "audio/mpeg")},
+                timeout=httpx.Timeout(
+                    settings.tts_upload_timeout_seconds, connect=30
+                ),
+            )
+        response.raise_for_status()
+        url = str(response.json().get("uri") or "")
+        if not url.startswith("https://"):
+            raise RuntimeError("kernel upload did not return an HTTPS URL")
+        return url
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 def _mark(text: str, request: dict[str, Any], job_id: str, settings: Any) -> tuple[str, dict[str, Any]]:
@@ -128,32 +350,38 @@ def _generate_text(job_id: str) -> dict[str, Any]:
             store.update_job(
                 job_id, channel_id=binding["channel_id"], stage="submitting", fallback_count=index
             )
-            with httpx.Client(
-                timeout=httpx.Timeout(binding["timeout_seconds"], connect=20),
-                follow_redirects=False,
-            ) as client:
-                response = client.post(
-                    urljoin(
-                        binding["base_url"].rstrip("/") + "/", binding["submit_path"].lstrip("/")
-                    ),
-                    headers=_headers(binding),
-                    json=_payload(binding, request),
-                )
-            if response.status_code >= 400:
-                try:
-                    error_body = _response_body(response)
-                except ValueError:
-                    error_body = {}
-                raise RuntimeError(
-                    f"upstream HTTP {response.status_code}: "
-                    f"{_error_detail(error_body, 'request rejected')[:160]}"
-                )
-            body = _response_body(response)
-            if body.get("error"):
-                raise RuntimeError(
-                    f"upstream rejected request: "
-                    f"{_error_detail(body, 'request rejected')[:160]}"
-                )
+            if request.get("output_audio"):
+                # 语音只能走流式（见模块 docstring）：非流式上游照样按 audio_tokens 计费，
+                # 却不返回 audio 字段。这一支自己发请求、自己收 SSE。
+                body = _stream_with_audio(binding, request)
+            else:
+                with httpx.Client(
+                    timeout=httpx.Timeout(binding["timeout_seconds"], connect=20),
+                    follow_redirects=False,
+                ) as client:
+                    response = client.post(
+                        urljoin(
+                            binding["base_url"].rstrip("/") + "/",
+                            binding["submit_path"].lstrip("/"),
+                        ),
+                        headers=_headers(binding),
+                        json=_payload(binding, request),
+                    )
+                if response.status_code >= 400:
+                    try:
+                        error_body = _response_body(response)
+                    except ValueError:
+                        error_body = {}
+                    raise RuntimeError(
+                        f"upstream HTTP {response.status_code}: "
+                        f"{_error_detail(error_body, 'request rejected')[:160]}"
+                    )
+                body = _response_body(response)
+                if body.get("error"):
+                    raise RuntimeError(
+                        f"upstream rejected request: "
+                        f"{_error_detail(body, 'request rejected')[:160]}"
+                    )
             text = _text(body)
             if text is None:
                 raise RuntimeError(
@@ -164,23 +392,34 @@ def _generate_text(job_id: str) -> dict[str, Any]:
             # 而且同一 prompt 两次生成未必一样，手上这份比换一家更值钱。
             answered = True
             settings = _settings()
+            audio = body.get("_audio") if isinstance(body.get("_audio"), dict) else None
+            audio_info: dict[str, Any] | None = None
+            if audio is not None:
+                store.update_job(job_id, stage="uploading_audio")
+                audio_info = {
+                    "url": _persist_audio(audio["pcm"], request, job_id, settings),
+                    "duration_seconds": audio.get("duration_seconds"),
+                    "voice": request.get("voice") or "Tina",
+                    "format": "mp3",
+                    "source_format": "pcm_s16le_24000_mono",
+                }
             marked, report = _mark(text, request, job_id, settings)
+            response_payload: dict[str, Any] = {
+                "model": str(body.get("model") or binding["upstream_model"]),
+                # text 是**打过标的最终文本**；plain 是可见原文（摘掉不可见部分），
+                # 方便调用方直接展示或做后续处理而不用自己解。
+                "text": marked,
+                "plain": text,
+                "aigc": report,
+                "usage": body.get("usage"),
+            }
+            if audio_info is not None:
+                response_payload["audio"] = audio_info
             store.update_job(
                 job_id,
                 upstream_task_id="",
-                upstream_response_json=json.dumps(
-                    {
-                        "model": str(body.get("model") or binding["upstream_model"]),
-                        # text 是**打过标的最终文本**；plain 是可见原文（摘掉不可见部分），
-                        # 方便调用方直接展示或做后续处理而不用自己解。
-                        "text": marked,
-                        "plain": text,
-                        "aigc": report,
-                        "usage": body.get("usage"),
-                    },
-                    ensure_ascii=False,
-                ),
-                result_urls_json=json.dumps([]),
+                upstream_response_json=json.dumps(response_payload, ensure_ascii=False),
+                result_urls_json=json.dumps([audio_info["url"]] if audio_info else []),
                 error=None,
             )
             if _cancel_requested(store, job_id):

@@ -1290,7 +1290,7 @@ function ChannelManagement({setError,showNotice}:{setError:(v:string)=>void;show
   useEffect(()=>{void load()},[load]);
   async function save(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);const fd=new FormData(event.currentTarget);const credential=String(fd.get("credential")||"");const body={name:String(fd.get("name")),...(editing?{}:{code:String(fd.get("code"))}),deployment_type:String(fd.get("deployment_type")),adapter:String(fd.get("adapter")),base_url:String(fd.get("base_url")),...(credential?{credential}:{}),auth_type:String(fd.get("auth_type")),priority:Number(fd.get("priority")),timeout_seconds:Number(fd.get("timeout_seconds"))};try{await apiRequest("control",editing?`/internal/admin/ai-capabilities/channels/${editing.id}`:"/internal/admin/ai-capabilities/channels",{method:editing?"PATCH":"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});showNotice("渠道配置已保存");setEditing(null);setCreating(false);await load()}catch(e){setError(uiError(e))}finally{setBusy(false)}}
   async function action(item:AiChannel,action:"test"|"toggle"|"delete"){setBusy(true);try{if(action==="test")await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}/test`,{method:"POST"});else if(action==="toggle")await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled:!item.enabled})});else await apiRequest("control",`/internal/admin/ai-capabilities/channels/${item.id}`,{method:"DELETE"});showNotice(action==="test"?"连接检测完成":"渠道状态已更新");await load()}catch(e){setError(uiError(e))}finally{setBusy(false)}}
-  return <><div className="page-title-row"><div><span className="eyebrow">AI CAPABILITIES</span><h2>渠道管理</h2><p>统一管理本地部署和第三方接口。密钥加密保存且仅显示尾部。</p></div><button className="primary-button" onClick={()=>setCreating(true)}>新增渠道</button></div><Panel title="模型与生成渠道" eyebrow={`${items.length} CHANNELS`}><div className="table-shell"><table><thead><tr><th>渠道</th><th>类型</th><th>连接配置</th><th>状态</th><th>优先级</th><th>操作</th></tr></thead><tbody>{items.map(item=><tr key={item.id}><td><strong>{item.name}</strong><small>{item.code}</small></td><td>{item.deployment_type==="local"?"本地部署":"第三方接口"}</td><td><span>{item.base_url||"未配置地址"}</span><small>{item.credential_configured?`密钥 ····${item.credential_tail||""}`:"未配置密钥"}</small></td><td><StatusBadge status={item.enabled?item.health_status:"disabled"}/>{item.last_error&&<small>{item.last_error}</small>}</td><td>{item.priority}</td><td><div className="button-row"><button disabled={busy} onClick={()=>void action(item,"test")}>测试连接</button><button onClick={()=>setEditing(item)}>编辑</button><button disabled={busy} onClick={()=>void action(item,"toggle")}>{item.enabled?"停用":"启用"}</button>{!["local","moss-local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji","huanwangai"].includes(item.code)&&<button className="danger-button" onClick={()=>void action(item,"delete")}>删除</button>}</div></td></tr>)}</tbody></table></div></Panel>{(creating||editing)&&<Modal title={editing?`编辑 ${editing.name}`:"新增渠道"} onClose={()=>{setCreating(false);setEditing(null)}}><form className="form-grid" onSubmit={save}><label>名称<input name="name" required defaultValue={editing?.name}/></label>{!editing&&<label>唯一编码<input name="code" required pattern="[a-z][a-z0-9_-]+"/></label>}<label>部署类型<Select name="deployment_type" defaultValue={editing?.deployment_type||"third_party"}><option value="third_party">第三方接口</option><option value="local">本地部署</option></Select></label><label>协议适配器<Select name="adapter" defaultValue={editing?.adapter||"jmapi"}><option value="jmapi">jmapi</option><option value="libtv">libtv</option><option value="grsai">GRSAI</option><option value="mxapi">mxapi（Suno 音乐）</option><option value="local_h3">本地 MiniMax H3</option><option value="local_openai_image">本地 OpenAI 兼容生图</option><option value="runninghub">RunningHub</option><option value="teamorouter">TeamORouter</option><option value="wuyinkeji">速创 wuyinkeji</option><option value="huanwangai">幻网AI huanwangai（Midjourney）</option></Select></label><label className="full-span">Base URL<input name="base_url" type="url" defaultValue={editing?.base_url}/></label><label>鉴权方式<Select name="auth_type" defaultValue="none"><option value="none">无</option><option value="bearer">Bearer</option><option value="x-api-key">X-API-Key</option><option value="authorization">Authorization（裸值，不带 Bearer）</option></Select></label><label>密钥<input name="credential" type="password" placeholder={editing?.credential_configured?"留空则保持原密钥":"可选"}/></label><label>优先级<input name="priority" type="number" min="1" max="1000" defaultValue={editing?.priority||100}/></label><label>超时（秒）<input name="timeout_seconds" type="number" min="5" max="14400" defaultValue={editing?.timeout_seconds||1800}/></label><div className="button-row full-span"><button type="button" onClick={()=>{setCreating(false);setEditing(null)}}>取消</button><button className="primary-button" disabled={busy}>{busy?"保存中…":"保存"}</button></div></form></Modal>}</>
+  return <><div className="page-title-row"><div><span className="eyebrow">AI CAPABILITIES</span><h2>渠道管理</h2><p>统一管理本地部署和第三方接口。密钥加密保存且仅显示尾部。</p></div><button className="primary-button" onClick={()=>setCreating(true)}>新增渠道</button></div><Panel title="模型与生成渠道" eyebrow={`${items.length} CHANNELS`}><div className="table-shell"><table><thead><tr><th>渠道</th><th>类型</th><th>连接配置</th><th>状态</th><th>优先级</th><th>操作</th></tr></thead><tbody>{items.map(item=><tr key={item.id}><td><strong>{item.name}</strong><small>{item.code}</small></td><td>{item.deployment_type==="local"?"本地部署":"第三方接口"}</td><td><span>{item.base_url||"未配置地址"}</span><small>{item.credential_configured?`密钥 ····${item.credential_tail||""}`:"未配置密钥"}</small></td><td><StatusBadge status={item.enabled?item.health_status:"disabled"}/>{item.last_error&&<small>{item.last_error}</small>}</td><td>{item.priority}</td><td><div className="button-row"><button disabled={busy} onClick={()=>void action(item,"test")}>测试连接</button><button onClick={()=>setEditing(item)}>编辑</button><button disabled={busy} onClick={()=>void action(item,"toggle")}>{item.enabled?"停用":"启用"}</button>{!["local","moss-local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji","huanwangai","ark","dashscope"].includes(item.code)&&<button className="danger-button" onClick={()=>void action(item,"delete")}>删除</button>}</div></td></tr>)}</tbody></table></div></Panel>{(creating||editing)&&<Modal title={editing?`编辑 ${editing.name}`:"新增渠道"} onClose={()=>{setCreating(false);setEditing(null)}}><form className="form-grid" onSubmit={save}><label>名称<input name="name" required defaultValue={editing?.name}/></label>{!editing&&<label>唯一编码<input name="code" required pattern="[a-z][a-z0-9_-]+"/></label>}<label>部署类型<Select name="deployment_type" defaultValue={editing?.deployment_type||"third_party"}><option value="third_party">第三方接口</option><option value="local">本地部署</option></Select></label><label>协议适配器<Select name="adapter" defaultValue={editing?.adapter||"jmapi"}><option value="jmapi">jmapi</option><option value="libtv">libtv</option><option value="grsai">GRSAI</option><option value="mxapi">mxapi（Suno 音乐）</option><option value="local_h3">本地 MiniMax H3</option><option value="local_openai_image">本地 OpenAI 兼容生图</option><option value="dashscope">阿里云百炼 DashScope</option><option value="runninghub">RunningHub</option><option value="teamorouter">TeamORouter</option><option value="wuyinkeji">速创 wuyinkeji</option><option value="huanwangai">幻网AI huanwangai（Midjourney）</option></Select></label><label className="full-span">Base URL<input name="base_url" type="url" defaultValue={editing?.base_url}/></label><label>鉴权方式<Select name="auth_type" defaultValue="none"><option value="none">无</option><option value="bearer">Bearer</option><option value="x-api-key">X-API-Key</option><option value="authorization">Authorization（裸值，不带 Bearer）</option></Select></label><label>密钥<input name="credential" type="password" placeholder={editing?.credential_configured?"留空则保持原密钥":"可选"}/></label><label>优先级<input name="priority" type="number" min="1" max="1000" defaultValue={editing?.priority||100}/></label><label>超时（秒）<input name="timeout_seconds" type="number" min="5" max="14400" defaultValue={editing?.timeout_seconds||1800}/></label><div className="button-row full-span"><button type="button" onClick={()=>{setCreating(false);setEditing(null)}}>取消</button><button className="primary-button" disabled={busy}>{busy?"保存中…":"保存"}</button></div></form></Modal>}</>
 }
 
 type AiJobLogAttempt = { channel: string; outcome: string; error?: string | null; elapsed_ms?: number | null; at?: string };
@@ -5222,12 +5222,15 @@ function TextGeneration({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "deepseek-v4-flash",
+            model: String(form.get("model") || "deepseek-v4-flash"),
+            channel: String(form.get("channel") || "auto"),
             prompt: String(form.get("prompt") || ""),
             system: String(form.get("system") || "") || null,
             temperature: Number(form.get("temperature")),
             max_tokens: Number(form.get("max_tokens")),
             explicit_label: form.get("explicit_label") === "true",
+            output_audio: form.get("output_audio") === "true",
+            voice: String(form.get("voice") || "Tina"),
           }),
         },
       );
@@ -5257,13 +5260,31 @@ function TextGeneration({
   return (
     <>
       <PageHeading
-        eyebrow="TEXT GENERATION · DEEPSEEK FLASH"
+        eyebrow="TEXT GENERATION · DASHSCOPE / ARK"
         title="文本生成"
-        description="火山方舟 DeepSeek flash。产物自带 AI 生成标识：隐式部分是不可见字符（可被「内容标识核验」读回），显式尾注由下方开关控制。"
+        description="DeepSeek flash 与 Qwen Omni。产物自带 AI 生成标识：隐式部分是不可见字符（可被「内容标识核验」读回），显式尾注由下方开关控制。勾选语音输出时额外产出一段 MP3（只有 Omni 3.5 Plus 支持）。"
       />
       <div className="two-column">
         <Panel title="创建任务" eyebrow="NEW JOB">
           <form className="stack-form" onSubmit={submit}>
+            <div className="field-row">
+              <label>
+                模型
+                <Select name="model" defaultValue="deepseek-v4-flash">
+                  <option value="deepseek-v4-flash">DeepSeek V4.1 Flash</option>
+                  <option value="qwen3.8-omni-flash">Qwen3.8 Omni Flash（仅文本）</option>
+                  <option value="qwen3.5-omni-plus">Qwen3.5 Omni Plus（可出语音）</option>
+                </Select>
+              </label>
+              <label>
+                渠道
+                <Select name="channel" defaultValue="auto">
+                  <option value="auto">自动</option>
+                  <option value="dashscope">阿里云百炼</option>
+                  <option value="ark">火山方舟</option>
+                </Select>
+              </label>
+            </div>
             <label>
               提示词
               <textarea name="prompt" rows={4} required placeholder="用一句话写一条关于秋天的产品标语" />
@@ -5289,6 +5310,19 @@ function TextGeneration({
               </span>
               <input name="explicit_label" type="checkbox" value="true" />
             </label>
+            <div className="field-row">
+              <label className="toggle-row">
+                <span>
+                  <strong>同时生成语音</strong>
+                  <small>仅 Qwen3.5 Omni Plus；上游只认流式，平台已自动切</small>
+                </span>
+                <input name="output_audio" type="checkbox" value="true" />
+              </label>
+              <label>
+                音色
+                <input name="voice" defaultValue="Tina" placeholder="Tina" />
+              </label>
+            </div>
             <button className="primary-button" disabled={busy}>
               {busy ? "生成中…" : "生成"}
             </button>
@@ -5313,6 +5347,13 @@ function TextGeneration({
               <small>
                 usage：{JSON.stringify(upstream.usage)}
               </small>
+              {upstream.audio ? (
+                <label>
+                  语音（{(upstream.audio as Record<string, unknown>).duration_seconds as number}s ·{" "}
+                  {String((upstream.audio as Record<string, unknown>).voice)} · mp3）
+                  <audio controls src={String((upstream.audio as Record<string, unknown>).url)} />
+                </label>
+              ) : null}
             </div>
           ) : (
             <p>填好提示词后点「生成」。</p>
@@ -5389,19 +5430,30 @@ function ProvenanceInspect({
   async function send(body: FormData) {
     setBusy(true);
     setError("");
+    // 没有超时的话，连接一旦卡住按钮会永远停在「检测中」，用户既看不到结果也看不到错因。
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 120000);
     try {
       const response = await apiRequest<Record<string, unknown>>(
         "control",
         "/v1/provenance/inspect",
-        { method: "POST", body },
+        { method: "POST", body, signal: controller.signal },
       );
       setResult(response);
       const kind = PREVIEW_KIND_BY_CONTAINER[String(response.container || "").toLowerCase()];
       if (kind) setPreview((current) => (current ? { ...current, kind } : current));
       showNotice(response.found ? "检测到内容标识" : "未发现内容标识");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "检测失败");
+      const aborted = reason instanceof DOMException && reason.name === "AbortError";
+      setError(
+        aborted
+          ? "检测超时（120 秒没有响应）。请刷新页面后重试，或换一个文件/改用公网 URL。"
+          : reason instanceof Error
+            ? reason.message
+            : "检测失败",
+      );
     } finally {
+      window.clearTimeout(timer);
       setBusy(false);
     }
   }

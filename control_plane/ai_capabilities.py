@@ -94,6 +94,12 @@ class CapabilityStore:
             ("wuyinkeji", "速创", "third_party", "wuyinkeji", "https://api.wuyinkeji.com", 0, 80),
             ("huanwangai", "幻网AI", "third_party", "huanwangai", "https://api.huanwangai.com", 0, 90),
             ("ark", "火山方舟", "third_party", "ark", "https://ark.cn-beijing.volces.com/api/v3", 0, 100),
+            # 阿里云百炼（DashScope）的 OpenAI 兼容口。这里用的是**公共端点**
+            # `dashscope.aliyuncs.com/compatible-mode/v1`，不是文档里那个带 WorkspaceId 的
+            # MaaS 域名 —— 2026-10-28 用 sk-ws- 开头的业务空间 key 实测两者都能调通，
+            # 公共端点少一个随工作区变化的变量。key 本身落在能力库里（AESGCM 加密），
+            # 不进 git：它不是全账号的通用 key，换工作区就要换。
+            ("dashscope", "阿里云百炼", "third_party", "dashscope", "https://dashscope.aliyuncs.com/compatible-mode/v1", 1, 110),
         ]
         for code, name, kind, adapter, url, enabled, priority in presets:
             db.execute("INSERT OR IGNORE INTO channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -129,6 +135,9 @@ class CapabilityStore:
         # 不改的话 _headers 即使回落到环境变量里的 key，最后也会因为 kind='none' 返回空头，
         # 表现为探针 401「key 无效」（2026-10-18 部署时踩到）。
         db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='ark' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
+        # 百炼同样是标准的 `Authorization: Bearer <sk-ws-...>`。key 由运维从控制台注入
+        # （AESGCM 加密后存 credential_enc），播种期 credential_tail 仍是 NULL。
+        db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='dashscope' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
             ("minimax-h3-rh-enhanced", "MiniMax H3 RunningHub 增强版", "video_generation", ["text","image","video","audio"], "video"),
@@ -151,6 +160,13 @@ class CapabilityStore:
             ("moss-image", "MOSS Image", "image_generation", ["text"], "image"),
             # 第一种 text_generation 能力：自由文本生成（此前平台只有结构化判定）。
             ("deepseek-v4-flash", "DeepSeek V4.1 Flash", "text_generation", ["text"], "text"),
+            # 百炼的两代 Omni。**只有 3.5-plus 能出音频**：3.8-flash 带 modalities 里的
+            # audio 会回 400「does not support the modalities parameter containing audio」
+            # （2026-10-28 实测），所以它的 output_modality 还是 text。
+            # 3.5-plus 的 output_modality 写成 "text+audio" —— 这一列在库里是自由文本，
+            # 没有枚举约束；语音是**可选**输出（请求里 output_audio=true 才要）。
+            ("qwen3.5-omni-plus", "Qwen3.5 Omni Plus", "text_generation", ["text"], "text+audio"),
+            ("qwen3.8-omni-flash", "Qwen3.8 Omni Flash", "text_generation", ["text"], "text"),
             # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
             ("suno-v6", "Suno v6 音乐", "audio_generation", ["text"], "audio"),
             ("suno-sound", "Suno 音效", "audio_generation", ["text"], "audio"),
@@ -216,6 +232,15 @@ class CapabilityStore:
           # 型号用 260910 而不是最新的 261017 —— 后者账号没开通（ModelNotOpen），
           # 实测能调通的是 260910。
           ("deepseek-v4-flash","ark","deepseek-v4-1-flash-260910","/chat/completions","",{"images":0,"videos":0,"audios":0},1,100),
+          # 同一个逻辑型号（DeepSeek Flash）在百炼上的第二条绑定：上游型号名两边不一样，
+          # 不能互相套用。priority 110 排在 ark(100) 之后 —— ark 在产线上是 online 的，
+          # 这条是兜底；调用方传 channel=dashscope 才排在它前面。
+          ("deepseek-v4-flash","dashscope","deepseek-v4.1-flash","/chat/completions","",{"images":0,"videos":0,"audios":0},1,110),
+          # Omni：`audio_output` 是**能力声明**，不是参数。请求里 output_audio=true 时
+          # `_compatible` 只放行声明了它的绑定 —— 否则会把 3.8-flash（上游不支持音频）
+          # 选进来再吃一个 400，白花一次调用。
+          ("qwen3.5-omni-plus","dashscope","qwen3.5-omni-plus","/chat/completions","",{"images":0,"videos":0,"audios":0,"audio_output":True},1,110),
+          ("qwen3.8-omni-flash","dashscope","qwen3.8-omni-flash","/chat/completions","",{"images":0,"videos":0,"audios":0},1,110),
           # TeamORouter 是 OpenAI 兼容的**同步**生图端点：POST /v1/images/generations 直接
           # 回 `data[0].b64_json`（PNG 的 base64），没有 task id、没有 status、没有 url 字段
           # （2026-09-30 实测，1K 约 37s）。所以这条绑定的 query_path 是空的——永远不会去轮询，
