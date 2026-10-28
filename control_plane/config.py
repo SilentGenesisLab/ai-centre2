@@ -174,6 +174,22 @@ class Settings(BaseSettings):
     video_upscale_ffmpeg_timeout_seconds: float = 3600
     video_upscale_ffmpeg_bin: str = "auto"
     video_upscale_upload_timeout_seconds: float = 900
+    # Yotta 的 Starlight（Topaz 后端）。**默认不进 auto 的顺序** —— 它是按帧计费的第三方，
+    # 悄悄塞进 auto 等于给所有存量调用换价目表。要让它参与 auto，把 starlight26 写进
+    # VIDEO_UPSCALE_AUTO_PROVIDER_ORDER 即可。
+    # key 是逗号分隔的多账号（并发上限按账号算，加账号就线性提速），**只放服务器 .env**：
+    # 这个仓库是公开的。
+    yotta_upscale_base_url: str = (
+        "https://gateway.yottalabs.ai/api/maas/video-enhancement/generations"
+    )
+    yotta_upscale_api_keys: SecretStr | None = None
+    # 实测单账号 2 个在途任务稳定，第 3 个开始回 429。
+    yotta_upscale_concurrency_per_key: int = 2
+    yotta_upscale_poll_seconds: float = 15
+    yotta_upscale_sharpness: float = 3.0
+    # 提交遇到 429 时的固定退避秒数，以及最多等这么多轮。
+    yotta_upscale_rate_limit_backoff_seconds: float = 30
+    yotta_upscale_rate_limit_retries: int = 10
     # 图片超分（SeedVR2 本地推理）。源码与权重都放在 services/seedvr2 下，不进仓库。
     # 模型缓存在 worker 进程内，所以那个 worker 必须是 threads 池 + 并发 1：
     # prefork 会让每个子进程各加载一份，显存直接翻倍。

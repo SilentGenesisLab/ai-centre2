@@ -1014,7 +1014,24 @@ curl -sS -X POST "$BASE_URL/v1/video-upscale/jobs" \
   }'
 ```
 
-`provider` 可为 `auto`、`flashvsr`、`flashvsr_v2`、`seedvr2`；建议使用 `auto`。`max_resolution` 范围480～3840。
+`provider` 可为 `auto`、`flashvsr`、`flashvsr_v2`、`seedvr2`、`starlight26`、`starlightfast3`；
+建议使用 `auto`。`max_resolution` 范围480～3840。
+
+**Starlight（Yotta / Topaz 后端）的四个约定：**
+
+| `provider` | 上游模型 | 特点 |
+|---|---|---|
+| `starlight26` | `slp-2.6`（Starlight Precise 2.6） | 画质优先 |
+| `starlightfast3` | `slf-3`（Starlight Fast 3） | 更快，官方称 4× 速度、4K 观感相当 |
+
+1. **只在点名时可用，默认不进 `auto`。** 它按帧计费，塞进 `auto` 等于给存量调用换价目表。
+   要让它参与自动路由，把 `starlight26` 写进 `VIDEO_UPSCALE_AUTO_PROVIDER_ORDER`。
+2. **按帧计费**（实测约 0.0042/帧，与时长无关），`failed` 的任务也可能已在途。
+   提交成功后只能轮询同一个 `request_id`，**平台内部已保证不重投**。
+3. **并发上限按账号算**（每账号 2 个在途），平台把 `YOTTA_UPSCALE_API_KEYS` 里的多个
+   key 做成轮转池，加账号就线性提速；全满时排队而不是报错。
+4. **产物无音轨** —— 与其余 provider 一致：平台装配时丢掉上游音轨、挂回源片音轨，
+   所以成片的声音不受影响。
 
 ### 8.6 对白、音乐、音效和背景四轨分离
 

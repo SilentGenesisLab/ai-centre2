@@ -4964,6 +4964,8 @@ function VideoUpscale({
                   <option value="flashvsr_v2">FlashVSR V2</option>
                   <option value="flashvsr">FlashVSR</option>
                   <option value="seedvr2">SeedVR2</option>
+                  <option value="starlight26">Starlight Precise 2.6（Yotta·按帧计费）</option>
+                  <option value="starlightfast3">Starlight Fast 3（Yotta·按帧计费）</option>
                 </Select>
               </label>
               <label>

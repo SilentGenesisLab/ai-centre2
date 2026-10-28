@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import threading
 import time
+import itertools
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -33,6 +35,23 @@ PROVIDERS: dict[str, dict[str, str]] = {
     "seedvr2": {"app_id": "1990029249488801793", "video_node": "16", "video_field": "video", "size_node": "71",
                 "instance_type": "default"},
 }
+# Yotta 是另一套协议（Topaz 后端，按帧计费），请求体与轮询都和 RunningHub 不同，
+# 所以单列一张表、走另一条 run 分支，但**共用同一个 provider 白名单**：
+# `provider_order` 只认这两张表的并集，调用方传进来的名字必须落在里面。
+#
+# 三个硬约束来自 2026-10-23 的实测（见 L:\视频制作\Yotta超分接口使用说明.md）：
+#   1. 提交成功即计费，进程挂了也只能按 request_id 轮询接回，**不能重投**；
+#   2. 单账号 2 个在途任务稳定，第 3 个回 429；
+#   3. 产物是**纯视频、无音轨** —— 我们的装配本来就用 -an 丢掉上游音轨再挂源片音轨，
+#      所以这一条不影响成片。
+YOTTA_PROVIDERS: dict[str, dict[str, Any]] = {
+    "starlight26": {"model": "slp-2.6"},
+    "starlightfast3": {"model": "slf-3"},
+}
+
+
+def _all_providers() -> dict[str, dict[str, Any]]:
+    return {**PROVIDERS, **YOTTA_PROVIDERS}
 TERMINAL_SUCCESS = {"SUCCESS", "SUCCEEDED", "COMPLETED", "COMPLETE", "FINISHED"}
 TERMINAL_FAILURE = {"FAILED", "FAILURE", "ERROR", "CANCELLED", "CANCELED"}
 
@@ -42,9 +61,10 @@ class ProviderFailure(RuntimeError):
 
 
 def provider_order(requested: str, configured: str) -> list[str]:
+    known = _all_providers()
     if requested != "auto":
         return [requested]
-    result = [item.strip().lower() for item in configured.split(",") if item.strip().lower() in PROVIDERS]
+    result = [item.strip().lower() for item in configured.split(",") if item.strip().lower() in known]
     return list(dict.fromkeys(result)) or list(PROVIDERS)
 
 
@@ -86,11 +106,199 @@ def _find_result_url(value: Any) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------- Yotta / Starlight
+
+def _yotta_keys() -> list[str]:
+    settings = get_settings()
+    raw = (
+        settings.yotta_upscale_api_keys.get_secret_value()
+        if settings.yotta_upscale_api_keys
+        else ""
+    )
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+_YOTTA_KEY_SLOTS: dict[str, threading.Semaphore] = {}
+_YOTTA_SLOT_LOCK = threading.Lock()
+_YOTTA_ROTATION = itertools.count()
+
+
+def _acquire_yotta_slot() -> tuple[str, threading.Semaphore]:
+    """挑一把当前有空位的账号钥匙，返回（key, 要在 finally 里 release 的信号量）。
+
+    并发上限是**按账号**算的（实测每账号 2 个在途），所以这里不是全局一把锁，
+    而是每个账号一个信号量；轮转起点每次 +1，避免永远压在第一个账号上。
+    全满时阻塞在轮转到的那个账号上排队 —— 排队比直接失败好：上游任务本身没超时。
+    """
+    keys = _yotta_keys()
+    if not keys:
+        raise ProviderFailure("Yotta API key 未配置（YOTTA_UPSCALE_API_KEYS）")
+    limit = max(1, get_settings().yotta_upscale_concurrency_per_key)
+    if len(keys) == 1:
+        limit = max(1, limit)
+    with _YOTTA_SLOT_LOCK:
+        slots = [
+            _YOTTA_KEY_SLOTS.setdefault(key, threading.Semaphore(limit)) for key in keys
+        ]
+    start = next(_YOTTA_ROTATION) % len(keys)
+    ordered = [(keys[(start + i) % len(keys)], slots[(start + i) % len(keys)])
+               for i in range(len(keys))]
+    for key, slot in ordered:
+        if slot.acquire(blocking=False):
+            return key, slot
+    key, slot = ordered[0]
+    slot.acquire()
+    return key, slot
+
+
+def _input_resolution_bucket(width: int, height: int) -> str:
+    """输入素材的分辨率档。Yotta 按这个档校验，写大了会被拒。"""
+    short_side = min(width, height)
+    if short_side >= 2000:
+        return "4k"
+    if short_side >= 1400:
+        return "1440p"
+    if short_side >= 1000:
+        return "1080p"
+    return "720p"
+
+
+def _output_resolution_bucket(max_resolution: int) -> str:
+    """请求档 → Yotta 的输出档。
+
+    `max_resolution` 是这个平台的**最长边**（见 `_output_size`：`scale = max_resolution / max(w,h)`），
+    而 Yotta 的档位是离散的。取「长边不小于请求值的最小一档」：宁可略大也不要偏小，
+    偏小意味着花同样的钱拿到更小的图，而偏大的那部分会在合并时按 `max_resolution` 缩回去。
+    """
+    if max_resolution <= 1280:
+        return "720p"
+    if max_resolution <= 1920:
+        return "1080p"
+    if max_resolution <= 2560:
+        return "1440p"
+    return "4k"
+
+
+def _aspect_ratio(width: int, height: int) -> str:
+    """就近取一个 Yotta 认的画幅，避免写出它没有的比值。"""
+    ratio = width / height if height else 16 / 9
+    candidates = {"16:9": 16 / 9, "9:16": 9 / 16, "1:1": 1.0, "4:3": 4 / 3, "3:4": 3 / 4}
+    return min(candidates, key=lambda name: abs(candidates[name] - ratio))
+
+
+def build_yotta_payload(
+    provider: str,
+    source_uri: str,
+    *,
+    max_resolution: int,
+    size_bytes: int,
+    duration_seconds: float,
+    frame_count: int,
+    width: int,
+    height: int,
+) -> dict[str, Any]:
+    """Yotta 的请求体。
+
+    `reference_items` 里的 size/duration/frame_count/resolution 描述的是**输入**，
+    `parameters.resolution` 才是**输出**档 —— 这两组最容易写反，写反了上游不报错、
+    只是按错的档计费。
+    """
+    spec = YOTTA_PROVIDERS[provider]
+    return {
+        "model": spec["model"],
+        "providers": ["topaz"],
+        "parameters": {
+            "reference_items": [{
+                "type": "video",
+                "url": source_uri,
+                "size": int(size_bytes),
+                "duration": round(float(duration_seconds), 3),
+                "frame_count": int(frame_count),
+                "resolution": _input_resolution_bucket(width, height),
+            }],
+            "aspect_ratio": _aspect_ratio(width, height),
+            "resolution": _output_resolution_bucket(max_resolution),
+            "sharpness": get_settings().yotta_upscale_sharpness,
+        },
+    }
+
+
+def run_yotta_provider(
+    provider: str,
+    request_data: dict[str, Any],
+    update_progress,
+) -> tuple[str, str]:
+    settings = get_settings()
+    upload = Path(request_data["segment_upload"])
+    width, height = (int(v) for v in _media_metadata(upload)["size"])
+    payload = build_yotta_payload(
+        provider,
+        request_data["source_uri"],
+        max_resolution=request_data["max_resolution"],
+        size_bytes=upload.stat().st_size,
+        duration_seconds=request_data["segment_seconds"],
+        frame_count=request_data["segment_frames"],
+        width=width,
+        height=height,
+    )
+    base = settings.yotta_upscale_base_url.rstrip("/")
+    timeout = httpx.Timeout(settings.video_upscale_request_timeout_seconds, connect=20)
+    key, slot = _acquire_yotta_slot()
+    try:
+        headers = {"X-API-KEY": key, "Content-Type": "application/json"}
+        with httpx.Client(headers=headers, timeout=timeout, follow_redirects=False) as client:
+            # 提交：429 是账号级并发超了，退避后重试即可（不是 key 坏了）。
+            for attempt in range(settings.yotta_upscale_rate_limit_retries + 1):
+                response = client.post(base, json=payload)
+                if response.status_code != 429:
+                    break
+                if attempt == settings.yotta_upscale_rate_limit_retries:
+                    raise ProviderFailure(
+                        f"yotta rate limited after {attempt} retries"
+                    )
+                time.sleep(settings.yotta_upscale_rate_limit_backoff_seconds)
+            response.raise_for_status()
+            body = response.json()
+            # Yotta 把业务错误放在 HTTP 200 的 code 里，不看它会把「余额不足」当成功。
+            if int(body.get("code") or 0) != 10000:
+                raise ProviderFailure(
+                    f"yotta rejected request (code {body.get('code')}): "
+                    f"{str(body.get('message'))[:200]}"
+                )
+            request_id = str((body.get("data") or {}).get("request_id") or "")
+            if not request_id:
+                raise ProviderFailure("yotta did not return request_id")
+
+            # 轮询。**提交成功即计费**，所以这里不再重投，只等这一个 request_id。
+            deadline = time.monotonic() + settings.video_upscale_provider_timeout_seconds
+            while time.monotonic() < deadline:
+                time.sleep(settings.yotta_upscale_poll_seconds)
+                query = client.get(f"{base}/{request_id}")
+                query.raise_for_status()
+                data = (query.json() or {}).get("data") or {}
+                state = str(data.get("status") or "").lower()
+                if state in {"failed", "cancelled", "canceled"}:
+                    raise ProviderFailure(
+                        f"yotta {state}: {str(data.get('error') or data)[:240]}"
+                    )
+                if state == "completed":
+                    url = str(data.get("output_url") or "")
+                    if not url.startswith("https://"):
+                        raise ProviderFailure("yotta completed without an output_url")
+                    return url, request_id
+                update_progress(50)
+            raise ProviderFailure("yotta query timed out")
+    finally:
+        slot.release()
+
+
 def run_provider(
     provider: str,
     request_data: dict[str, Any],
     update_progress,
 ) -> tuple[str, str]:
+    if provider in YOTTA_PROVIDERS:
+        return run_yotta_provider(provider, request_data, update_progress)
     settings = get_settings()
     token = settings.runninghub_api_token.get_secret_value() if settings.runninghub_api_token else ""
     if not token:
@@ -389,11 +597,19 @@ def _process_segment(
     else:
         providers = (providers * max_attempts)[:max_attempts]
     attempts: list[dict[str, str]] = []
+    # Yotta 的请求体要输入素材的 size / duration / frame_count / 分辨率档，只有这里知道
+    # 是哪个文件（segment.upload 就是上传的那个）。**只传引用、不在这里量**：
+    # 量一次要走 ffprobe，而 RunningHub 那三条用不上它。
+    segment_context = {
+        "segment_upload": str(segment.upload),
+        "segment_frames": segment.upload_frames,
+        "segment_seconds": segment.upload_frames / fps if fps else 0.0,
+    }
     for attempt_number, provider in enumerate(providers, start=1):
         try:
             result_url, _ = run_provider(
                 provider,
-                {**request_data, "source_uri": segment_url},
+                {**request_data, **segment_context, "source_uri": segment_url},
                 lambda _progress: None,
             )
             downloaded = download_public_media(

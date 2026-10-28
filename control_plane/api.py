@@ -529,7 +529,10 @@ class VideoUpscaleUrlJobRequest(BaseModel):
     )
 
     source_uri: str = Field(min_length=1, max_length=4096)
-    provider: Literal["auto", "flashvsr", "flashvsr_v2", "seedvr2"] = "auto"
+    # starlight26 / starlightfast3 走 Yotta（Topaz 后端，按帧计费）。
+    # 它们**不在默认的 auto 顺序里** —— 要参与 auto 得显式写进
+    # VIDEO_UPSCALE_AUTO_PROVIDER_ORDER，否则只是点名可用。
+    provider: Literal["auto", "flashvsr", "flashvsr_v2", "seedvr2", "starlight26", "starlightfast3"] = "auto"
     max_resolution: int = Field(default=1920, ge=480, le=3840)
     external_ref: str | None = Field(default=None, max_length=256)
     metadata: dict[str, Any] = Field(default_factory=dict)
