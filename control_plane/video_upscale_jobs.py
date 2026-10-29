@@ -7,6 +7,7 @@ import redis
 from celery.result import AsyncResult
 
 from .config import Settings
+from .generation_jobs import failure_text
 
 
 TASK_NAME = "control_plane.video_upscale"
@@ -44,7 +45,10 @@ class VideoUpscaleJobClient:
         if job.state == "SUCCESS":
             return dict(job.result)
         if job.state == "FAILURE":
-            return {"job_id": job_id, "status": "failed", "error": "video upscale failed"}
+            # 把上游/装配给的真实原因带出来。原先这里固定回一句
+            # 「video upscale failed」，于是「分辨率超上限」「帧账错配」
+            # 这些能直接修的问题，在调用方看来全是同一句废话。
+            return {"job_id": job_id, "status": "failed", "error": failure_text(job, "video upscale failed")}
         if job.state == "PROGRESS":
             return {"job_id": job_id, "status": "running", **(job.info or {})}
         status = {

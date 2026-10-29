@@ -6,6 +6,23 @@ from .config import Settings
 TASK_NAME="control_plane.video_generation"
 QUEUE_NAME="video_generation"
 
+
+def failure_text(job: AsyncResult, fallback: str = "job failed") -> str:
+    """Celery 失败作业 → 一句可读的原因。
+
+    优先用异常本身的消息（那里面写着「哪一段、哪个渠道、上游原话」），拿不到才退回
+    泛化的说法。压成一行、截断，避免把堆栈塞进接口响应。
+
+    存在的理由：超分那边原先把 `job.state == "FAILURE"` 固定投影成一句
+    「video upscale failed」，于是「分辨率超上限」「帧账错配」这些能直接修的问题，
+    在调用方看来全是同一句废话。
+    """
+    info = job.info
+    detail = str(info) if info else ""
+    detail = " ".join(detail.split())[:600]
+    return detail or fallback
+
+
 class GenerationJobClient:
     # 子类换掉这两个名字就能复用整条提交/查询/取消链路（见 audio_generation_jobs）。
     task_name=TASK_NAME

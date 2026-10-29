@@ -7,6 +7,7 @@ import redis
 from celery.result import AsyncResult
 
 from .config import Settings
+from .generation_jobs import failure_text
 
 
 TASK_NAME = "control_plane.image_upscale"
@@ -50,7 +51,9 @@ class ImageUpscaleJobClient:
         if job.state == "SUCCESS":
             return dict(job.result)
         if job.state == "FAILURE":
-            return {"job_id": job_id, "status": "failed", "error": "image upscale failed"}
+            # 与视频超分同一条道理：把真实原因带出来，别只回一句泛化失败。
+            return {"job_id": job_id, "status": "failed",
+                    "error": failure_text(job, "image upscale failed")}
         if job.state == "PROGRESS":
             return {"job_id": job_id, "status": "running", **(job.info or {})}
         status = {
