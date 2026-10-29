@@ -48,8 +48,16 @@ if [ "$FORCE" = "--force" ]; then
     -d "$DOMAIN" --keylength ec-256 \
     --reloadcmd "$reload" --force
 else
-  log "检查续期（到期前 30 天内才会真正续）"
-  "$ACME_HOME/acme.sh" --cron "${common[@]}"
+  # 只续本域，**不要用 --cron**：那个会把 home 里所有证书都续一遍，
+  # 而同一目录下还有 videocopy.sligenai.cn 这种没有配 DNS API 的（手动模式），
+  # 它一失败整个 timer 就变成 failed，本域续不续得上反而被掩盖。
+  log "检查续期 $DOMAIN（到期前 30 天内才会真正续）"
+  "$ACME_HOME/acme.sh" --renew "${common[@]}" \
+    -d "$DOMAIN" --ecc \
+    --server letsencrypt --dns dns_ali \
+    --reloadcmd "$reload" \
+    && log "检查完成（未到期则无事发生）" \
+    || log "续期失败，见上面的 acme.sh 输出"
 fi
 
 log "当前证书："
