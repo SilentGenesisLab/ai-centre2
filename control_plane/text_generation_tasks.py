@@ -74,6 +74,15 @@ def _payload(binding: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]
         # 必须流式，理由见模块 docstring：非流式拿不到音频却照样计费。
         payload["stream"] = True
         payload["stream_options"] = {"include_usage": True}
+    # 推理开关。DeepSeek 这类带 reasoning_content 的型号会把 max_tokens 先花在推理上，
+    # 推理没结束就把预算烧光 → 返回 `finish_reason="length"` 且 `content=""`，
+    # 表现为「文本通道间歇性返回空」。实测两个渠道都认 `thinking:{"type":"disabled"}`，
+    # 关掉之后 content 完整、延迟 7.2s→4.0s、token 约减半。
+    # 只在绑定声明了 thinking_control 时才发这个字段 —— 别的型号不认，发了可能报错。
+    if binding.get("capabilities", {}).get("thinking_control"):
+        # 请求显式要推理时才不发（不发 == 用上游默认，也就是开着）。
+        if not request.get("thinking"):
+            payload["thinking"] = {"type": "disabled"}
     return payload
 
 
@@ -94,6 +103,40 @@ def _text(body: dict[str, Any]) -> str | None:
         return None
     content = message.get("content")
     return content if isinstance(content, str) and content.strip() else None
+
+
+def _no_text_reason(body: dict[str, Any]) -> str:
+    """正文为空时给出**可执行**的原因，而不是笼统的「没有 choices」。
+
+    这条曾经是最误导人的一处：DeepSeek 把 max_tokens 全花在推理上时，
+    choices 明明在、content 是空串，而报错说「响应里没有 choices」，
+    排查方向直接被带偏。所以这里按实际形态分三种说法。
+    """
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return "上游响应里没有 choices"
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    message = first.get("message") if isinstance(first.get("message"), dict) else {}
+    content = message.get("content")
+    reasoning = message.get("reasoning_content")
+    finish = first.get("finish_reason")
+
+    if isinstance(reasoning, str) and reasoning.strip():
+        tokens = ((body.get("usage") or {}).get("completion_tokens_details") or {}).get(
+            "reasoning_tokens"
+        )
+        detail = f"，推理用了 {tokens} token" if tokens else ""
+        hint = (
+            "提高 max_tokens，或传 thinking=false 关掉推理"
+            if finish == "length"
+            else "可传 thinking=false 关掉推理"
+        )
+        return f"正文为空、推理内容非空（finish_reason={finish}{detail}）。{hint}"
+    if isinstance(content, str):
+        if finish == "length":
+            return f"正文被截断成空（finish_reason=length）。提高 max_tokens"
+        return "上游回了空正文"
+    return "上游响应里没有 message.content"
 
 
 def _decode_audio_parts(parts: list[str]) -> bytes:
@@ -384,10 +427,7 @@ def _generate_text(job_id: str) -> dict[str, Any]:
                     )
             text = _text(body)
             if text is None:
-                raise RuntimeError(
-                    f"upstream returned no text: "
-                    f"{_error_detail(body, 'upstream response did not contain choices')[:160]}"
-                )
+                raise RuntimeError(f"upstream returned no text: {_no_text_reason(body)}")
             # 文本到手。后面的写库失败**不能再换渠道重问**：每调一次都重新计费，
             # 而且同一 prompt 两次生成未必一样，手上这份比换一家更值钱。
             answered = True

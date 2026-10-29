@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     service_token: str
     control_host: str = "127.0.0.1"
     control_port: int = 8320
+    # 临时素材根目录。镜头切分与去水印都用 temp_media.allocate_work_directory 在它下面
+    # 按天开子目录，成功即清、失败留 24h。**这个字段曾经只在 face_worker.config 里定义过**，
+    # control_plane 这边被 scene_tasks / watermark_tasks 直接引用却没有声明，
+    # 于是两个能力一提交就 AttributeError（2026-10-29 排查）。默认值与 temp_media 的
+    # TEMP_DATA_ROOT 保持一致，环境变量也认同一个名字。
+    temp_data_root: Path = Path("/home/donxu/temp-data")
     control_runtime_dir: Path = Path("/home/donxu/ai-centre/runtime/control")
     api_keys_db_path: Path = Path("/home/donxu/ai-centre/runtime/control/api-keys.db")
     runtime_settings_db_path: Path = Path("/home/donxu/ai-centre/runtime/control/runtime-settings.db")
@@ -306,6 +312,7 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     settings = Settings()
+    settings.temp_data_root.mkdir(parents=True, exist_ok=True)
     settings.control_runtime_dir.mkdir(parents=True, exist_ok=True)
     settings.api_keys_db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.ai_capabilities_db_path.parent.mkdir(parents=True, exist_ok=True)

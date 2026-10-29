@@ -231,11 +231,11 @@ class CapabilityStore:
           # 火山方舟（DeepSeek flash）：OpenAI 兼容的 /chat/completions，同步返回。
           # 型号用 260910 而不是最新的 261017 —— 后者账号没开通（ModelNotOpen），
           # 实测能调通的是 260910。
-          ("deepseek-v4-flash","ark","deepseek-v4-1-flash-260910","/chat/completions","",{"images":0,"videos":0,"audios":0},1,100),
+          ("deepseek-v4-flash","ark","deepseek-v4-1-flash-260910","/chat/completions","",{"images":0,"videos":0,"audios":0,"thinking_control":True},1,100),
           # 同一个逻辑型号（DeepSeek Flash）在百炼上的第二条绑定：上游型号名两边不一样，
           # 不能互相套用。priority 110 排在 ark(100) 之后 —— ark 在产线上是 online 的，
           # 这条是兜底；调用方传 channel=dashscope 才排在它前面。
-          ("deepseek-v4-flash","dashscope","deepseek-v4.1-flash","/chat/completions","",{"images":0,"videos":0,"audios":0},1,110),
+          ("deepseek-v4-flash","dashscope","deepseek-v4.1-flash","/chat/completions","",{"images":0,"videos":0,"audios":0,"thinking_control":True},1,110),
           # Omni：`audio_output` 是**能力声明**，不是参数。请求里 output_audio=true 时
           # `_compatible` 只放行声明了它的绑定 —— 否则会把 3.8-flash（上游不支持音频）
           # 选进来再吃一个 400，白花一次调用。
@@ -264,6 +264,23 @@ class CapabilityStore:
               (str(uuid4()),mids[model],ids[channel],upstream,submit,query,None,json.dumps(caps),"{}",enabled,priority,stamp,stamp))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
                    (json.dumps({"images":9,"videos":3,"audios":3,"duration_max":15}),stamp,mids["seedance-2.0"],ids["jmapi"]))
+        # DeepSeek 的推理开关是后加的：已有的绑定行是 INSERT OR IGNORE 建的，
+        # 光改种子不会生效。只在「还没有这个键」时补，避免覆盖管理员在控制台改过的能力声明。
+        for channel_code in ("ark", "dashscope"):
+            row = db.execute(
+                "SELECT capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids["deepseek-v4-flash"], ids[channel_code]),
+            ).fetchone()
+            if row is None:
+                continue
+            caps = json.loads(row[0] or "{}")
+            if "thinking_control" in caps:
+                continue
+            caps["thinking_control"] = True
+            db.execute(
+                "UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
+                (json.dumps(caps), stamp, mids["deepseek-v4-flash"], ids[channel_code]),
+            )
         db.execute(
             "UPDATE model_channels SET query_path=?,capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
             (

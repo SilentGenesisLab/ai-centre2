@@ -778,6 +778,11 @@ class TextGenerationRequest(BaseModel):
     max_tokens: int = Field(default=1024, ge=1, le=8192)
     # AI 生成显式标识：转 true 才在正文末尾追加可见尾注（默认关）。
     explicit_label: bool = Field(default=False, description="是否在正文末尾追加可见的「AI生成」尾注。")
+    # 只有声明了 thinking_control 的模型绑定才接这个开关（目前是 DeepSeek 的两条）。
+    # 默认 false = 关掉推理：实测推理会把 max_tokens 先烧光、正文返回空串，
+    # 这正是「文本通道间歇性返回空」的根因；关掉之后内容完整、快一倍、token 减半。
+    # 需要模型自己先想再答时传 true。
+    thinking: bool = Field(default=False, description="是否启用模型推理（DeepSeek 等）。默认关。")
     # 只有声明了 audio_output 的模型绑定才接这个开关；别的型号传 true 会被 422 挡掉，
     # 而不是让上游回一个 400。
     output_audio: bool = Field(default=False, description="同时生成语音（仅 Omni 系列支持）。")
