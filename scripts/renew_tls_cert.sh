@@ -52,12 +52,24 @@ else
   # 而同一目录下还有 videocopy.sligenai.cn 这种没有配 DNS API 的（手动模式），
   # 它一失败整个 timer 就变成 failed，本域续不续得上反而被掩盖。
   log "检查续期 $DOMAIN（到期前 30 天内才会真正续）"
-  "$ACME_HOME/acme.sh" --renew "${common[@]}" \
+  # acme.sh 在「还没到期」时也返回非零，所以不能只看退出码 —— 那会把
+  # 「今天不用续」误报成失败，天天刷一条假警报。按输出分辨两种情况。
+  set +e
+  output="$("$ACME_HOME/acme.sh" --renew "${common[@]}" \
     -d "$DOMAIN" --ecc \
     --server letsencrypt --dns dns_ali \
-    --reloadcmd "$reload" \
-    && log "检查完成（未到期则无事发生）" \
-    || log "续期失败，见上面的 acme.sh 输出"
+    --reloadcmd "$reload" 2>&1)"
+  status=$?
+  set -e
+  printf '%s\n' "$output" | tail -12
+  if [ $status -eq 0 ]; then
+    log "续期完成"
+  elif printf '%s' "$output" | grep -q "Skipping"; then
+    log "未到期，本次无需续期"
+  else
+    log "续期失败（退出码 $status），见上面的 acme.sh 输出"
+    exit $status
+  fi
 fi
 
 log "当前证书："
