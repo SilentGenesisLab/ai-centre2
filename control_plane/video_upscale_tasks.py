@@ -498,6 +498,13 @@ def split_video(
     _run_ffmpeg([
         "-i", str(source), "-map", "0:v:0", "-an",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+        # **必须把帧率钉死**。Seedance 这类上游产出的片子是 VFR：容器声明
+        # `24.07 fps, 60 tbr`，平均帧率 24、时间基却是 60。不钉的话 ffmpeg 按
+        # r_frame_rate（60）重编码，8.01 秒的源从 193 帧膨胀成 481 帧 ——
+        # 之后每一处帧账都按 481 算，而上游只还回 193 帧，于是
+        # 「merged video has 481 frames, expected 154」这类错配必然出现，
+        # 表现为「视频超分走不通」（2026-10-29 用 720x1280/193帧 的竖屏素材实测复现）。
+        "-r", _rate(fps), "-fps_mode", "cfr",
         "-sc_threshold", "0", "-g", str(body_frames), "-keyint_min", str(body_frames),
         "-force_key_frames", f"expr:gte(t,n_forced*{_seconds(body_seconds)})",
         "-f", "segment", "-segment_time", _seconds(body_seconds),
