@@ -265,6 +265,7 @@ curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Beare
 | `temperature` | 否 | 0～2；传 `0` 是确定性输出（会原样传给上游，不会被当成"未设置"） |
 | `max_tokens` | 否 | 1～8192，默认 1024 |
 | `explicit_label` | 否 | 是否在正文末尾追加可见的「AI生成」尾注，默认 `false` |
+| `thinking` | 否 | 是否让模型先推理再回答，默认 `false`（关）。关掉更快更省，且不会出现「正文为空」（见下） |
 | `output_audio` | 否 | 同时生成语音，默认 `false`。**只有 `qwen3.5-omni-plus` 支持**，别的型号传 `true` 会 422 |
 | `voice` | 否 | 音色，默认 `Tina`，原样透传给上游 |
 
@@ -285,6 +286,19 @@ curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Beare
 | `aigc` | `{implicit, explicit, missing_fields}`，说明这次标了什么 |
 | `usage` | 上游的 token 用量（要了语音时，`completion_tokens_details.audio_tokens` 是语音那部分） |
 | `audio` | **只在要了语音时出现**：`{url, duration_seconds, voice, format, source_format}`；MP3 的 https 链接同时也在 `result_urls` 里 |
+
+#### 为什么 `thinking` 默认是关的
+
+DeepSeek 这类型号会先把 `max_tokens` 花在推理（`reasoning_content`）上。推理没结束
+预算就烧光时，上游返回 `finish_reason="length"` 且 **`content` 是空串** —— 表现为
+「文本通道间歇性返回空」，同一份 prompt 有时成功、有时失败。
+
+平台默认发 `thinking:{"type":"disabled"}`：实测正文完整、延迟 7.2s→4.0s、
+completion token 约减半。需要模型先想再答（复杂推理、多步计算）时传 `thinking: true`。
+
+注意 `max_tokens` 是**推理 + 正文**的总额度：开推理时要留足，否则会看到
+`upstream returned no text: 正文为空、推理内容非空（finish_reason=length，推理用了 N token）`。
+这条错误信息会直接告诉你发生了什么。
 
 **隐式标识恒开**，与 `explicit_label` 无关：它用 Unicode 标签字符（U+E0000–U+E007F）
 把 AIGC 载荷编码在正文末尾，肉眼不可见、能扛复制粘贴。用
@@ -1016,6 +1030,21 @@ curl -sS -X POST "$BASE_URL/v1/video-upscale/jobs" \
 
 `provider` 可为 `auto`、`flashvsr`、`flashvsr_v2`、`seedvr2`、`starlight26`、`starlightfast3`；
 建议使用 `auto`。`max_resolution` 范围480～3840。
+
+**输出尺寸的实际上限（实测 2026-10-29，同一段 720×1280 竖屏素材）**
+
+| `max_resolution` | 结果 |
+|---|---|
+| 720 / 1920 / 2560 | ✅ 46s / 170s / 200s |
+| 3840 | ❌ RunningHub 三条全部「工作流运行失败」 |
+
+所以平台给 RunningHub 那三条记了 **2560 的天花板**：超过它的请求在**下载与切段之前**
+就会被拒，错误信息会写明每个渠道的上限。**要 4K 请点名 `provider: "starlight26"`**
+（Yotta 的 Topaz 后端，支持到 4K，按帧计费）。
+
+> 另一条与源片有关的坑：Seedance 这类产出的是 **VFR**（容器声明 `24.07 fps, 60 tbr`）。
+> 平台会把帧率钉死在平均值上再切段 —— 不钉的话同一段会被按 60fps 重编码，
+> 8 秒的源从 193 帧膨胀成 481 帧，下游帧账全部错配、最终必然失败。
 
 **Starlight（Yotta / Topaz 后端）的四个约定：**
 
