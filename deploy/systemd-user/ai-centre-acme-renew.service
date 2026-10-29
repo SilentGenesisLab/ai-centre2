@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew the aicentre2.sligenai.cn TLS certificate (DNS-01)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/donxu/ai-centre
+ExecStart=/usr/bin/env bash /home/donxu/ai-centre/scripts/renew_tls_cert.sh

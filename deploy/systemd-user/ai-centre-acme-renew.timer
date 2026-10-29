@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily TLS certificate check for aicentre2.sligenai.cn
+
+[Timer]
+# 每天 04:17（本地时区）跑一次；acme.sh 自己判断「离到期不足 30 天」才真续。
+# 刻意避开整点：整点是全世界的定时任务洪峰。
+OnCalendar=*-*-* 04:17:00
+# 机器关机错过就下次开机补跑一次，别静默跳过一整天
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

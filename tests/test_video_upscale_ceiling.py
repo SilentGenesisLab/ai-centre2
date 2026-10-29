@@ -28,15 +28,28 @@ class CeilingTests(unittest.TestCase):
 
         self.assertEqual(_max_output_edge("starlight26"), 4096)
 
-    def test_large_requests_drop_runninghub_but_keep_yotta(self):
+    def test_auto_falls_back_to_yotta_only_when_nothing_else_fits(self):
+        """4K 走 starlight26；但 1080p/1440p **不能**顺带落到按帧计费的 Yotta。"""
         from control_plane.video_upscale_tasks import providers_for
 
-        # auto 的默认顺序里没有 starlight，所以 4K 一个都不剩
-        self.assertEqual(providers_for("auto", "flashvsr_v2,flashvsr,seedvr2", 3840), [])
-        # 把 starlight 写进 auto 顺序后，4K 仍然只有它接得住
+        # 4K：常规渠道全接不住 → 自动落到 Yotta，starlight26 排前面（画质优先）
         self.assertEqual(
-            providers_for("auto", "flashvsr_v2,starlight26", 3840), ["starlight26"]
+            providers_for("auto", "flashvsr_v2,flashvsr,seedvr2", 3840),
+            ["starlight26", "starlightfast3"],
         )
+        # 1440p 及以下：常规渠道接得住，就不碰 Yotta（不悄悄花钱）
+        for edge in (720, 1920, 2560):
+            with self.subTest(max_resolution=edge):
+                self.assertEqual(
+                    providers_for("auto", "flashvsr_v2,flashvsr,seedvr2", edge),
+                    ["flashvsr_v2", "flashvsr", "seedvr2"],
+                )
+
+    def test_named_provider_never_gets_the_auto_fallback(self):
+        from control_plane.video_upscale_tasks import providers_for
+
+        # 点名 flashvsr_v2 却要 4K：不给兜底，直接空（由 early check 报错）
+        self.assertEqual(providers_for("flashvsr_v2", "flashvsr_v2", 3840), [])
         # 点名 starlight 直接可用
         self.assertEqual(providers_for("starlight26", "flashvsr_v2", 3840), ["starlight26"])
 

@@ -604,11 +604,20 @@ def _max_output_edge(provider: str) -> int:
 def providers_for(requested: str, configured_order: str, max_resolution: int) -> list[str]:
     """能接这个输出尺寸的 provider 顺序。
 
-    高于天花板的不进候选 —— 让它在**提交前**就被说出来，而不是先下载、切段、上传、
+    高于天花板的不进候选 —— 让它在**提交前**就被排除，而不是先下载、切段、上传、
     再等上游跑六七分钟才回一句「工作流运行失败」。
+
+    `auto` 有一条兜底：当请求尺寸超出所有常规渠道的天花板（目前是 >2560 的 4K），
+    自动落到 Yotta 的 Starlight。**只在常规渠道一个都不剩时才启用** —— 它按帧计费，
+    不能因为「排在后面」就在 1080p/1440p 上悄悄花钱。点了名的请求仍按点名走，
+    不参与这条兜底。
     """
     edge = int(max_resolution)
-    return [p for p in provider_order(requested, configured_order) if _max_output_edge(p) >= edge]
+    order = provider_order(requested, configured_order)
+    fitting = [p for p in order if _max_output_edge(p) >= edge]
+    if requested != "auto" or fitting:
+        return fitting
+    return [p for p in YOTTA_PROVIDERS if _max_output_edge(p) >= edge]
 
 
 def _process_segment(
@@ -813,15 +822,14 @@ def _upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
             int(request_data["max_resolution"]),
         )
         if not providers:
+            # 走到这里说明连 Yotta 都接不住（目前 API 上限 3840，Yotta 到 4096，
+            # 正常够不着）。仍然给出每个渠道的真实上限，方便定位。
+            edge = int(request_data["max_resolution"])
+            named = str(request_data.get("provider", "auto"))
+            candidates = provider_order(named, settings.video_upscale_auto_provider_order)
             raise RuntimeError(
-                f"请求的输出边长 {request_data['max_resolution']} 超出可用超分渠道的上限："
-                + "、".join(
-                    f"{name}(最大 {_max_output_edge(name)})" for name in provider_order(
-                        str(request_data.get("provider", "auto")),
-                        settings.video_upscale_auto_provider_order,
-                    )
-                )
-                + "。4K 请显式指定 provider=starlight26（Yotta/Topaz）。"
+                f"请求的输出边长 {edge} 超出所有可用超分渠道的上限："
+                + "、".join(f"{name}(最大 {_max_output_edge(name)})" for name in candidates)
             )
         segments = split_video(
             source, segment_dir, settings.video_upscale_segment_seconds, source_fps,
