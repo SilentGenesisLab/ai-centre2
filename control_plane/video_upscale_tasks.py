@@ -588,17 +588,39 @@ def _upload_file(path: Path, job_id: str, stage: str, filename: str,
     return url
 
 
+def _max_output_edge(provider: str) -> int:
+    """这个 provider 能稳定跑到的最大输出边长（实测值，不是猜的）。
+
+    RunningHub 那三条扩散超分在 3840 上稳定「工作流运行失败」（2026-10-29 用
+    720x1280 竖屏与 1200x720 横屏两段素材各试一次，都是三次尝试全挂），而 2560
+    正常出片（1408x2560 / 200s）。所以它们的天花板按 2560 记。
+    Yotta 的 Starlight 官方支持到 4K，按 4096 记。
+    """
+    if provider in YOTTA_PROVIDERS:
+        return 4096
+    return 2560
+
+
+def providers_for(requested: str, configured_order: str, max_resolution: int) -> list[str]:
+    """能接这个输出尺寸的 provider 顺序。
+
+    高于天花板的不进候选 —— 让它在**提交前**就被说出来，而不是先下载、切段、上传、
+    再等上游跑六七分钟才回一句「工作流运行失败」。
+    """
+    edge = int(max_resolution)
+    return [p for p in provider_order(requested, configured_order) if _max_output_edge(p) >= edge]
+
+
 def _process_segment(
     segment: Segment,
     segment_url: str,
     request_data: dict[str, Any],
-    configured_order: str,
+    providers: list[str],
     max_attempts: int,
     output_dir: Path,
     fps: float,
 ) -> dict[str, Any]:
     requested = str(request_data.get("provider", "auto"))
-    providers = provider_order(requested, configured_order)
     if requested != "auto":
         providers = providers * max_attempts
     else:
@@ -782,6 +804,25 @@ def _upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
         source_fps = float(_media_metadata(source).get("fps") or 0)
         if source_fps <= 0:
             raise RuntimeError("source video reports no frame rate")
+        # 先算出能接这个输出尺寸的渠道。一个都没有就**在这里失败**：
+        # 前面已经下载完源片了，再往下切段、逐段上传、等上游跑六七分钟才说
+        # 「工作流运行失败」，对调用方毫无价值。
+        providers = providers_for(
+            str(request_data.get("provider", "auto")),
+            settings.video_upscale_auto_provider_order,
+            int(request_data["max_resolution"]),
+        )
+        if not providers:
+            raise RuntimeError(
+                f"请求的输出边长 {request_data['max_resolution']} 超出可用超分渠道的上限："
+                + "、".join(
+                    f"{name}(最大 {_max_output_edge(name)})" for name in provider_order(
+                        str(request_data.get("provider", "auto")),
+                        settings.video_upscale_auto_provider_order,
+                    )
+                )
+                + "。4K 请显式指定 provider=starlight26（Yotta/Topaz）。"
+            )
         segments = split_video(
             source, segment_dir, settings.video_upscale_segment_seconds, source_fps,
             settings.video_upscale_head_context_frames, settings.video_upscale_tail_margin_frames,
@@ -799,7 +840,7 @@ def _upscale_video(self, request_data: dict[str, Any]) -> dict[str, Any]:
             futures = {
                 executor.submit(
                     _process_segment, segment, url, request_data,
-                    settings.video_upscale_auto_provider_order,
+                    providers,
                     settings.video_upscale_segment_attempts, output_dir, source_fps,
                 ): segment.index
                 for segment, url in zip(segments, segment_urls, strict=True)

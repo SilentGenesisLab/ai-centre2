@@ -151,7 +151,7 @@ class VideoUpscaleTests(unittest.TestCase):
             result = _process_segment(
                 fake_segment(), "https://cdn.example/segment.mp4",
                 {"provider": "auto", "max_resolution": 1920},
-                "flashvsr_v2,flashvsr,seedvr2", 3, Path("."), 30.0,
+                ["flashvsr_v2", "flashvsr", "seedvr2"], 3, Path("."), 30.0,
             )
         self.assertEqual(result["provider"], "flashvsr")
         self.assertEqual(result["attempt_count"], 2)
@@ -175,7 +175,7 @@ class VideoUpscaleTests(unittest.TestCase):
             result = _process_segment(
                 fake_segment(), "https://cdn.example/segment.mp4",
                 {"provider": "auto", "max_resolution": 1920},
-                "flashvsr_v2,flashvsr,seedvr2", 3, Path("."), 30.0,
+                ["flashvsr_v2", "flashvsr", "seedvr2"], 3, Path("."), 30.0,
             )
         self.assertEqual(result["provider"], "flashvsr")
         self.assertEqual(result["provider_frames"], 354)
@@ -197,7 +197,7 @@ class VideoUpscaleTests(unittest.TestCase):
             result = _process_segment(
                 fake_segment(), "https://cdn.example/segment.mp4",
                 {"provider": "auto", "max_resolution": 1920},
-                "flashvsr_v2,flashvsr,seedvr2", 3, Path("."), 30.0,
+                ["flashvsr_v2", "flashvsr", "seedvr2"], 3, Path("."), 30.0,
             )
         self.assertEqual(result["provider"], "flashvsr")
         self.assertEqual(result["provider_fps"], 30.0)
