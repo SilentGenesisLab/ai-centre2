@@ -5216,6 +5216,18 @@ function TextGeneration({
     setError("");
     setResult(null);
     const form = new FormData(event.currentTarget);
+    // 参考素材按扩展名分三路。上游只认公网 HTTPS，分类错了会吃一个 400，
+    // 所以这里只做「一行一个、按容器名归类」，不做别的猜测。
+    const media = String(form.get("references") || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const bySuffix = (suffixes: string[]) =>
+      media.filter((url) => suffixes.some((suffix) => url.split("?")[0].toLowerCase().endsWith(suffix)));
+    const keep = (picked: string[]) => media.filter((url) => !picked.includes(url));
+    const videos = bySuffix([".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"]);
+    const audios = bySuffix([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
+    const images = keep([...videos, ...audios]);
     try {
       const created = await apiRequest<Record<string, unknown>>(
         "control",
@@ -5233,6 +5245,9 @@ function TextGeneration({
             explicit_label: form.get("explicit_label") === "true",
             output_audio: form.get("output_audio") === "true",
             voice: String(form.get("voice") || "Tina"),
+            reference_image_urls: images,
+            reference_video_urls: videos,
+            reference_audio_urls: audios,
           }),
         },
       );
@@ -5264,7 +5279,7 @@ function TextGeneration({
       <PageHeading
         eyebrow="TEXT GENERATION · DASHSCOPE / ARK"
         title="文本生成"
-        description="DeepSeek flash 与 Qwen Omni。产物自带 AI 生成标识：隐式部分是不可见字符（可被「内容标识核验」读回），显式尾注由下方开关控制。勾选语音输出时额外产出一段 MP3（只有 Omni 3.5 Plus 支持）。"
+        description="DeepSeek flash 与 Qwen Omni。产物自带 AI 生成标识：隐式部分是不可见字符（可被「内容标识核验」读回），显式尾注由下方开关控制。勾选语音输出时额外产出一段 MP3（只有 Omni 3.5 Plus 支持）。Omni 两个型号还能直接理解参考图片/视频/音频。"
       />
       <div className="two-column">
         <Panel title="创建任务" eyebrow="NEW JOB">
@@ -5274,7 +5289,7 @@ function TextGeneration({
                 模型
                 <Select name="model" defaultValue="deepseek-v4-flash">
                   <option value="deepseek-v4-flash">DeepSeek V4.1 Flash</option>
-                  <option value="qwen3.8-omni-flash">Qwen3.8 Omni Flash（仅文本）</option>
+                  <option value="qwen3.8-omni-flash">Qwen3.8 Omni Flash（文本 / 图像 / 视频 / 音频）</option>
                   <option value="qwen3.5-omni-plus">Qwen3.5 Omni Plus（可出语音）</option>
                 </Select>
               </label>
@@ -5294,6 +5309,18 @@ function TextGeneration({
             <label>
               系统提示（可选）
               <input name="system" placeholder="你是资深品牌文案" />
+            </label>
+            <label>
+              参考素材（可选，一行一个公网 HTTPS 链接）
+              <textarea
+                name="references"
+                rows={3}
+                placeholder={"https://…/clip.mp4\nhttps://…/voice.mp3\nhttps://…/ref.png"}
+              />
+              <small>
+                按扩展名自动分到视频 / 音频 / 图片，喂给 Qwen Omni 与提示词一起理解；DeepSeek 不支持，
+                填了会被 422 挡掉。
+              </small>
             </label>
             <div className="field-row">
               <label>

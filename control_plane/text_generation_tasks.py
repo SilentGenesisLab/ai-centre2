@@ -15,6 +15,14 @@
 `format:"wav"`。所以这里自己包 WAV 头，再转 MP3 交付（MP3 才打得进 AIGC 隐式标识，
 `provenance.detect_kind` 至今认不出 WAV）。
 
+## 多模态输入（Qwen Omni）
+
+`reference_image_urls` / `reference_video_urls` / `reference_audio_urls` 会被拼进
+`messages[].content` 的数组里（`image_url` / `video_url` / `input_audio`），与 prompt 一起提问。
+2026-11-02 实测 `qwen3.8-omni-flash` 三种都通：喂一段 3 秒人脸视频它能准确描述画面、
+喂一段语音它能逐句转写、两段视频同为素材时能比较。`qwen3.5-omni-plus` 同样收视频
+（usage 里单列 `video_tokens`）。素材由**上游自己去拉**，所以必须是公网 HTTPS。
+
 ## 标识
 
 文本没有容器，所以隐式标识写在**字符本身**（Unicode 标签字符，肉眼不可见），
@@ -54,12 +62,45 @@ OMNI_PCM_WIDTH = 2
 OMNI_PCM_CHANNELS = 1
 
 
+def _audio_format(url: str) -> str:
+    """从 URL 后缀猜 `input_audio.format`。上游只认容器名，不认 content-type。
+
+    平台自己的成品是 mp3；`.m4a` 用 mp4 容器，百炼同样认 mp4。猜不出来按 mp3 发 ——
+    这个字段填错的报错很含糊（「format not supported」），所以宁可给最常见的一种。
+    """
+    suffix = url.split("?", 1)[0].rsplit(".", 1)[-1].lower() if "." in url else ""
+    return {"wav": "wav", "mp3": "mp3", "m4a": "mp4", "mp4": "mp4", "aac": "aac", "ogg": "ogg"}.get(
+        suffix, "mp3"
+    )
+
+
+def _content(request: dict[str, Any]) -> str | list[dict[str, Any]]:
+    """把 prompt 与参考素材拼成 `messages[].content`。
+
+    没有素材时**原样返回字符串**：OpenAI 兼容口两种形态都收，但纯文本走字符串少一层嵌套，
+    也让存量调用方的报文逐字不变。
+
+    有素材时才拼数组。顺序是「先素材、后文字」—— 这是百炼文档的写法，实测（2026-11-02）
+    视频的 `video_url`、音频的 `input_audio`、图片的 `image_url` 三种都通。
+    """
+    media: list[dict[str, Any]] = []
+    for url in request.get("reference_image_urls") or []:
+        media.append({"type": "image_url", "image_url": {"url": url}})
+    for url in request.get("reference_video_urls") or []:
+        media.append({"type": "video_url", "video_url": {"url": url}})
+    for url in request.get("reference_audio_urls") or []:
+        media.append({"type": "input_audio", "input_audio": {"data": url, "format": _audio_format(url)}})
+    if not media:
+        return request["prompt"]
+    return [*media, {"type": "text", "text": request["prompt"]}]
+
+
 def _payload(binding: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
     """OpenAI 兼容的 chat completions。型号用绑定的 upstream_model。"""
-    messages: list[dict[str, str]] = []
+    messages: list[dict[str, Any]] = []
     if request.get("system"):
         messages.append({"role": "system", "content": request["system"]})
-    messages.append({"role": "user", "content": request["prompt"]})
+    messages.append({"role": "user", "content": _content(request)})
     payload: dict[str, Any] = {
         "model": binding["upstream_model"],
         "messages": messages,

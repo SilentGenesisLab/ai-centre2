@@ -766,6 +766,11 @@ class TextGenerationRequest(BaseModel):
     `output_audio=true` 时额外产出语音：要求模型绑定声明了 `audio_output`（目前只有
     `qwen3.5-omni-plus`）。语音**只能走流式**拿到 —— 上游在非流式请求里照样按音频计费，
     但响应体里没有 audio 字段（见 text_generation_tasks 的说明）。
+
+    三个 `reference_*_urls` 是**多模态输入**：Omni 系列能直接把图片/视频/音频理解进 prompt
+    一起答（2026-11-02 实测 3.8-flash 三种都通）。能不能接由绑定的 capabilities_json 决定 ——
+    DeepSeek 那两条声明的是 0，带素材的请求在这里就被 422 挡掉，不会白花一次调用。
+    素材必须是**公网 HTTPS**：上游是自己拉这个 URL，我们只透传。
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -773,6 +778,10 @@ class TextGenerationRequest(BaseModel):
     channel: Literal["ark","dashscope","auto"] = "auto"
     prompt: str = Field(min_length=1, max_length=20000)
     system: str | None = Field(default=None, max_length=8000)
+    # 上限沿用视频生成那边的一套口径（9/3/3），是**本平台的闸门**，不是上游公布的上限。
+    reference_image_urls: list[str] = Field(default_factory=list, max_length=9)
+    reference_video_urls: list[str] = Field(default_factory=list, max_length=3)
+    reference_audio_urls: list[str] = Field(default_factory=list, max_length=3)
     # 允许 0（确定性输出），所以默认值给 0.7 但同时接受 None（不传给上游）。
     temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=1024, ge=1, le=8192)
@@ -789,6 +798,21 @@ class TextGenerationRequest(BaseModel):
     voice: str = Field(default="Tina", max_length=64, description="语音音色，透传给上游。")
     external_ref: str | None = Field(default=None, max_length=256)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("reference_image_urls", "reference_video_urls", "reference_audio_urls")
+    @classmethod
+    def validate_reference_urls(cls, values: list[str]) -> list[str]:
+        """去空、去重，并要求公网 HTTPS。上游是**自己拉取**这些 URL，内网地址与 http 一律拉不到，
+        早一点报清楚比让上游回一句含糊的「download failed」好排查。"""
+        cleaned = [value.strip() for value in values if value.strip()]
+        if len(cleaned) != len(set(cleaned)):
+            raise ValueError("reference URL lists must not contain duplicates")
+        for value in cleaned:
+            if not value.startswith("https://"):
+                raise ValueError("reference URLs must be public https:// links")
+            if len(value) > 4096:
+                raise ValueError("reference URL is too long")
+        return cleaned
 
 
 class DecisionGenerationRequest(BaseModel):

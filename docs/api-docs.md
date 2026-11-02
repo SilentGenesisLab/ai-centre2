@@ -268,14 +268,17 @@ curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Beare
 | `thinking` | 否 | 是否让模型先推理再回答，默认 `false`（关）。关掉更快更省，且不会出现「正文为空」（见下） |
 | `output_audio` | 否 | 同时生成语音，默认 `false`。**只有 `qwen3.5-omni-plus` 支持**，别的型号传 `true` 会 422 |
 | `voice` | 否 | 音色，默认 `Tina`，原样透传给上游 |
+| `reference_image_urls` | 否 | 参考图片，最多 9 张。**公网 HTTPS**，见下 |
+| `reference_video_urls` | 否 | 参考视频，最多 3 段。**公网 HTTPS**，见下 |
+| `reference_audio_urls` | 否 | 参考音频，最多 3 段。**公网 HTTPS**，见下 |
 
 型号与渠道：
 
-| `model` | 可用渠道 | 语音输出 |
-|---|---|:--:|
-| `deepseek-v4-flash` | `ark`（优先）、`dashscope` | — |
-| `qwen3.8-omni-flash` | `dashscope` | **不支持** |
-| `qwen3.5-omni-plus` | `dashscope` | 支持 |
+| `model` | 可用渠道 | 语音输出 | 多模态输入 |
+|---|---|:--:|:--:|
+| `deepseek-v4-flash` | `ark`（优先）、`dashscope` | — | — |
+| `qwen3.8-omni-flash` | `dashscope` | **不支持** | 图片 / 视频 / 音频 |
+| `qwen3.5-omni-plus` | `dashscope` | 支持 | 图片 / 视频 / 音频 |
 
 结果在 `GET /v1/text-generations/jobs/{job_id}` 的 `upstream_response` 里：
 
@@ -286,6 +289,35 @@ curl -sS -X POST "$BASE_URL/v1/text-generations/jobs"   -H "Authorization: Beare
 | `aigc` | `{implicit, explicit, missing_fields}`，说明这次标了什么 |
 | `usage` | 上游的 token 用量（要了语音时，`completion_tokens_details.audio_tokens` 是语音那部分） |
 | `audio` | **只在要了语音时出现**：`{url, duration_seconds, voice, format, source_format}`；MP3 的 https 链接同时也在 `result_urls` 里 |
+
+#### 多模态输入（Qwen Omni 看图 / 看视频 / 听音频）
+
+两个 Omni 型号都能把**参考图片、视频、音频**跟提示词一起理解：给一段视频让它描述画面、
+给一段音频让它转写、给两段视频让它比较。DeepSeek 两个绑定不支持，传了会被 `422` 挡在
+提交前（不会白花一次调用）。
+
+素材必须是**公网 HTTPS 链接**（可以用 `POST /v1/uploads` 先传，见 1.4）。上游是**自己去拉**
+这个 URL 的，内网地址和 `http://` 一律拉不到，平台在报文校验阶段就拒掉。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/text-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{
+    "model": "qwen3.8-omni-flash",
+    "channel": "dashscope",
+    "prompt": "这段视频里的产品是什么？画面里有没有出现文字？逐条说。",
+    "reference_video_urls": ["https://your-bucket.oss-cn-shenzhen.aliyuncs.com/clip.mp4"],
+    "max_tokens": 512
+  }'
+```
+
+三种素材可以同时给（连线到 `messages[].content` 的数组里，顺序是图片 → 视频 → 音频 → 文字）。
+数量上限 9 张 / 3 段 / 3 段，是**本平台的闸门**，不是上游公布的上限 —— 上游真正拒的时候
+会回 `400`，那时按实际报错再调。
+
+> 计费按 token 算，视频最贵：实测一段 3 秒人脸视频约 `1346` 个 `video_tokens`
+> （`usage.prompt_tokens_details.video_tokens` 能看到）。长视频先自己裁短再传。
 
 #### 为什么 `thinking` 默认是关的
 
@@ -834,16 +866,61 @@ curl -sS -H "Authorization: Bearer $API_KEY" \
 
 ## 7. 语音合成与语音克隆
 
-### 7.1 同步普通语音合成
+语音这一块有**三条路**，先认清楚再动手：
 
-`POST /v2/tts/speech`
+| 想要什么 | 走哪条 | 关键字段 |
+|---|---|---|
+| 用**已有的音色**把文字念出来 | 7.1 普通合成 | `text` + `voice_profile_id` |
+| 用**一段自然语言要求**控制情绪、停连、重音 | 7.2 prompt 合成 | `emotion`（+ `emotion_enhance`） |
+| 用**一段参考音频**把它的人声复刻过来 | 7.3 声音克隆 | `reference_audio_url` + `prompt_text` |
+
+三条路都打同一个 `POST /v2/tts/speech`，区别只在请求里多带哪些字段；
+流式（7.4）与异步长文本（7.5）是同一套参数的另外两个入口。
+
+### 7.0 音色表是怎么来的（先看这个）
+
+`voice_profile_id` 指向「声音档案」，档案本身不是模型，而是**一份到各厂商音色的映射**：
+
+```json
+{
+  "voice_profile_id": "zh-female-news",
+  "display_name": "中文 · 女 · 新闻播报",
+  "languages": ["zh-CN"],
+  "bindings": {
+    "minimax":  {"voice_id": "Chinese (Mandarin)_News_Anchor"},
+    "voxcpm2":  {"reference_audio": "/home/donxu/voices/zh-female-news.wav",
+                 "reference_text": "参考音频里说出的原文"}
+  },
+  "fallback_order": ["voxcpm2", "minimax"]
+}
+```
+
+**所以「音色列表」本质上就是一份预先克隆好的语音**：`bindings.voxcpm2.reference_audio`
+指向那一段参考音频，用的时候等于每次拿它做一次克隆；`bindings.minimax.voice_id`
+则是厂商自己的系统音色（不占我们的算力）。选音色 = 选档案，不需要每次再传参考音频。
+
+现状（2026-11-01 实测）：
+
+- `GET /v2/tts/voices` 目前只有 `default` 一条，`bindings.minimax.voice_id` 是
+  `Chinese (Mandarin)_Male_Announcer`。
+- 可用来铺表的厂商音色：MiniMax 系统音色共 303 个，其中**中文普通话 26、粤语 6、英语 6**
+  （`POST {MINIMAX_TTS_BASE_URL}/v1/get_voice`，body `{"voice_type":"all"}`，不花钱）。
+- **要凑到 200 条中文+英文，单靠 MiniMax 不够**（只有 32 条）。两条现实路径：
+  1. 打开豆包渠道（`DOUBAO_TTS_ENABLED`，需要 app_id/access_token）——它的中文音色是几百条量级；
+  2. 自建克隆音色库：准备 200 条 10～30 秒干声 + 对应文本，每个做成一个 `voxcpm2` 绑定的档案。
+     这条不依赖厂商、可控性最好，但要人声素材与授权。
+- 导入厂商音色的脚本：`scripts/import_tts_voice_catalog.py`（见脚本头注释），
+  跑一次把 MiniMax 的中英文系统音色灌成档案，之后用 `voice_profile_id` 就能点名。
+
+### 7.1 普通合成（选音色念文字）
+
+`POST /v2/tts/speech`，同步返回 WAV。正文最多 5000 字符，更长走 7.5。
 
 ```bash
 curl -sS -X POST "$BASE_URL/v2/tts/speech" \
   -H "Authorization: Bearer $API_KEY" \
-  -H 'Content-Type: application/json' \
+  -H "Content-Type: application/json" \
   --data-raw '{
-    "provider": "auto",
     "text": "您好，这是 AI Centre 2 的语音合成示例。",
     "language": "auto",
     "voice_profile_id": "default",
@@ -852,16 +929,43 @@ curl -sS -X POST "$BASE_URL/v2/tts/speech" \
   --output speech.wav
 ```
 
-同步正文最多5000字符。更长文本请使用异步接口。
+| 字段 | 说明 |
+|---|---|
+| `voice_profile_id` | 音色档案 ID，默认 `default`；**必须在 `GET /v2/tts/voices` 里存在**，否则 404 |
+| `provider` | `auto`（默认，按档案的 `fallback_order` 依次试）/ `voxcpm2` / `minimax` / `doubao` / `elevenlabs` |
+| `language` | 语言代码，省略或 `auto` 时按正文自动判 |
+| `prosody` | `speed` 0.5～2.0、`volume` 0.1～2.0、`pitch` 0.5～2.0 |
+| `audio` | 只能是 `wav`；`sample_rate` ≤48000 |
 
-### 7.2 深度语音克隆
+### 7.2 prompt 合成（用一段话指挥「怎么念」）
 
-提供 `reference_audio_url` 即启用 VoxCPM2 深度克隆。`prompt_text` 最好填写参考音频的准确文本；为空时会先进行 ASR。
+在 7.1 的请求上再加**自然语言指令**，控情绪、停连、重音、语速起伏：
 
 ```bash
 curl -sS -D tts-headers.txt -X POST "$BASE_URL/v2/tts/speech" \
   -H "Authorization: Bearer $API_KEY" \
-  -H 'Content-Type: application/json' \
+  -H "Content-Type: application/json" \
+  --data-raw '{
+    "text": "这个价格，我真的没想到。",
+    "voice_profile_id": "default",
+    "emotion": "先压住语气，到「没想到」突然扬起，重读「真的」，句尾留半拍停顿",
+    "emotion_enhance": false
+  }' \
+  --output styled.wav
+```
+
+- `emotion`：自然语言要求，最多 200 字。它会被翻成 VoxCPM2 的表演指令再合成。
+- `emotion_enhance`：`true` 时先让大模型把 `emotion` 扩写成结构化的表演方案
+  （情感分布/能量/停顿/重音）。**这条依赖豆包大模型的 key，没配会自动降级**，
+  响应头 `X-TTS-Emotion-Enhancement` 会写明 `disabled` / `active` / `fallback`。
+- 它控制的是**怎么念**，不是**这是谁的声音**；换人请仍走 7.1 的音色或 7.3 的克隆。
+
+### 7.3 声音克隆（给参考音频，复刻这个人）
+
+```bash
+curl -sS -D tts-headers.txt -X POST "$BASE_URL/v2/tts/speech" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
   --data-raw '{
     "text": "欢迎体验我们的新产品，它将为您带来更加自然的使用体验。",
     "language": "auto",
@@ -872,47 +976,52 @@ curl -sS -D tts-headers.txt -X POST "$BASE_URL/v2/tts/speech" \
     "emotion_enhance": false,
     "clone_mode": "auto",
     "emotion_strategy": "auto",
-    "quality_mode": "standard",
-    "prosody": {"speed": 1.0, "volume": 1.0, "pitch": 1.0}
+    "quality_mode": "standard"
   }' \
   --output cloned.wav
 ```
 
-主要可选值：
+| 字段 | 说明 |
+|---|---|
+| `reference_audio_url` | 公网 HTTPS 直链，**带它就启用 VoxCPM2 深度克隆**；不带的请求走普通合成 |
+| `prompt_text` | 参考音频里准确说出的文字。填了直接用；**留空会先做一遍 ASR**（多花一次时间，且识别错会拖累相似度） |
+| `clone_mode` | `auto` / `controllable` / `ultimate` |
+| `emotion_strategy` | `auto` / `inherit`（沿用参考音频的情绪）/ `force`（强制用 `emotion`） |
+| `quality_mode` | `standard` 异步也支持；`strict` 会同步跑三道候选并做质量门禁（更慢，不省钱） |
 
-- `clone_mode`：`auto`、`controllable`、`ultimate`。
-- `emotion_strategy`：`auto`、`inherit`、`force`。
-- `quality_mode`：`standard`、`strict`；流式接口不支持 `strict`。
-- `prosody.speed`：0.5～2.0；`volume`：0.1～2.0；`pitch`：0.5～2.0。
+结果里会带几个 `X-TTS-*` 头：`X-TTS-Request-ID`、`X-TTS-Provider`、`X-TTS-Quality-Status`、
+`X-TTS-Quality-Attempts`；严格模式另带相似度与 CER 读数。拿 `X-TTS-Request-ID`
+去打 `GET /v2/tts/quality/{request_id}` 能看到逐项审计。
 
-### 7.3 实时 PCM 流
+**克隆 vs 音色表**：克隆是「这一次带参考音频」；音色表是「把这段参考音频提前登记成档案」。
+同一个人的声音，日常用音色表（7.1，省掉每次上传与 ASR），临时试新声音用克隆（7.3）。
 
-`POST /v2/tts/speech/stream`
+### 7.4 实时 PCM 流
+
+`POST /v2/tts/speech/stream`，请求体同 7.1/7.2/7.3 任一。响应是裸 PCM：
+**48kHz / 16-bit / 单声道 / little-endian**，`X-TTS-Request-ID` 在响应头里。
 
 ```bash
 curl -sS -X POST "$BASE_URL/v2/tts/speech/stream" \
   -H "Authorization: Bearer $API_KEY" \
-  -H 'Content-Type: application/json' \
-  --data-raw '{
-    "text": "这是实时流式语音合成示例。",
-    "language": "auto",
-    "voice_profile_id": "default"
-  }' \
+  -H "Content-Type: application/json" \
+  --data-raw '{"text": "这是实时流式语音合成示例。", "voice_profile_id": "default"}' \
   --output speech.pcm
 
 ffmpeg -f s16le -ar 48000 -ac 1 -i speech.pcm speech.wav
 ```
 
-响应格式：48kHz、16-bit、单声道、little-endian PCM。请求ID位于 `X-TTS-Request-ID` 响应头。
+流式不支持 `quality_mode=strict`。
 
-### 7.4 异步长文本语音
+### 7.5 异步长文本语音
 
-`POST /v2/tts/jobs`，正文最多20000字符，适合8000字符等长内容。
+`POST /v2/tts/jobs`，正文最多 20000 字符（适合整篇文章）。`idempotency_key` 必填，
+8～256 字符，同一个 key 重试不会重复建任务。异步只支持 `standard`。
 
 ```bash
 curl -sS -X POST "$BASE_URL/v2/tts/jobs" \
   -H "Authorization: Bearer $API_KEY" \
-  -H 'Content-Type: application/json' \
+  -H "Content-Type: application/json" \
   --data-raw '{
     "text": "这里替换为长文本正文……",
     "language": "auto",
@@ -920,19 +1029,10 @@ curl -sS -X POST "$BASE_URL/v2/tts/jobs" \
     "provider": "auto",
     "idempotency_key": "article-20260909-0001"
   }'
-```
 
-`idempotency_key` 必填，长度8～256字符；相同Key用于安全重试，不会重复创建任务。
-
-```bash
 JOB_ID='替换为提交返回的job_id'
-
-curl -sS -H "Authorization: Bearer $API_KEY" \
-  "$BASE_URL/v2/tts/jobs/$JOB_ID"
-
-curl -sS -H "Authorization: Bearer $API_KEY" \
-  "$BASE_URL/v2/tts/jobs/$JOB_ID/audio" \
-  --output long-speech.wav
+curl -sS -H "Authorization: Bearer $API_KEY" "$BASE_URL/v2/tts/jobs/$JOB_ID"
+curl -sS -H "Authorization: Bearer $API_KEY" "$BASE_URL/v2/tts/jobs/$JOB_ID/audio" --output long-speech.wav
 ```
 
 ## 8. 视频与音频处理示例

@@ -165,8 +165,8 @@ class CapabilityStore:
             # （2026-10-28 实测），所以它的 output_modality 还是 text。
             # 3.5-plus 的 output_modality 写成 "text+audio" —— 这一列在库里是自由文本，
             # 没有枚举约束；语音是**可选**输出（请求里 output_audio=true 才要）。
-            ("qwen3.5-omni-plus", "Qwen3.5 Omni Plus", "text_generation", ["text"], "text+audio"),
-            ("qwen3.8-omni-flash", "Qwen3.8 Omni Flash", "text_generation", ["text"], "text"),
+            ("qwen3.5-omni-plus", "Qwen3.5 Omni Plus", "text_generation", ["text","image","video","audio"], "text+audio"),
+            ("qwen3.8-omni-flash", "Qwen3.8 Omni Flash", "text_generation", ["text","image","video","audio"], "text"),
             # mxapi 的 Suno：一次生成出两首（两个 task），成品是 opus-in-mp4 的 .m4a
             ("suno-v6", "Suno v6 音乐", "audio_generation", ["text"], "audio"),
             ("suno-sound", "Suno 音效", "audio_generation", ["text"], "audio"),
@@ -239,8 +239,11 @@ class CapabilityStore:
           # Omni：`audio_output` 是**能力声明**，不是参数。请求里 output_audio=true 时
           # `_compatible` 只放行声明了它的绑定 —— 否则会把 3.8-flash（上游不支持音频）
           # 选进来再吃一个 400，白花一次调用。
-          ("qwen3.5-omni-plus","dashscope","qwen3.5-omni-plus","/chat/completions","",{"images":0,"videos":0,"audios":0,"audio_output":True},1,110),
-          ("qwen3.8-omni-flash","dashscope","qwen3.8-omni-flash","/chat/completions","",{"images":0,"videos":0,"audios":0},1,110),
+          # images/videos/audios 是**多模态输入**上限：百炼的两个 Omni 都能理解图片/视频/音频
+          # （2026-11-02 实测 3.8-flash 三种都通，见 text_generation_tasks 的说明），
+          # 所以这里不再是 0。9/3/3 与视频生成那边同一套平台口径。
+          ("qwen3.5-omni-plus","dashscope","qwen3.5-omni-plus","/chat/completions","",{"images":9,"videos":3,"audios":3,"audio_output":True},1,110),
+          ("qwen3.8-omni-flash","dashscope","qwen3.8-omni-flash","/chat/completions","",{"images":9,"videos":3,"audios":3},1,110),
           # TeamORouter 是 OpenAI 兼容的**同步**生图端点：POST /v1/images/generations 直接
           # 回 `data[0].b64_json`（PNG 的 base64），没有 task id、没有 status、没有 url 字段
           # （2026-09-30 实测，1K 约 37s）。所以这条绑定的 query_path 是空的——永远不会去轮询，
@@ -251,6 +254,10 @@ class CapabilityStore:
           ("gpt-image-2","teamorouter","gpt-image-2","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
           ("gpt-image-2.5-sunburst","teamorouter","gpt-image-2.5-sunburst","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
           ("gpt-image-2.5-flare","teamorouter","gpt-image-2.5-flare","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
+          # gpt-image-2.5 的兜底：grsai 余额打光时自动落到这里（priority 70 > grsai 的 40）。
+          # 上游没有纯 gpt-image-2.5 这个型号，只有 -sunburst / -flare 两个变体，
+          # 这里选 sunburst（甲方示例用的就是它）。画风与 grsai 的 2.5 不完全一致。
+          ("gpt-image-2.5","teamorouter","gpt-image-2.5-sunburst","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
           # Jev：POST /v1/systemone，同步（实测 1.8s、$0.000014/次），同样没有 task id。
           # 上游型号名是带命名空间的 typesafe-ai/jev（`jev` 这个裸名没验证过，用已验证的那个）。
           ("jev","teamorouter","typesafe-ai/jev","/v1/systemone","",{"images":0,"videos":0,"audios":0},1,70),
@@ -290,6 +297,29 @@ class CapabilityStore:
                 mids["seedance-2.0"],
                 ids["libtv"],
             ),
+        )
+        # 多模态输入是后加的能力（2026-11-02）：老库里两条 Omni 绑定写死的是 0/0/0，
+        # 光改上面的种子不生效（INSERT OR IGNORE 不会更新已有行）。**只在三个都是 0 时**
+        # 抬到 9/3/3 —— 管理员在控制台手工调过的绑定不覆盖。
+        for model_code in ("qwen3.5-omni-plus", "qwen3.8-omni-flash"):
+            row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[model_code], ids["dashscope"]),
+            ).fetchone()
+            if row is None:
+                continue
+            caps = json.loads(row[1] or "{}")
+            if any(int(caps.get(key) or 0) for key in ("images", "videos", "audios")):
+                continue
+            caps.update({"images": 9, "videos": 3, "audios": 3})
+            db.execute(
+                "UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                (json.dumps(caps), stamp, row[0]),
+            )
+        # 型号表里的输入模态同步改掉（控制台按它显示「支持哪些输入」）。
+        db.execute(
+            "UPDATE models SET input_modalities_json=?,updated_at=? WHERE code IN ('qwen3.5-omni-plus','qwen3.8-omni-flash')",
+            (json.dumps(["text", "image", "video", "audio"]), stamp),
         )
 
     def _encrypt(self, value: str) -> str:
