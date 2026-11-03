@@ -120,7 +120,7 @@ class CapabilityStore:
              ["16:9","1:1","9:16"],None,(3,15,None),(2,0,10),True,"auto",None),
             ("kling-video-o1","kling-o1","Kling O1",
              "singleImage2video|frames2video|mixed2video|videoEdit2video|audio2video",
-             ["16:9","1:1","9:16"],None,(3,10,None),(30,10,10),True,"auto",None),
+             ["16:9","1:1","9:16"],None,(None,None,[5,10]),(30,10,10),True,"auto",None),
             ("kling-v2-6","kling-2.6","Kling 2.6",
              "singleImage2video|frames2video",
              ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto",None),
@@ -144,7 +144,7 @@ class CapabilityStore:
              [],["768p","1080p"],(None,None,[6,10]),(1,0,0),False,None,"auto"),
             ("MiniMax-Hailuo-o2","hailuo-o2","Hailuo 02",
              "singleImage2video",
-             ["16:9","1:1","9:16"],["768p","1080p"],(3,6,None),(1,0,0),False,None,None),
+             [],["768p","1080p"],(None,None,[6,10]),(1,0,0),False,None,"auto"),
             ("wanx2.7-video","wan-2.7","Wan 2.7",
              "frames2video|video2video|mixed2video|audio2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(30,10,10),True,None,None),
@@ -153,22 +153,22 @@ class CapabilityStore:
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,15,None),(1,0,0),True,None,None),
             ("wanxiang-preview","wan-2.5","Wan 2.5",
              "text2video|singleImage2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(None,None,[5,10]),(1,0,0),True,None,None),
             ("wanxiang-plus","wan-2.2","Wan 2.2",
              "text2video|singleImage2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(None,None,[5]),(1,0,0),True,None,None),
             ("viduq3-pro","vidu-q3-pro","Vidu Q3 Pro",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,16,None),(1,0,0),True,None,None),
             ("viduq2-pro","vidu-q2-pro","Vidu Q2 Pro",
              "text2video|singleImage2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
+             [],["720p","1080p"],(1,10,None),(1,0,0),True,None,"auto"),
             ("viduq2","vidu-q2","Vidu Q2",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
             ("viduq2-turbo","vidu-q2-turbo","Vidu Q2 Turbo",
              "text2video|singleImage2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
+             [],["720p","1080p"],(1,10,None),(1,0,0),True,None,"auto"),
             ("happy-horse-1.1","happy-horse-1.1","Happy Horse 1.1",
              "frames2video|videoEdit2video|image2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(3,15,None),(30,1,0),False,None,None),
@@ -460,6 +460,36 @@ class CapabilityStore:
             if "sound_param" in _caps:
                 continue
             _caps["sound_param"] = True
+            db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(_caps), stamp, _row[0]))
+        # 2026-11-04：libtv-api 的型号目录是写死的，ratios / durations 两栏和 CLI 实际的
+        # 校验规则对不上（报错里会把可选值列出来）。上面是 INSERT OR IGNORE，已经建好的
+        # 绑定不会跟着改，这里按 CLI 实测结果覆盖一次；打了标记就不再动，管理员改过的保留。
+        _cli_caps = {c[1]: (c[4], c[6], c[10]) for c in libtv_video_catalog}
+        for _code in ("hailuo-o2", "vidu-q2-pro", "vidu-q2-turbo", "wan-2.2", "wan-2.5", "kling-o1"):
+            _row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[_code], ids["libtv"]),
+            ).fetchone()
+            if _row is None:
+                continue
+            _caps = json.loads(_row[1] or "{}")
+            if _caps.get("cli_verified"):
+                continue
+            _ratios, _dur, _dratio = _cli_caps[_code]
+            _caps["ratios"] = _ratios
+            if _dur[2] is not None:
+                _caps["duration_values"] = _dur[2]
+                _caps.pop("duration_min", None)
+                _caps.pop("duration_max", None)
+            else:
+                _caps.update({"duration_min": _dur[0], "duration_max": _dur[1]})
+                _caps.pop("duration_values", None)
+            if _dratio:
+                _caps["default_ratio"] = _dratio
+            else:
+                _caps.pop("default_ratio", None)
+            _caps["cli_verified"] = "2026-11-04"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
