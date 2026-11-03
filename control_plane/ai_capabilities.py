@@ -404,7 +404,14 @@ class CapabilityStore:
         for _key, _code, _name, _modes, _ratios, _res, _dur, _media, _sound, _dres, _dratio in libtv_video_catalog:
             _lo, _hi, _vals = _dur
             _caps = {"images": _media[0], "videos": _media[1], "audios": _media[2],
-                     "modes": _modes.split("|"), "ratios": _ratios, "sound": _sound}
+                     "modes": _modes.split("|"), "ratios": _ratios, "sound": _sound,
+                     # sound_param 表示**上游 CLI 收 `enableSound` 这个顶层字段**。它不是
+                     # `sound`（型号有没有声音）的同义词：libtv-api 的 normalizeParams 会给
+                     # 所有 sound:true 的型号自动补 enableSound，而 CLI 只认自己 schema 里的
+                     # 字段 —— 别的型号会直接 `校验失败: params 顶层不允许设置未知字段
+                     # 「enableSound」`，节点都建不出来。目前只有 Seedance 那两个验证过，
+                     # 其余型号一律发包时置 null（null 不是 undefined，上游就不会补默认值）。
+                     "sound_param": _key in {"star-video2", "star-video2.5"}}
             if _res is not None:
                 _caps["resolutions"] = _res + (["2k"] if "1080p" in _res else [])
             if _vals is not None:
@@ -439,6 +446,20 @@ class CapabilityStore:
             _caps.update({"modes": _modes.split("|"), "ratios": _ratios,
                           "resolutions": _res + ["2k"], "sound": True,
                           "duration_min": _dur[0], "duration_max": _dur[1]})
+            db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(_caps), stamp, _row[0]))
+        # sound_param 是后加的键，上面那两行早就写过 capabilities_json 了，补一次（只在缺键时补）。
+        for _code in ("seedance-2.0", "seedance-2.5"):
+            _row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[_code], ids["libtv"]),
+            ).fetchone()
+            if _row is None:
+                continue
+            _caps = json.loads(_row[1] or "{}")
+            if "sound_param" in _caps:
+                continue
+            _caps["sound_param"] = True
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",

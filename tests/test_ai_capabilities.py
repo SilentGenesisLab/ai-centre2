@@ -95,6 +95,26 @@ class CapabilityTests(unittest.TestCase):
         request["reference_image_urls"]=[];request["reference_video_urls"]=["https://x/a.mp4"]
         tv=self.store.binding("seedance-2.0","libtv"); self.assertTrue(_compatible(tv,request)); self.assertEqual(_payload(tv,request)["videoUrls"],request["reference_video_urls"])
 
+    def test_enable_sound_is_null_for_models_that_do_not_declare_it(self):
+        # 上游 normalizeParams 会给所有 sound:true 的型号补 enableSound，而 CLI 只认
+        # 自己 schema 里的字段：省略（undefined）会被补成 'on'，整单 500 且连节点都
+        # 建不出来。所以不支持的型号必须显式发 null（上游 set() 跳过 null）。
+        request = {
+            "prompt": "一段文字",
+            "reference_image_urls": [],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "resolution": "720p",
+            "sound": True,
+        }
+        seedance = _payload(self.store.binding("seedance-2.0", "libtv"), request)
+        self.assertEqual(seedance["params"]["enableSound"], "on")
+        pixverse = _payload(self.store.binding("pixverse-5", "libtv"), request)
+        self.assertIn("enableSound", pixverse["params"])
+        self.assertIsNone(pixverse["params"]["enableSound"])
+
     def test_seedance_20_480p_is_upgraded_to_720p_on_jmapi(self):
         # 480p 原先被 jmapi 整个排除出候选，后果是这类请求只有 libtv 一家能接；
         # libtv 账号一耗尽就整单失败、连兜底都没有（2026-10-07 实测）。

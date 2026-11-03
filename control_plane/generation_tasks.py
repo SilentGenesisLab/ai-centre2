@@ -181,8 +181,11 @@ def _payload(
                 # 传调用方的值会被上游判 INVALID_*，所以固定成型号自己的那一档。
                 "ratio":caps.get("default_ratio") or request["aspect_ratio"],
                 "resolution":caps.get("default_resolution") or request["resolution"]}
-        if caps.get("sound",True):
-            params["enableSound"]="on" if request.get("sound") else "off"
+        # `enableSound` 必须是**显式的 null**、不能省略：省略（undefined）时上游
+        # normalizeParams 会给所有 sound:true 的型号补 'on'，而 CLI 只认自己 schema
+        # 里的字段，别的型号直接「校验失败: params 顶层不允许设置未知字段「enableSound」」。
+        # 只有 sound_param 标记过的型号（目前只有 Seedance 两个）真收这个字段。
+        params["enableSound"]=("on" if request.get("sound") else "off") if caps.get("sound_param") else None
         return {"model":binding["upstream_model"],"prompt":request["prompt"],"params":params,"imageUrls":real,"videoUrls":videos,"audioUrls":audios}
     if binding["adapter"]=="grsai":
         model=binding["upstream_model"]
