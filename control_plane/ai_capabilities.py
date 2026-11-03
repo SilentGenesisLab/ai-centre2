@@ -126,7 +126,7 @@ class CapabilityStore:
              ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto",None),
             ("kling-v2-5-turbo-pro","kling-2.5","Kling 2.5",
              "singleImage2video|frames2video",
-             ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto",None),
+             ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto","auto"),
             ("kling-2.1","kling-2.1","Kling 2.1",
              "singleImage2video",
              ["16:9","1:1","9:16"],None,(3,10,None),(1,0,0),True,"auto",None),
@@ -161,13 +161,13 @@ class CapabilityStore:
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,16,None),(1,0,0),True,None,None),
             ("viduq2-pro","vidu-q2-pro","Vidu Q2 Pro",
-             "text2video|singleImage2video",
+             "singleImage2video",
              [],["720p","1080p"],(1,10,None),(1,0,0),True,None,"auto"),
             ("viduq2","vidu-q2","Vidu Q2",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
             ("viduq2-turbo","vidu-q2-turbo","Vidu Q2 Turbo",
-             "text2video|singleImage2video",
+             "singleImage2video",
              [],["720p","1080p"],(1,10,None),(1,0,0),True,None,"auto"),
             ("happy-horse-1.1","happy-horse-1.1","Happy Horse 1.1",
              "frames2video|videoEdit2video|image2video",
@@ -186,7 +186,7 @@ class CapabilityStore:
              ["16:9","1:1","9:16"],["720p","1080p"],(3,10,None),(1,0,0),False,None,None),
             ("omnihuman-1.5","omnihuman-1.5","OmniHuman 1.5",
              "audio2video",
-             ["16:9","1:1","9:16"],["720p","1080p"],(3,10,None),(0,0,10),True,None,None),
+             ["16:9","1:1","9:16"],None,(3,10,None),(0,0,10),True,"auto","auto"),
         ]
         presets = [
             ("local", "本地部署", "local", "local_h3", "http://127.0.0.1:8320", 1, 10),
@@ -490,6 +490,40 @@ class CapabilityStore:
             else:
                 _caps.pop("default_ratio", None)
             _caps["cli_verified"] = "2026-11-04"
+            db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(_caps), stamp, _row[0]))
+        # 2026-11-04 第二轮实测：libtv-api 的 normalizeParams 会保留中台显式传来的字面值，
+        # 只在这三个型号上完全无法满足 —— Kling 2.5 / OmniHuman 1.5 的 CLI 只收 auto，
+        # 而中台 HTTP 枚举不接受 auto，唯一出口是让绑定自己带 default_ratio/default_resolution。
+        # 另外 Vidu Q2 Pro/Turbo 的 text2video 上游每次都失败（换参考图走单图生视频就正常），
+        # 所以把 text2video 从能力里摘掉，免得调用方白烧一次积分。
+        _sync = {c[1]: c for c in libtv_video_catalog}
+        for _code in ("kling-2.5", "omnihuman-1.5", "vidu-q2-pro", "vidu-q2-turbo"):
+            _row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[_code], ids["libtv"]),
+            ).fetchone()
+            if _row is None:
+                continue
+            _caps = json.loads(_row[1] or "{}")
+            if _caps.get("cli_sync") == "2026-11-04b":
+                continue
+            _c = _sync[_code]
+            _caps["modes"] = _c[3].split("|")
+            _caps["ratios"] = _c[4]
+            if _c[5] is None:
+                _caps.pop("resolutions", None)
+            else:
+                _caps["resolutions"] = _c[5]
+            if _c[9]:
+                _caps["default_ratio"] = _c[9]
+            else:
+                _caps.pop("default_ratio", None)
+            if _c[10]:
+                _caps["default_resolution"] = _c[10]
+            else:
+                _caps.pop("default_resolution", None)
+            _caps["cli_sync"] = "2026-11-04b"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
