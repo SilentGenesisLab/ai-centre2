@@ -162,13 +162,13 @@ class CapabilityStore:
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,16,None),(1,0,0),True,None,None),
             ("viduq2-pro","vidu-q2-pro","Vidu Q2 Pro",
              "singleImage2video",
-             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto","auto"),
+             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto",None),
             ("viduq2","vidu-q2","Vidu Q2",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
             ("viduq2-turbo","vidu-q2-turbo","Vidu Q2 Turbo",
              "singleImage2video",
-             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto","auto"),
+             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto",None),
             ("happy-horse-1.1","happy-horse-1.1","Happy Horse 1.1",
              "frames2video|videoEdit2video|image2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(3,15,None),(30,1,0),False,None,None),
@@ -186,7 +186,7 @@ class CapabilityStore:
              ["16:9","1:1","9:16"],["720p","1080p"],(3,10,None),(1,0,0),False,None,None),
             ("omnihuman-1.5","omnihuman-1.5","OmniHuman 1.5",
              "audio2video",
-             ["16:9","1:1","9:16"],None,(3,10,None),(0,0,10),True,"auto","auto"),
+             ["16:9","1:1","9:16"],None,(3,10,None),(1,0,10),True,"auto","auto"),
         ]
         presets = [
             ("local", "本地部署", "local", "local_h3", "http://127.0.0.1:8320", 1, 10),
@@ -506,11 +506,12 @@ class CapabilityStore:
             if _row is None:
                 continue
             _caps = json.loads(_row[1] or "{}")
-            if _caps.get("cli_sync") == "2026-11-04c":
+            if _caps.get("cli_sync") == "2026-11-04d":
                 continue
             _c = _sync[_code]
             _caps["modes"] = _c[3].split("|")
             _caps["ratios"] = _c[4]
+            _caps.update({"images": _c[7][0], "videos": _c[7][1], "audios": _c[7][2]})
             if _c[5] is None:
                 _caps.pop("resolutions", None)
             else:
@@ -523,7 +524,7 @@ class CapabilityStore:
                 _caps["default_resolution"] = _c[10]
             else:
                 _caps.pop("default_resolution", None)
-            _caps["cli_sync"] = "2026-11-04c"
+            _caps["cli_sync"] = "2026-11-04d"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
