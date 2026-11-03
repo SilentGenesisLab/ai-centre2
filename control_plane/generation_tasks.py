@@ -45,6 +45,18 @@ FAILURE_STATES = {"fail", "failed", "failure", "error", "cancelled", "canceled"}
 OSS_PERSISTED_MODELS = {
     # 视频
     "seedance-2.0", "seedance-2.5", "minimax-h3-rh-enhanced",
+    # libtv 走同一套收结果路径（下载 → 打 AI 标识 → 传内核），所以这些型号也必须在这里，
+    # 否则「功能都在、就是没标识」。清单与 ai_capabilities.libtv_video_catalog 一一对应。
+    "seedance-2.0-fast", "seedance-2.0-mini", "seedance-1.5-pro",
+    "seedance-1.0-pro", "seedance-1.0-lite",
+    "kling-3.0-turbo", "kling-o3", "kling-3.0", "kling-o1", "kling-2.6", "kling-2.5",
+    "kling-2.1", "kling-3.0-motion-control",
+    "minimax-h3-max", "hailuo-2.3", "hailuo-2.3-fast", "hailuo-o2",
+    "wan-2.7", "wan-2.6", "wan-2.5", "wan-2.2",
+    "vidu-q3-pro", "vidu-q2-pro", "vidu-q2", "vidu-q2-turbo",
+    "happy-horse-1.1", "happy-horse-1.0",
+    "pixverse-5.5", "pixverse-5",
+    "midjourney-video", "omnihuman-1.5",
     # 图片
     "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
     "nano-banana-2", "nanobanana-2.1", "midjourney", "moss-image",
@@ -108,6 +120,40 @@ def _effective_resolution(binding:dict[str,Any],r:dict[str,Any])->Any:
     return r.get("resolution")
 
 
+def _libtv_mode(modes: list[str] | None, images: int, videos: int, audios: int) -> str | None:
+    """从上游声明的模式里挑一个能承当前参考素材的；挑不出来回 None（该绑定不接这一单）。
+
+    libtv-api 的 validateParams 先按 (模型, 模式, 素材数量) 校验、**在挑号之前**跑，
+    所以选错模式虽然不收钱，却会让作业失败并退回另一家。在这里挑准才不白跑一趟。
+    `modes is None` 表示这条绑定没声明模式（加这个能力之前就有的老绑定），沿用
+    历史上的 mixed2video，行为一字不变。
+    """
+    if modes is None:
+        return "mixed2video"
+    if videos:
+        for mode in ("mixed2video", "videoEdit2video", "video2video"):
+            if mode in modes:
+                return mode
+        # Kling 动作迁移是 singleImage2video + 1 图 1 视频，没有混合模式
+        return "singleImage2video" if images and "singleImage2video" in modes else None
+    if audios:
+        for mode in ("mixed2video", "audio2video"):
+            if mode in modes:
+                return mode
+        return None
+    if images:
+        if "mixed2video" in modes:
+            return "mixed2video"
+        if images == 1 and "singleImage2video" in modes:
+            return "singleImage2video"
+        if "image2video" in modes:
+            return "image2video"
+        if images <= 2 and "frames2video" in modes:
+            return "frames2video"
+        return "singleImage2video" if "singleImage2video" in modes else None
+    return "text2video" if "text2video" in modes else None
+
+
 def _payload(
     binding: dict[str, Any],
     request: dict[str, Any],
@@ -121,7 +167,23 @@ def _payload(
     if binding["adapter"]=="jmapi":
         return {"image_urls":images,"audio_urls":audios,"video_urls":videos,"prompt":request["prompt"],"model_version":binding["upstream_model"],"duration":request["duration_seconds"],"ratio":request["aspect_ratio"],"video_resolution":_effective_resolution(binding,request),"poll":None}
     if binding["adapter"]=="libtv":
-        return {"model":binding["upstream_model"],"prompt":request["prompt"],"params":{"modeType":"mixed2video","duration":request["duration_seconds"],"ratio":request["aspect_ratio"],"resolution":request["resolution"],"enableSound":"on" if request.get("sound") else "off"},"imageUrls":images,"videoUrls":videos,"audioUrls":audios}
+        # 上游的 34 个视频型号各自只支持部分模式，所以 modeType 不能写死。
+        # 空白占位图原本是为「必须带素材」的老路径准备的：纯文生优先走 text2video，
+        # 别把一句提示词演成「让一张白图动起来」。
+        caps=binding.get("capabilities") or {}
+        real=[u for u in images if u!=blank_image_url] if caps.get("modes") is not None else images
+        mode=_libtv_mode(caps.get("modes"),len(real),len(videos),len(audios)) or "mixed2video"
+        if mode=="mixed2video" and not (real or videos):
+            real=images                      # 上游 mixed2video 至少要 1 个图或视频
+        params={"modeType":mode,"duration":request["duration_seconds"],
+                # default_resolution / default_ratio：少数型号没有分辨率/比例可选
+                # （Kling 只有 auto，Turbo 是 std/pro，Hailuo 2.3 只有 auto），
+                # 传调用方的值会被上游判 INVALID_*，所以固定成型号自己的那一档。
+                "ratio":caps.get("default_ratio") or request["aspect_ratio"],
+                "resolution":caps.get("default_resolution") or request["resolution"]}
+        if caps.get("sound",True):
+            params["enableSound"]="on" if request.get("sound") else "off"
+        return {"model":binding["upstream_model"],"prompt":request["prompt"],"params":params,"imageUrls":real,"videoUrls":videos,"audioUrls":audios}
     if binding["adapter"]=="grsai":
         model=binding["upstream_model"]
         aspect=request["aspect_ratio"]
@@ -359,12 +421,33 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
     # 分辨率白名单只在绑定显式声明 resolutions 时才校验 —— Seedance 各档的上游白名单
     # 我们没有完整实测过，不替它们断言。但 768p 是本次为新模型新开的取值，必须挡住它
     # 从新入口漏到老渠道：没声明白名单的绑定一律不接 768p。
+    # default_resolution 非空表示这个型号**没有分辨率可选**（Kling 只有 auto），
+    # 发包时会用型号自己那一档，调用方给什么都没意义 —— 所以两条都不判。
     resolution = str(r.get("resolution") or "").lower()
-    declared = c.get("resolutions")
-    if declared is not None:
-        if resolution not in declared:
+    if c.get("default_resolution") is None:
+        declared = c.get("resolutions")
+        if declared is not None:
+            if resolution not in declared:
+                return False
+        elif resolution == "768p":
             return False
-    elif resolution == "768p":
+    # libtv 的 34 个视频型号各自只支持部分模式 / 比例 / 时长档位，且上游是**先校验再挑号**
+    # （错了一分钱不花但作业会失败）。在本地判掉，auto 才会去选真正能接的那一家。
+    if c.get("modes") is not None and _libtv_mode(
+            c["modes"],
+            len(r.get("reference_image_urls") or []),
+            len(r.get("reference_video_urls") or []),
+            len(r.get("reference_audio_urls") or [])) is None:
+        return False
+    ratios = c.get("ratios")
+    if ratios is not None and not c.get("default_ratio"):
+        # 请求里没带比例时不判：上游会自己补默认值（normalizeParams），拦掉反而是假阴性。
+        requested_ratio = str(r.get("aspect_ratio") or "")
+        if requested_ratio and requested_ratio not in ratios:
+            return False
+    # 只有离散档位的型号（Hailuo 2.3 收 6/10，Pixverse 收 5/8/10），给别的值上游必拒。
+    duration_values = c.get("duration_values")
+    if duration_values is not None and int(r.get("duration_seconds") or 0) not in duration_values:
         return False
     # 尺寸档位同理：只在绑定显式声明 image_sizes 时才校验。MOSS-Image 是本机 GPU0 上的
     # 模型，4K（16.6 Mpx）跑不动，声明了 ["1K","2K"] 就应该在这被挡掉 —— auto 换别家、

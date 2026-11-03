@@ -578,7 +578,7 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `seedance-2.0`、`seedance-2.5`、`minimax-h3-rh-enhanced` | `seedance-2.0` |
+| `model` | 否 | `seedance-2.0`、`seedance-2.5`、`minimax-h3-rh-enhanced`，以及 §5.1.3 里 libtv 的 31 个型号 | `seedance-2.0` |
 | `channel` | 否 | `jmapi`、`libtv`、`runninghub`、`auto` | `jmapi` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 2.0最多9张；2.5最多30张；H3最多9张 | `[]` |
@@ -642,7 +642,62 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 - 渠道密钥走部署级环境变量 `RUNNINGHUB_API_TOKEN`（与视频超分共用一份），不落能力库；需要覆盖时在管理端给该渠道单独填一次凭据。
 - **上游的查询接口只校验 `Authorization` 头在不在，不校验它对不对**（2026-09-29 实测：错的 token 与对的 token 返回逐字相同）。所以「连接测试通过」只说明网关通、头带了，不代表密钥有效；密钥错了会在真正提交生成时才暴露。
 
-### 5.2 查询与取消通用视频任务
+### 5.1.3 libtv 的其它视频型号（2026-11-04 起）
+
+`channel` 传 `libtv` 时，`model` 还可以是下面这些。它们**只有 libtv 一条绑定**，
+表里没列 `jmapi`/`runninghub` 是因为那两家没有同名型号，不是排版漏了。
+
+| `model` | 上游型号 | 模式 | 时长 | 分辨率 | 画幅 |
+|---|---|---|---|---|---|
+| `seedance-2.0-fast` | `star-video2-fast` | 文/首帧/尾帧/多图/混合/音频 | 4～15 | 480p/720p/1080p | 五种 |
+| `seedance-2.0-mini` | `star-video2-mini` | 同上 | 4～15 | 480p/720p/1080p | 五种 |
+| `seedance-1.5-pro` | `seedance-1.5-pro` | 同上 | 4～12 | 480p/720p/1080p | 五种 |
+| `seedance-1.0-pro` | `doubao-seedance-pro` | 文生/单图 | 3～10 | 480p/720p/1080p | 16:9 / 1:1 / 9:16 |
+| `seedance-1.0-lite` | `doubao-seedance-lite` | 文生/单图 | 3～10 | 480p/720p/1080p | 16:9 / 1:1 / 9:16 |
+| `kling-3.0-turbo` | `kling-v3-turbo` | 单图/音频 | 3～15 | 固定 `pro` | 16:9 / 1:1 / 9:16 |
+| `kling-o3` | `kling-v3-omni` | 单图/首尾帧/混合/视频编辑/音频 | 3～15 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
+| `kling-3.0` | `kling-video-o3` | 单图/首尾帧/音频 | 3～15 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
+| `kling-o1` | `kling-video-o1` | 单图/首尾帧/混合/视频编辑/音频 | 3～10 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
+| `kling-2.6` | `kling-v2-6` | 单图/首尾帧 | 3～10 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
+| `kling-2.5` | `kling-v2-5-turbo-pro` | 单图/首尾帧 | 3～10 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
+| `kling-2.1` | `kling-2.1` | 单图 | 3～10 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
+| `kling-3.0-motion-control` | `kling-v3-motion-control` | 单图 + 1 视频 | 3～10 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
+| `minimax-h3-max` | `MiniMax-Hailuo-H3-Max` | 文生/单图/首尾帧 | 5～15 | 480p/768p | 五种 |
+| `hailuo-2.3` | `MiniMax-Hailuo-2.3` | 单图 | 6 或 10 | 768p/1080p | 固定 `auto` |
+| `hailuo-2.3-fast` | `MiniMax-Hailuo-2.3-Fast` | 单图 | 6 或 10 | 768p/1080p | 固定 `auto` |
+| `hailuo-o2` | `MiniMax-Hailuo-o2` | 单图 | 3～6 | 768p/1080p | 16:9 / 1:1 / 9:16 |
+| `wan-2.7` | `wanx2.7-video` | 首尾帧/视频改写/混合/音频 | 2～10 | 720p/1080p | 五种 |
+| `wan-2.6` | `wanxiang-v2-6` | 文生/单图 | 2～15 | 720p/1080p | 五种 |
+| `wan-2.5` | `wanxiang-preview` | 文生/单图 | 2～10 | 720p/1080p | 五种 |
+| `wan-2.2` | `wanxiang-plus` | 文生/单图 | 2～10 | 720p/1080p | 五种 |
+| `vidu-q3-pro` | `viduq3-pro` | 文生/单图 | 1～16 | 720p/1080p | 五种 |
+| `vidu-q2-pro` | `viduq2-pro` | 文生/单图 | 1～10 | 720p/1080p | 五种 |
+| `vidu-q2` | `viduq2` | 文生/单图 | 1～10 | 720p/1080p | 五种 |
+| `vidu-q2-turbo` | `viduq2-turbo` | 文生/单图 | 1～10 | 720p/1080p | 五种 |
+| `happy-horse-1.1` | `happy-horse-1.1` | 首尾帧/视频编辑/多图 | 3～15 | 720p/1080p | 五种 |
+| `happy-horse-1.0` | `happy-horse-1` | 首尾帧/视频编辑/多图 | 3～15 | 720p/1080p | 五种 |
+| `pixverse-5.5` | `pixverse-v5.5` | 文生/单图/首尾帧 | 5、8 或 10 | 720p/1080p | 五种 |
+| `pixverse-5` | `pixverse-v5` | 文生/单图/首尾帧 | 5、8 或 10 | 720p/1080p | 五种 |
+| `midjourney-video` | `midjourney-video` | 单图 | 3～10 | 720p/1080p | 16:9 / 1:1 / 9:16 |
+| `omnihuman-1.5` | `omnihuman-1.5` | 音频驱动（必须给音频） | 3～10 | 720p/1080p | 16:9 / 1:1 / 9:16 |
+
+几条要点：
+
+- **模式是按素材自动挑的**，不用传。给了视频就优先 `mixed2video` / `videoEdit2video`，
+  只给音频走 `audio2video`，只有图走 `mixed2video` / 单图 / 多图。
+  `kling-3.0-motion-control` 是唯一要「1 图 + 1 视频」的组合。
+- **没有文字模式**的型号（Kling 全系、Hailuo 2.3、Wan 2.7、Happy Horse、MJ、OmniHuman）
+  收到纯文字请求会在提交前 422，不会把一言不发的提示词硬塞给上游。
+- **「固定 `auto`」的分辨率/画幅**表示该型号没有可选档，中台按型号自己那一档发包，
+  `resolution`/`aspect_ratio` 传什么都会被忽略（不是报错）。
+- **`2K` 只在型号本身有 1080p 时接受**：上游把 2K 映射成 1080p，所以表里写 1080p 的都能收；
+  `minimax-h3-max` 只有 480p/768p，传 `2K` 会 422。
+- 这些型号的结果**同样转存 OSS 并打 AI 标识**，与 Seedance 同一条路径。
+- 上游 **LibTV 画布界面上出现的 `Wan 3.0`、`Kling 4.0`、`H3-Highspeed`、`Wan 3.0 Prime`
+  目前不在开放 API 里**（用必被拒的入参逐个探过，一律 `400 未知模型`），所以这里没有。
+  等上游开放后再加绑定即可，不需要改代码。
+
+
 
 ```bash
 JOB_ID='替换为提交返回的job_id'

@@ -78,6 +78,116 @@ class CapabilityStore:
 
     def _seed(self, db: sqlite3.Connection) -> None:
         stamp = now()
+        # ── libtv 视频型号总表（2026-11-04）──────────────────────────────────────
+        # 真值是上游 `POST /libtv/api/v1/video/models` 返回的 34 条，字段语义与其校验层
+        # （LiptvApi/api-server/lib/models.js）一致。这里列 31 条：seedance-2.0 /
+        # seedance-2.5 / minimax-h3 的绑定在下面已有的 bindings 里。
+        #
+        # 每行 = (上游 key, 中台 code, 名称, modes, ratios, resolutions,
+        #         时长, 素材上限, 有音轨, 固定分辨率, 固定比例)
+        #   modes      : 用 | 连接。发包时按参考素材挑一个（generation_tasks._libtv_mode）。
+        #   ratios     : 上游白名单 ∩ 中台 aspect_ratio。空表示该型号只能 auto，靠固定比例。
+        #   resolutions: 小写，上游白名单 ∩ 中台 resolution。中台没有 540p / 4k 两档，
+        #                只有这两档的型号落到固定分辨率。
+        #   时长       : (下限, 上限, 可选值列表)。
+        #   素材上限   : (图, 视频, 音频)。
+        # 这些数字上游**真的会校验**（validateParams 先校验再挑号，错了一分钱不花但作业会失败），
+        # 所以照抄而不是拍脑袋；它们同时是 `_compatible` 的闸门，让 auto 与点名 422 在本地判准。
+        libtv_video_catalog = [
+            ("star-video2-fast","seedance-2.0-fast","Seedance 2.0 Fast VIP",
+             "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(4,15,None),(30,10,10),True,None,None),
+            ("star-video2-mini","seedance-2.0-mini","Seedance 2.0 Mini",
+             "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(4,15,None),(30,10,10),True,None,None),
+            ("seedance-1.5-pro","seedance-1.5-pro","Seedance 1.5 Pro",
+             "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(4,12,None),(30,10,10),True,None,None),
+            ("doubao-seedance-pro","seedance-1.0-pro","Seedance 1.0 Pro",
+             "text2video|singleImage2video",
+             ["16:9","1:1","9:16"],["480p","720p","1080p"],(3,10,None),(1,0,0),True,None,None),
+            ("doubao-seedance-lite","seedance-1.0-lite","Seedance 1.0 Lite",
+             "text2video|singleImage2video",
+             ["16:9","1:1","9:16"],["480p","720p","1080p"],(3,10,None),(1,0,0),True,None,None),
+            ("kling-v3-turbo","kling-3.0-turbo","Kling 3.0 Turbo",
+             "singleImage2video|audio2video",
+             ["16:9","1:1","9:16"],None,(3,15,None),(1,0,10),True,"pro",None),
+            ("kling-v3-omni","kling-o3","Kling O3",
+             "singleImage2video|frames2video|mixed2video|videoEdit2video|audio2video",
+             ["16:9","1:1","9:16"],None,(3,15,None),(30,10,10),True,"auto",None),
+            ("kling-video-o3","kling-3.0","Kling 3.0",
+             "singleImage2video|frames2video|audio2video",
+             ["16:9","1:1","9:16"],None,(3,15,None),(2,0,10),True,"auto",None),
+            ("kling-video-o1","kling-o1","Kling O1",
+             "singleImage2video|frames2video|mixed2video|videoEdit2video|audio2video",
+             ["16:9","1:1","9:16"],None,(3,10,None),(30,10,10),True,"auto",None),
+            ("kling-v2-6","kling-2.6","Kling 2.6",
+             "singleImage2video|frames2video",
+             ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto",None),
+            ("kling-v2-5-turbo-pro","kling-2.5","Kling 2.5",
+             "singleImage2video|frames2video",
+             ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto",None),
+            ("kling-2.1","kling-2.1","Kling 2.1",
+             "singleImage2video",
+             ["16:9","1:1","9:16"],None,(3,10,None),(1,0,0),True,"auto",None),
+            ("kling-v3-motion-control","kling-3.0-motion-control","Kling 3.0 动作迁移",
+             "singleImage2video",
+             ["16:9","1:1","9:16"],None,(3,10,None),(1,1,0),False,"auto",None),
+            ("MiniMax-Hailuo-H3-Max","minimax-h3-max","MiniMax H3 Max",
+             "text2video|singleImage2video|frames2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","768p"],(5,15,None),(2,0,0),False,None,None),
+            ("MiniMax-Hailuo-2.3","hailuo-2.3","Hailuo 2.3",
+             "singleImage2video",
+             [],["768p","1080p"],(None,None,[6,10]),(1,0,0),False,None,"auto"),
+            ("MiniMax-Hailuo-2.3-Fast","hailuo-2.3-fast","Hailuo 2.3 Fast",
+             "singleImage2video",
+             [],["768p","1080p"],(None,None,[6,10]),(1,0,0),False,None,"auto"),
+            ("MiniMax-Hailuo-o2","hailuo-o2","Hailuo 02",
+             "singleImage2video",
+             ["16:9","1:1","9:16"],["768p","1080p"],(3,6,None),(1,0,0),False,None,None),
+            ("wanx2.7-video","wan-2.7","Wan 2.7",
+             "frames2video|video2video|mixed2video|audio2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(30,10,10),True,None,None),
+            ("wanxiang-v2-6","wan-2.6","Wan 2.6",
+             "text2video|singleImage2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,15,None),(1,0,0),True,None,None),
+            ("wanxiang-preview","wan-2.5","Wan 2.5",
+             "text2video|singleImage2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
+            ("wanxiang-plus","wan-2.2","Wan 2.2",
+             "text2video|singleImage2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
+            ("viduq3-pro","vidu-q3-pro","Vidu Q3 Pro",
+             "text2video|singleImage2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,16,None),(1,0,0),True,None,None),
+            ("viduq2-pro","vidu-q2-pro","Vidu Q2 Pro",
+             "text2video|singleImage2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
+            ("viduq2","vidu-q2","Vidu Q2",
+             "text2video|singleImage2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
+            ("viduq2-turbo","vidu-q2-turbo","Vidu Q2 Turbo",
+             "text2video|singleImage2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
+            ("happy-horse-1.1","happy-horse-1.1","Happy Horse 1.1",
+             "frames2video|videoEdit2video|image2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(3,15,None),(30,1,0),False,None,None),
+            ("happy-horse-1","happy-horse-1.0","Happy Horse 1.0",
+             "frames2video|videoEdit2video|image2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(3,15,None),(30,1,0),False,None,None),
+            ("pixverse-v5.5","pixverse-5.5","Pixverse V5.5",
+             "text2video|singleImage2video|frames2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(None,None,[5,8,10]),(2,0,0),True,None,None),
+            ("pixverse-v5","pixverse-5","Pixverse V5",
+             "text2video|singleImage2video|frames2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(None,None,[5,8,10]),(2,0,0),True,None,None),
+            ("midjourney-video","midjourney-video","MJ Video",
+             "singleImage2video",
+             ["16:9","1:1","9:16"],["720p","1080p"],(3,10,None),(1,0,0),False,None,None),
+            ("omnihuman-1.5","omnihuman-1.5","OmniHuman 1.5",
+             "audio2video",
+             ["16:9","1:1","9:16"],["720p","1080p"],(3,10,None),(0,0,10),True,None,None),
+        ]
         presets = [
             ("local", "本地部署", "local", "local_h3", "http://127.0.0.1:8320", 1, 10),
             # MOSS-Image 落在本机 GPU0（moss-image.service，127.0.0.1:8300），走 OpenAI 兼容的
@@ -179,6 +289,18 @@ class CapabilityStore:
         for code,name,capability_type,inputs,output in models:
             db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        (str(uuid4()),name,code,capability_type,json.dumps(inputs),output,json.dumps(schema),1,None,stamp,stamp))
+        # libtv 的 31 个视频型号：型号行由上面的 catalog 派生，不重复抄一遍上游事实。
+        for _key, _code, _name, _modes, _ratios, _res, _dur, _media, _sound, _dres, _dratio in libtv_video_catalog:
+            _m = set(_modes.split("|"))
+            _inputs = ["text"] if "text2video" in _m else []
+            if _m & {"singleImage2video","frames2video","image2video","mixed2video","videoEdit2video","video2video"}:
+                _inputs.append("image")
+            if _m & {"mixed2video","videoEdit2video","video2video"}:
+                _inputs.append("video")
+            if _m & {"audio2video","mixed2video"}:
+                _inputs.append("audio")
+            db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                       (str(uuid4()),_name,_code,"video_generation",json.dumps(_inputs),"video",json.dumps(schema),1,None,stamp,stamp))
         db.execute("UPDATE models SET capability_type='image_generation',output_modality='image',updated_at=? WHERE code IN ('gpt-image-2','gpt-image-2.5','gpt-image-2.5-sunburst','gpt-image-2.5-flare','nano-banana-2')",(stamp,))
         audio_schema = {"prompt":{"type":"string"},"lyrics":{"type":"string"},"tags":{"type":"string"},"title":{"type":"string"},"instrumental":{"type":"boolean"},"loop":{"type":"boolean"}}
         db.execute("UPDATE models SET parameter_schema_json=?,updated_at=? WHERE code IN ('suno-v6','suno-sound')",(json.dumps(audio_schema),stamp))
@@ -269,6 +391,56 @@ class CapabilityStore:
         for model,channel,upstream,submit,query,caps,enabled,priority in bindings:
             db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid4()),mids[model],ids[channel],upstream,submit,query,None,json.dumps(caps),"{}",enabled,priority,stamp,stamp))
+        # libtv 的 31 条新绑定。capabilities 里多出来的几个键都是上游**真的会校验**的闸门：
+        #   modes           —— 该型号接受哪些模式；发包时按素材挑一个（_libtv_mode），
+        #                      接不了的模式在本地就判掉，不白跑一趟上游。
+        #   ratios / resolutions —— 上游白名单 ∩ 中台取值。中台没有 540p，Vidu/Pixverse
+        #                      那几条因此只开放 720p/1080p。
+        #   duration_values —— 只有离散档位的型号（Hailuo 2.3 收 6/10，Pixverse 收 5/8/10）。
+        #   default_resolution / default_ratio —— 没有可选档的型号（Kling 是 auto / std|pro，
+        #                      Hailuo 2.3 比例只有 auto），发包时固定成型号自己那一档。
+        # `2k` 是上游 canonicalizeResolution 的别名：型号有 1080p 时 2K 会被映射过去，
+        # 所以白名单里跟着放开；没有 1080p 的型号（H3 Max）照旧不接 2K。
+        for _key, _code, _name, _modes, _ratios, _res, _dur, _media, _sound, _dres, _dratio in libtv_video_catalog:
+            _lo, _hi, _vals = _dur
+            _caps = {"images": _media[0], "videos": _media[1], "audios": _media[2],
+                     "modes": _modes.split("|"), "ratios": _ratios, "sound": _sound}
+            if _res is not None:
+                _caps["resolutions"] = _res + (["2k"] if "1080p" in _res else [])
+            if _vals is not None:
+                _caps["duration_values"] = _vals
+            else:
+                _caps.update({"duration_min": _lo, "duration_max": _hi})
+            if _dres:
+                _caps["default_resolution"] = _dres
+            if _dratio:
+                _caps["default_ratio"] = _dratio
+            db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              (str(uuid4()),mids[_code],ids["libtv"],_key,
+               "/libtv/api/v1/video/publish","/libtv/api/v1/video/query/{task_id}",
+               None,json.dumps(_caps),"{}",1,30,stamp,stamp))
+        # seedance-2.0 / seedance-2.5 的 libtv 绑定早于这套能力声明，INSERT OR IGNORE 不会
+        # 更新它们 —— 光改上面的种子不生效。只在缺 modes 时补，管理员改过的不覆盖。
+        for _code, _modes, _ratios, _res, _dur in [
+            ("seedance-2.0", "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
+             ["16:9","4:3","1:1","3:4","9:16"], ["480p","720p","1080p"], (4, 15)),
+            ("seedance-2.5", "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video|videoEdit2video",
+             ["16:9","4:3","1:1","3:4","9:16"], ["480p","720p","1080p"], (4, 30)),
+        ]:
+            _row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[_code], ids["libtv"]),
+            ).fetchone()
+            if _row is None:
+                continue
+            _caps = json.loads(_row[1] or "{}")
+            if "modes" in _caps:
+                continue
+            _caps.update({"modes": _modes.split("|"), "ratios": _ratios,
+                          "resolutions": _res + ["2k"], "sound": True,
+                          "duration_min": _dur[0], "duration_max": _dur[1]})
+            db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
                    (json.dumps({"images":9,"videos":3,"audios":3,"duration_max":15}),stamp,mids["seedance-2.0"],ids["jmapi"]))
         # DeepSeek 的推理开关是后加的：已有的绑定行是 INSERT OR IGNORE 建的，
@@ -288,11 +460,13 @@ class CapabilityStore:
                 "UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
                 (json.dumps(caps), stamp, mids["deepseek-v4-flash"], ids[channel_code]),
             )
+        # 只修 query_path：早先种子把它写成了不带 `/libtv` 前缀的 `/api/v1/video/query`。
+        # 这里**不再重写 capabilities_json** —— 那一版会覆盖上面刚补的 modes 等能力声明，
+        # 也会把管理员在控制台的改动每次重启都冲掉。
         db.execute(
-            "UPDATE model_channels SET query_path=?,capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
+            "UPDATE model_channels SET query_path=?,updated_at=? WHERE model_id=? AND channel_id=?",
             (
                 "/libtv/api/v1/video/query/{task_id}",
-                json.dumps({"images":9,"videos":3,"audios":0,"duration_max":15}),
                 stamp,
                 mids["seedance-2.0"],
                 ids["libtv"],

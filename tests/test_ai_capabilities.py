@@ -77,7 +77,8 @@ class CapabilityTests(unittest.TestCase):
         # 必须是 bearer：预设默认 'none'，不改的话 _headers 拿到 key 也会返回空头
         self.assertEqual(channels["ark"]["auth_type"],"bearer")
         self.assertEqual(channels["ark"]["base_url"],"https://ark.cn-beijing.volces.com/api/v3")
-        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney","moss-image","deepseek-v4-flash","qwen3.5-omni-plus","qwen3.8-omni-flash","suno-v6","suno-sound","jev"})
+        self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5",# libtv 的 31 个视频型号（2026-11-04 从上游 /video/models 抄回来）
+"seedance-2.0-fast","seedance-2.0-mini","seedance-1.5-pro","seedance-1.0-pro","seedance-1.0-lite","kling-3.0-turbo","kling-o3","kling-3.0","kling-o1","kling-2.6","kling-2.5","kling-2.1","kling-3.0-motion-control","minimax-h3-max","hailuo-2.3","hailuo-2.3-fast","hailuo-o2","wan-2.7","wan-2.6","wan-2.5","wan-2.2","vidu-q3-pro","vidu-q2-pro","vidu-q2","vidu-q2-turbo","happy-horse-1.1","happy-horse-1.0","pixverse-5.5","pixverse-5","midjourney-video","omnihuman-1.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney","moss-image","deepseek-v4-flash","qwen3.5-omni-plus","qwen3.8-omni-flash","suno-v6","suno-sound","jev"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -339,11 +340,16 @@ class CapabilityTests(unittest.TestCase):
             "sound": False,
         }
         blank = "https://assets.example.com/blank.png"
-        for channel in ("jmapi", "libtv"):
-            binding = self.store.binding("seedance-2.0", channel)
-            payload = _payload(binding, request, blank)
-            key = "image_urls" if channel == "jmapi" else "imageUrls"
-            self.assertEqual(payload[key], [blank])
+        # jmapi 的 Seedance 仍要一张垫图才能提交。
+        self.assertEqual(
+            _payload(self.store.binding("seedance-2.0", "jmapi"), request, blank)["image_urls"],
+            [blank],
+        )
+        # libtv 不再垫图：这些型号都有 text2video 模式，多塞一张白图等于「让白图动起来」。
+        # 垫图只为 mixed2video 这条老路径保留（没有 text2video 的型号），见 _payload 的注释。
+        libtv = _payload(self.store.binding("seedance-2.0", "libtv"), request, blank)
+        self.assertEqual(libtv["imageUrls"], [])
+        self.assertEqual(libtv["params"]["modeType"], "text2video")
         self.assertEqual(request["reference_image_urls"], [])
 
     def test_explicit_media_does_not_inject_blank_reference_image(self):
