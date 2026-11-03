@@ -24,6 +24,7 @@ from control_plane.generation_tasks import (
     _response_body,
     _result,
     _state,
+    _submit_path,
     _sync_image_results,
     _task_id,
     _urls_from_container,
@@ -78,7 +79,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(channels["ark"]["auth_type"],"bearer")
         self.assertEqual(channels["ark"]["base_url"],"https://ark.cn-beijing.volces.com/api/v3")
         self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5",# libtv 的 31 个视频型号（2026-11-04 从上游 /video/models 抄回来）
-"seedance-2.0-fast","seedance-2.0-mini","seedance-1.5-pro","seedance-1.0-pro","seedance-1.0-lite","kling-3.0-turbo","kling-o3","kling-3.0","kling-o1","kling-2.6","kling-2.5","kling-2.1","kling-3.0-motion-control","minimax-h3-max","hailuo-2.3","hailuo-2.3-fast","hailuo-o2","wan-2.7","wan-2.6","wan-2.5","wan-2.2","vidu-q3-pro","vidu-q2-pro","vidu-q2","vidu-q2-turbo","happy-horse-1.1","happy-horse-1.0","pixverse-5.5","pixverse-5","midjourney-video","omnihuman-1.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","nano-banana-2","nanobanana-2.1","midjourney","moss-image","deepseek-v4-flash","qwen3.5-omni-plus","qwen3.8-omni-flash","suno-v6","suno-sound","jev"})
+"seedance-2.0-fast","seedance-2.0-mini","seedance-1.5-pro","seedance-1.0-pro","seedance-1.0-lite","kling-3.0-turbo","kling-o3","kling-3.0","kling-o1","kling-2.6","kling-2.5","kling-2.1","kling-3.0-motion-control","minimax-h3-max","hailuo-2.3","hailuo-2.3-fast","hailuo-o2","wan-2.7","wan-2.6","wan-2.5","wan-2.2","vidu-q3-pro","vidu-q2-pro","vidu-q2","vidu-q2-turbo","happy-horse-1.1","happy-horse-1.0","pixverse-5.5","pixverse-5","midjourney-video","omnihuman-1.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","gpt-image-2-4k-upscale","nano-banana-2","nanobanana-2.1","midjourney","moss-image","deepseek-v4-flash","qwen3.5-omni-plus","qwen3.8-omni-flash","suno-v6","suno-sound","jev"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -526,6 +527,26 @@ class TeamORouterTests(unittest.TestCase):
         # 同一张单子给 grsai 合法 —— auto 因此会落到 grsai，而不是把参考图悄悄丢掉。
         self.assertTrue(_compatible(self.store.binding("gpt-image-2","grsai"),request))
 
+    def test_4k_upscale_binding_takes_one_reference_image(self):
+        # 4K 档挂在 ads-agent 那个账户上：独立渠道、独立余额，不动 teamorouter 的五条绑定。
+        binding=self.store.binding("gpt-image-2-4k-upscale","teamorouter-ads")
+        self.assertEqual(binding["upstream_model"],"gpt-image-2-4k-upscale")
+        self.assertEqual(binding["query_path"],"")   # 同步端点，永远不轮询
+        # 垫图走 /v1/images/edits，只收**一张**：报 9 会静默丢图，报 1 才会被 _compatible 拦。
+        request={"prompt":"x","image_size":"4K","aspect_ratio":"16:9","reference_image_urls":["https://x/a.png"]}
+        self.assertTrue(_compatible(binding,request))
+        self.assertEqual(_payload(binding,request)["image"],"https://x/a.png")
+        # 中台按请求尺寸映射（4K 档 16:9 = 4096x2304）。上游实际按 ~59% 落盘
+        # （2026-11-04 实测 4096x2304 → 3840x2160，宽高比精确），1K/2K 则逐像素一致。
+        self.assertEqual(_payload(binding,request)["size"],"4096x2304")
+        self.assertEqual(_submit_path(binding,request),"/v1/images/edits")
+        # 不给参考图：纯文生，仍走 generate，请求体里没有 `image` 键。
+        plain={"prompt":"x","image_size":"1K","aspect_ratio":"1:1","reference_image_urls":[]}
+        self.assertNotIn("image",_payload(binding,plain))
+        self.assertEqual(_submit_path(binding,plain),"/v1/images/generations")
+        # 两张参考图：这家接不了，交给 grsai —— 不能悄悄只用第一张。
+        self.assertFalse(_compatible(binding,{**request,"reference_image_urls":["https://x/a.png","https://x/b.png"]}))
+
     def test_jev_binding_uses_the_namespaced_upstream_model(self):
         binding=self.store.binding("jev","teamorouter")
         self.assertEqual(binding["upstream_model"],"typesafe-ai/jev")
@@ -581,9 +602,34 @@ class SyncImageResultTests(unittest.TestCase):
         # 中间文件在 finally 里清掉：一张 1K PNG 是 1.6MB，不留盘。
         self.assertFalse((self.work/"job-1").exists())
 
+    @patch("control_plane.generation_tasks.apply_provenance")
+    @patch("control_plane.generation_tasks.httpx.post")
+    @patch("control_plane.generation_tasks.httpx.get")
+    @patch("control_plane.generation_tasks.get_settings")
+    def test_url_results_are_downloaded_for_models_that_never_send_b64(
+            self, get_settings, get, post, provenance):
+        # gpt-image-2-4k-upscale 只给 data[0].url（1K/2K/4K 都是）。不下载就没有隐式标识。
+        seen=[]
+        def download(url, timeout=None):
+            seen.append(url)
+            return Mock(content=b"url-png-bytes", raise_for_status=lambda: None)
+        get.side_effect=download
+        def upload(url, headers=None, data=None, files=None, timeout=None):
+            return FakeUpload("https://oss/result-1.png")
+        post.side_effect=upload
+        get_settings.return_value=self._settings()
+
+        urls=_sync_image_results(
+            self.binding,{"data":[{"url":"https://up/a.png"}]},
+            {"model":"gpt-image-2-4k-upscale","external_ref":"ref-1"},"job-1")
+
+        self.assertEqual(urls,["https://oss/result-1.png"])
+        self.assertEqual(seen,["https://up/a.png"])
+        provenance.assert_called_once()   # 落盘后就地打标识，再传内核
+
     @patch("control_plane.generation_tasks.get_settings")
     def test_url_mode_is_passed_through_without_downloading(self, get_settings):
-        urls=_sync_image_results(self.binding,{"data":[{"url":"https://x/a.png"},{"url":"https://x/a.png"}]},{}, "job-1")
+        urls=_sync_image_results(self.binding,{"data":[{"url":"https://x/a.png"},{"url":"https://x/a.png"}]},{"model":"gpt-image-2"},"job-1")
         self.assertEqual(urls,["https://x/a.png"])
         # 透传路径完全不该碰设置（更不该去下载转存）。
         get_settings.assert_not_called()

@@ -201,6 +201,10 @@ class CapabilityStore:
             ("mxapi", "mxapi", "third_party", "mxapi", "https://open.mxapi.org", 0, 50),
             ("runninghub", "RunningHub", "third_party", "runninghub", "https://www.runninghub.cn", 0, 60),
             ("teamorouter", "TeamORouter", "third_party", "teamorouter", "https://api.teamorouter.com", 0, 70),
+            # ads-agent 是 TeamORouter 上的另一个账户（org:126869，2026-11-04 单独申请）。
+            # 单开一个渠道而不是覆盖 teamorouter 的 key：那样会把 gpt-image-2 / sunburst /
+            # flare / 2.5 / jev 五条绑定一起迁到新账户上，余额与额度都换了一份，不可回滚。
+            ("teamorouter-ads", "TeamORouter (ads-agent)", "third_party", "teamorouter", "https://api.teamorouter.com", 0, 71),
             ("wuyinkeji", "速创", "third_party", "wuyinkeji", "https://api.wuyinkeji.com", 0, 80),
             ("huanwangai", "幻网AI", "third_party", "huanwangai", "https://api.huanwangai.com", 0, 90),
             ("ark", "火山方舟", "third_party", "ark", "https://ark.cn-beijing.volces.com/api/v3", 0, 100),
@@ -231,6 +235,8 @@ class CapabilityStore:
         # 是 AESGCM 加密后存的（credential_enc），不进 git、不进前端。所以这里只把认证方式
         # 摆正，真正的 key 由运维从控制台注入，播种期 credential_tail 仍是 NULL。
         db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='teamorouter' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
+        # ads-agent 是同一种鉴权（Bearer），只是账户不同：同样只摆正认证方式，key 由控制台注入。
+        db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='teamorouter-ads' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         # 速创（wuyinkeji）用的是**裸** `Authorization: <key>`，不带 `Bearer ` 前缀 ——
         # 这不是随意选择：它的**查询**端点带前缀会直接回 403「请求密钥KEY不正确！」
         # （2026-10-08 实测：提交端点三种写法都收，查询端点只认裸 Authorization，
@@ -257,6 +263,10 @@ class CapabilityStore:
             ("gpt-image-2.5", "GPT Image 2.5", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-flare", "GPT Image 2.5 Flare", "image_generation", ["text","image"], "image"),
+            # 4K 档：**严格照请求尺寸出图**（2026-11-03 横评 21/21 与请求逐像素一致，
+            # 同批的 grsai 与 nano-banana-2.1 都会擅自改尺寸/宽高比）。声明 image ——
+            # 它的垫图走 /v1/images/edits，实测能把参考图里的设备造型锁住。
+            ("gpt-image-2-4k-upscale", "GPT Image 2 4K Upscale", "image_generation", ["text","image"], "image"),
             ("nano-banana-2", "Nano Banana 2", "image_generation", ["text","image"], "image"),
             ("nanobanana-2.1", "NanoBanana 2.1", "image_generation", ["text","image"], "image"),
             # Midjourney 只声明 text：它的「垫图/风格参考」要 base64 图片（`base64Array`），
@@ -380,6 +390,11 @@ class CapabilityStore:
           # 上游没有纯 gpt-image-2.5 这个型号，只有 -sunburst / -flare 两个变体，
           # 这里选 sunburst（甲方示例用的就是它）。画风与 grsai 的 2.5 不完全一致。
           ("gpt-image-2.5","teamorouter","gpt-image-2.5-sunburst","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
+          # 4K 档单独挂在 ads-agent 这个账户上（另一个 org、另一份余额）。
+          # `images: 1`：垫图走 /v1/images/edits，契约是 JSON 的单个 `image` 字段
+          # （2026-11-03 横评实测），不是数组也不是 multipart —— 多喂只会静默丢图，
+          # 所以这里诚实报 1，让带两张以上参考图的请求在 _compatible 就被拦到别家。
+          ("gpt-image-2-4k-upscale","teamorouter-ads","gpt-image-2-4k-upscale","/v1/images/generations","",{"images":1,"videos":0,"audios":0},1,71),
           # Jev：POST /v1/systemone，同步（实测 1.8s、$0.000014/次），同样没有 task id。
           # 上游型号名是带命名空间的 typesafe-ai/jev（`jev` 这个裸名没验证过，用已验证的那个）。
           ("jev","teamorouter","typesafe-ai/jev","/v1/systemone","",{"images":0,"videos":0,"audios":0},1,70),
@@ -631,7 +646,7 @@ class CapabilityStore:
         return self.channel(channel_id)
 
     def delete_channel(self, channel_id:str)->None:
-        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","wuyinkeji","huanwangai","ark"}: raise ValueError("preset channel cannot be deleted; disable it instead")
+        if self.channel(channel_id)["code"] in {"local","jmapi","libtv","grsai","mxapi","runninghub","teamorouter","teamorouter-ads","wuyinkeji","huanwangai","ark"}: raise ValueError("preset channel cannot be deleted; disable it instead")
         with self._db() as db: db.execute("UPDATE channels SET enabled=0,deleted_at=?,updated_at=? WHERE id=?",(now(),now(),channel_id))
 
     def models(self)->list[dict[str,Any]]:

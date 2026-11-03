@@ -419,8 +419,8 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`nano-banana-2`、`nanobanana-2.1`、`midjourney`、`moss-image` | `gpt-image-2` |
-| `channel` | 否 | `grsai`、`teamorouter`、`wuyinkeji`、`huanwangai`、`moss-local`、`auto` | `grsai` |
+| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`gpt-image-2-4k-upscale`、`nano-banana-2`、`nanobanana-2.1`、`midjourney`、`moss-image` | `gpt-image-2` |
+| `channel` | 否 | `grsai`、`teamorouter`、`teamorouter-ads`、`wuyinkeji`、`huanwangai`、`moss-local`、`auto` | `grsai` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
 | `aspect_ratio` | 否 | `1:1`、`2:3`、`3:2`、`3:4`、`4:3`、`9:16`、`16:9` | `1:1` |
@@ -467,7 +467,14 @@ curl -sS -X POST \
 | `gpt-image-2.5-sunburst` | `gpt-image-2.5-sunburst` | 不支持 | 与 `grsai` 的同名型号是不同上游，出图风格不同 |
 | `gpt-image-2.5-flare` | `gpt-image-2.5-flare` | 不支持 | 同上 |
 
-- **只吃纯文本**：`/v1/images/generations` 不接收参考图（编辑类接口的契约未实测，未开放）。带 `reference_image_urls` 的请求会被本地拦下：`teamorouter` 不支持参考图，这类请求会落到 `grsai`，点名 `teamorouter` 也一样（见 §1.5）。
+`channel` 传 `teamorouter-ads` 是 TeamORouter 上的**另一个账户**（独立余额），目前一个型号：
+
+| `model` | 上游型号 | 参考图 | 说明 |
+|---|---|---|---|
+| `gpt-image-2-4k-upscale` | `gpt-image-2-4k-upscale` | 最多 1 张 | **严格照请求尺寸出图**；4K 档唯一可用的型号 |
+
+- **只有 `gpt-image-2-4k-upscale` 收参考图**：带 `reference_image_urls` 时改走 `/v1/images/edits`，`image` 是**单个**公网 URL（JSON 字段，不是 multipart 数组）。多给会被本地拦成「该渠道不支持」，不会悄悄只用第一张。
+- **只吃纯文本（`gpt-image-2` / `-sunburst` / `-flare`）**：`/v1/images/generations` 不接收参考图。带 `reference_image_urls` 的请求会落到 `grsai`，点名 `teamorouter` 也一样（见 §1.5）。
 - **同步返回**：上游一次调用直接给成品，没有任务号。所以作业的 `upstream_task_id` 恒为空、`result_urls` 由中台把上游返回的内联图片转存到对象存储后给出，其余字段与 `grsai` 一致。
 - **尺寸由中台按 `aspect_ratio` + `image_size` 计算**：上游不校验尺寸，传错不会报错、只会静默给一张默认尺寸的图，所以不要指望上游纠正。
 - 候选顺序是 `grsai` → `teamorouter`（后者登记为兜底，优先级更低）。`channel` 传 `teamorouter` 只是把它挪到排头，`grsai` 仍跟在后面。

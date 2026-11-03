@@ -59,6 +59,7 @@ OSS_PERSISTED_MODELS = {
     "midjourney-video", "omnihuman-1.5",
     # 图片
     "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
+    "gpt-image-2-4k-upscale",
     "nano-banana-2", "nanobanana-2.1", "midjourney", "moss-image",
 }
 # 产物由各自的 worker 自己上传内核（本地文件在那边，不必再下载一遍），
@@ -66,6 +67,12 @@ OSS_PERSISTED_MODELS = {
 # 覆盖测试断言的是：每个生图/生视频型号都落在 (OSS_PERSISTED_MODELS ∪ SELF_PERSISTED_MODELS) 里。
 SELF_PERSISTED_MODELS = {
     "minimax-h3",              # 见 h3_tasks._upload_result
+}
+# 这些型号的同步响应给的是 `data[0].url` 而不是内联 b64（2026-11-04 实测 gpt-image-2-4k-upscale）。
+# 同样要下载 → 打标识 → 转存：不下载就没有隐式标识，而对方存储上的链接不归我们管。
+# 只在「响应里没有 b64」时才起作用，所以 1K 档将来改回 b64 也不会多绕一圈。
+URL_PERSISTED_MODELS = {
+    "gpt-image-2-4k-upscale",
 }
 PIXEL_ASPECTS={
     "1K":{"1:1":"1024x1024","2:3":"832x1248","3:2":"1248x832","3:4":"768x1024","4:3":"1024x768","9:16":"768x1344","16:9":"1344x768"},
@@ -154,6 +161,15 @@ def _libtv_mode(modes: list[str] | None, images: int, videos: int, audios: int) 
     return "text2video" if "text2video" in modes else None
 
 
+def _submit_path(binding: dict[str, Any], request: dict[str, Any]) -> str:
+    # TeamORouter 的垫图不在 /v1/images/generations 上：带参考图要改走 /v1/images/edits
+    # （JSON 里单个 `image` 字段，2026-11-03 横评实测的契约）。其余绑定原样返回 submit_path。
+    if binding["adapter"] == "teamorouter" and request.get("reference_image_urls") \
+            and binding["submit_path"].endswith("/v1/images/generations"):
+        return "/v1/images/edits"
+    return binding["submit_path"]
+
+
 def _payload(
     binding: dict[str, Any],
     request: dict[str, Any],
@@ -200,8 +216,13 @@ def _payload(
         # 传 999x999 它照样回 200（实测会静默出一张默认尺寸的图），所以映射错了不会报错，
         # 只会安静地给错尺寸。PIXEL_ASPECTS 就是 grsai 那三个模型在用的同一张表，直接复用。
         size=PIXEL_ASPECTS.get(request.get("image_size","1K"),PIXEL_ASPECTS["1K"])
-        return {"model":binding["upstream_model"],"prompt":request["prompt"],"n":1,
-                "size":size.get(request.get("aspect_ratio","1:1"),size["1:1"])}
+        body={"model":binding["upstream_model"],"prompt":request["prompt"],"n":1,
+              "size":size.get(request.get("aspect_ratio","1:1"),size["1:1"])}
+        # 垫图：/v1/images/edits 收的是**单个** `image`（公网 URL，JSON 字段而不是 multipart），
+        # 与上面 blank_image_url 注入的占位图无关 —— 这里只认调用方真给的参考图。
+        refs=list(request.get("reference_image_urls") or [])
+        if refs: body["image"]=refs[0]
+        return body
     if binding["adapter"]=="local_openai_image":
         # 本地 MOSS-Image：同样是 OpenAI 兼容的同步口，尺寸映射照抄上一段（同一张表）。
         # 差别只在地址是本机 8300，以及它**会**校验 size（非 16 倍数回 400），所以映射错了
@@ -600,7 +621,8 @@ def _sync_image_results(
     entries = [item for item in items if isinstance(item, dict)]
     if not entries:
         return []
-    if not any(item.get("b64_json") for item in entries):
+    has_inline = any(item.get("b64_json") for item in entries)
+    if not has_inline and request.get("model") not in URL_PERSISTED_MODELS:
         # 上游改回 URL 模式（或换了个不吃 b64 的型号）时不必下载转存，直接透传。
         return list(dict.fromkeys(_urls_from_container(entries)))
     settings = get_settings()
@@ -612,11 +634,19 @@ def _sync_image_results(
     try:
         for index, entry in enumerate(entries, start=1):
             encoded = entry.get("b64_json")
-            if not encoded:
+            source = entry.get("url")
+            if not encoded and not source:
                 persisted.extend(_urls_from_container(entry))
                 continue
             path = directory / f"result-{index}.png"
-            path.write_bytes(base64.b64decode(encoded))
+            if encoded:
+                path.write_bytes(base64.b64decode(encoded))
+            else:
+                # URL 形态（gpt-image-2-4k-upscale 就用这个）：成品在对方存储上，
+                # 不下载就没法打标识、也没法保证链接长期可访问。
+                downloaded = httpx.get(str(source), timeout=httpx.Timeout(300, connect=30))
+                downloaded.raise_for_status()
+                path.write_bytes(downloaded.content)
             # AI 生成标识（算法备案）：隐式恒加，显式角标由请求的 explicit_label 控制。
             # 改的是本地这个文件本身，紧接着就上传，不产生额外副本。
             apply_provenance(
@@ -840,7 +870,8 @@ def _generate(self,job_id:str)->dict[str,Any]:
             store.update_job(job_id,channel_id=binding["channel_id"],stage="submitting",fallback_count=index)
             timeout=httpx.Timeout(binding["timeout_seconds"],connect=20)
             with httpx.Client(timeout=timeout,follow_redirects=False) as client:
-                response=client.post(urljoin(binding["base_url"].rstrip("/")+"/",binding["submit_path"].lstrip("/")),headers=_headers(binding),json=_payload(binding,req,settings.video_generation_blank_image_url))
+                submit_path=_submit_path(binding,req)
+                response=client.post(urljoin(binding["base_url"].rstrip("/")+"/",submit_path.lstrip("/")),headers=_headers(binding),json=_payload(binding,req,settings.video_generation_blank_image_url))
             if response.status_code>=400:
                 try:
                     error_body = _response_body(response)
