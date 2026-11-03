@@ -162,13 +162,13 @@ class CapabilityStore:
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,16,None),(1,0,0),True,None,None),
             ("viduq2-pro","vidu-q2-pro","Vidu Q2 Pro",
              "singleImage2video",
-             [],["720p","1080p"],(1,10,None),(1,0,0),True,None,"auto"),
+             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto","auto"),
             ("viduq2","vidu-q2","Vidu Q2",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
             ("viduq2-turbo","vidu-q2-turbo","Vidu Q2 Turbo",
              "singleImage2video",
-             [],["720p","1080p"],(1,10,None),(1,0,0),True,None,"auto"),
+             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto","auto"),
             ("happy-horse-1.1","happy-horse-1.1","Happy Horse 1.1",
              "frames2video|videoEdit2video|image2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(3,15,None),(30,1,0),False,None,None),
@@ -506,7 +506,7 @@ class CapabilityStore:
             if _row is None:
                 continue
             _caps = json.loads(_row[1] or "{}")
-            if _caps.get("cli_sync") == "2026-11-04b":
+            if _caps.get("cli_sync") == "2026-11-04c":
                 continue
             _c = _sync[_code]
             _caps["modes"] = _c[3].split("|")
@@ -523,7 +523,7 @@ class CapabilityStore:
                 _caps["default_resolution"] = _c[10]
             else:
                 _caps.pop("default_resolution", None)
-            _caps["cli_sync"] = "2026-11-04b"
+            _caps["cli_sync"] = "2026-11-04c"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
