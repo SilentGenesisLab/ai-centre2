@@ -8,15 +8,22 @@ os.environ.setdefault("SERVICE_TOKEN", "test")
 
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel, ConfigDict
 
 from control_plane import api
 from control_plane.api_keys import ApiKeyStore
-from control_plane.billing_hook import billable
+from control_plane.billing_hook import BillingRoute, billable
 from control_plane.generation_jobs import current_api_key_id
+
+
+class StrictBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str
 
 
 def _app(store: ApiKeyStore) -> FastAPI:
     app = FastAPI()
+    app.router.route_class = BillingRoute
 
     @app.get("/probe", dependencies=[Depends(api.require_service_token)])
     async def probe() -> dict[str, str | None]:
@@ -25,6 +32,10 @@ def _app(store: ApiKeyStore) -> FastAPI:
     @app.post("/bill", dependencies=[Depends(api.require_service_token), Depends(billable("tts"))])
     async def billed() -> dict[str, str]:
         return {"ok": "yes"}
+
+    @app.post("/strict", dependencies=[Depends(api.require_service_token), Depends(billable("tts"))])
+    async def strict(body: StrictBody) -> dict[str, str]:
+        return {"ok": body.text}
 
     @app.post("/boom", dependencies=[Depends(api.require_service_token), Depends(billable("tts"))])
     async def boom() -> dict[str, str]:
@@ -88,6 +99,24 @@ def test_billable_refunds_when_the_endpoint_raises(monkeypatch) -> None:
             headers={"Authorization": f"Bearer {created['api_key']}"},
         )
         assert response.status_code == 500
+        assert store.charges()["items"][0]["state"] == "refunded"
+
+
+def test_billable_refunds_when_the_body_is_rejected(monkeypatch) -> None:
+    """422 的请求没做任何事，不能扣钱——FastAPI 不会把校验失败抛进 yield 依赖。"""
+    with TemporaryDirectory() as directory:
+        store = ApiKeyStore(Path(directory) / "keys.db")
+        created = store.create("语音", None, None)
+        monkeypatch.setattr(api, "get_settings", lambda: SimpleNamespace(service_token="service-secret"))
+        monkeypatch.setattr(api, "get_api_key_store", lambda: store)
+
+        client = TestClient(_app(store))
+        response = client.post(
+            "/strict",
+            json={"text": "一" * 2000, "unexpected": 1},
+            headers={"Authorization": f"Bearer {created['api_key']}"},
+        )
+        assert response.status_code == 422
         assert store.charges()["items"][0]["state"] == "refunded"
 
 

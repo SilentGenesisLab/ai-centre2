@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator
 from uuid import uuid4
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Response, status
+from fastapi.routing import APIRoute
 
 from .api_keys import ApiKeyStore, CreditQuotaExceeded
 from .credit_pricing import estimate_request
@@ -92,20 +93,45 @@ def billable(service: str, model: str | None = None):
     """
 
     async def dependency(request: Request) -> AsyncIterator[BillingContext]:
-        store, ctx = await _hold(service, request, model)
+        _, ctx = await _hold(service, request, model)
+        request.state.billing_charge = ctx
         token = _current_charge.set(ctx)
         try:
             yield ctx
-        except BaseException:
-            await asyncio.to_thread(store.settle, ctx.request_id, "failed")
-            raise
-        else:
-            if not ctx.deferred:
-                await asyncio.to_thread(store.settle, ctx.request_id, "succeeded")
         finally:
             _current_charge.reset(token)
 
     return dependency
+
+
+async def _settle(request: Request, outcome: str) -> None:
+    ctx = getattr(request.state, "billing_charge", None)
+    if not isinstance(ctx, BillingContext) or ctx.deferred:
+        return
+    await asyncio.to_thread(_store().settle, ctx.request_id, outcome)
+
+
+class BillingRoute(APIRoute):
+    """按最终结果结算的一次性出口。
+
+    FastAPI 0.116 不会把请求体校验失败抛进 `yield` 依赖——生成器是正常关闭的，
+    于是依赖自己在 `else` 里结算就会把 422 的请求也记成成功（实测：多一个字段
+    就白扣一笔）。路由层能看到真正的异常和响应码，所以结算挪到这里。
+    """
+
+    def get_route_handler(self) -> Any:
+        handler = super().get_route_handler()
+
+        async def wrapped(request: Request) -> Response:
+            try:
+                response = await handler(request)
+            except BaseException:
+                await _settle(request, "failed")
+                raise
+            await _settle(request, "succeeded" if response.status_code < 400 else "failed")
+            return response
+
+        return wrapped
 
 
 def current_charge() -> BillingContext | None:

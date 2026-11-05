@@ -67,7 +67,7 @@ from .health_monitor_api import get_health_monitor, router as health_monitor_rou
 from .concurrency_api import router as concurrency_router
 from .api_keys import ApiKeyStore, CreditQuotaExceeded
 from .billing_api import router as billing_router
-from .billing_hook import billable, link_current
+from .billing_hook import BillingRoute, billable, link_current
 from .credit_pricing import from_yuan
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient, current_api_key_id
@@ -172,6 +172,8 @@ app = FastAPI(
     ],
 )
 app.add_middleware(ObservabilityMiddleware, store_factory=get_observability_store)
+# 计费按最终响应码结算（见 billing_hook.BillingRoute）；不挂 billable 的路由也不受影响。
+app.router.route_class = BillingRoute
 app.include_router(observability_router)
 app.include_router(health_monitor_router)
 app.include_router(concurrency_router)
