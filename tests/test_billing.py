@@ -106,6 +106,19 @@ def test_since_filters_out_old_charges(store, monkeypatch) -> None:
     assert future.json()["total"] == 0
 
 
+def test_deleted_key_spend_is_not_labelled_as_service_token(store, monkeypatch) -> None:
+    created = store.create("临时", None, None)
+    store.hold(created["id"], "req-del", "video_generation", "seedance-2.5", "jmapi",
+               Quote(unit="second", quantity=5, amount_micro=1_000_000, source="measured"))
+    store.settle("req-del", "succeeded")
+    store.delete(created["id"])
+
+    by_key = _client(store, monkeypatch).get(
+        "/internal/admin/billing/summary", params={"from": "2020-01-01", "to": "2099-01-01"}
+    ).json()["by_key"]
+    assert [row["key"] for row in by_key] == ["(已删除的 Key)"]
+
+
 def test_terminal_job_status_settles_without_any_poll(store, monkeypatch) -> None:
     """不轮询也要结账：worker 自己把作业判成终态时，held 行必须跟着落定。
 

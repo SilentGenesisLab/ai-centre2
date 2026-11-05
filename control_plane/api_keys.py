@@ -536,7 +536,13 @@ class ApiKeyStore:
             by_model = self._group(db, base, params, "COALESCE(c.model,'(未知)')", "model")
             by_channel = self._group(db, base, params, "COALESCE(c.channel,'(未指定)')", "channel")
             by_service = self._group(db, base, params, "c.service", "service")
-            by_key = self._group(db, base, params, "COALESCE(k.name,'服务令牌')", "key")
+            # 删掉的 Key 留下的是历史账，不能混进「服务令牌」（那是内部调用，key_id 为 NULL）。
+            by_key = self._group(
+                db, base, params,
+                "COALESCE(k.name, CASE WHEN c.key_id IS NULL THEN '服务令牌' ELSE '(已删除的 Key)' END)",
+                "key",
+            )
+
             daily = [
                 dict(row)
                 for row in db.execute(
