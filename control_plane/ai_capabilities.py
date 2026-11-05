@@ -8,6 +8,7 @@ import sqlite3
 import threading
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -21,6 +22,16 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+@lru_cache(maxsize=1)
+def _api_key_store():
+    """账本库不存在（还没建过 Key）就不开——别为了结一笔不存在的账把目录造出来。"""
+    from .api_keys import ApiKeyStore
+    from .config import get_settings
+
+    path = get_settings().api_keys_db_path
+    return ApiKeyStore(path) if path.exists() else None
 
 
 class CapabilityNotFound(KeyError):
@@ -699,6 +710,14 @@ class CapabilityStore:
     def update_job(self,jid:str,**values:Any)->None:
         values["updated_at"]=now()
         with self._db() as db: db.execute(f"UPDATE generation_jobs SET {','.join(k+'=?' for k in values)} WHERE id=?",(*values.values(),jid))
+        # 跑到终态就把预占的额度结掉。只靠轮询口结算是会漏的：调用方不轮询、或者任务
+        # 是被 worker 自己判死/超时的，held 行会一直挂在账上——对「累计总额」窗口就是永久占位。
+        status=values.get("status")
+        if status in {"succeeded","failed","cancelled"}:
+            keys=_api_key_store()
+            if keys is not None:
+                try: keys.settle_job(jid,str(status))
+                except Exception: pass  # 结账失败不能把作业状态更新弄挂
 
     def job(self,jid:str,include_request:bool=False)->dict[str,Any]:
         with self._db() as db: row=db.execute("SELECT j.*,m.code model,c.code channel FROM generation_jobs j JOIN models m ON m.id=j.model_id LEFT JOIN channels c ON c.id=j.channel_id WHERE j.id=?",(jid,)).fetchone()

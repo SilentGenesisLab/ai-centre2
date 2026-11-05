@@ -1,4 +1,5 @@
 from pathlib import Path
+import tempfile
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -103,3 +104,30 @@ def test_since_filters_out_old_charges(store, monkeypatch) -> None:
     client = _client(store, monkeypatch)
     future = client.get("/internal/admin/billing/charges", params={"from": "2099-01-01"})
     assert future.json()["total"] == 0
+
+
+def test_terminal_job_status_settles_without_any_poll(store, monkeypatch) -> None:
+    """不轮询也要结账：worker 自己把作业判成终态时，held 行必须跟着落定。
+
+    原先只在查询口结算，没人轮询的作业（或 worker 超时判死的）会一直挂着 held，
+    对「累计总额」窗口就是永久占位——那笔钱再也退不回来。
+    """
+    from control_plane import ai_capabilities
+    from control_plane.ai_capabilities import CapabilityStore
+
+    monkeypatch.setattr(ai_capabilities, "_api_key_store", lambda: store)
+    # 用 mkdtemp 不清理：Windows 上 sqlite 句柄没关，rmtree 会 PermissionError。
+    caps = CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
+    job_id = caps.create_job("seedance-2.5", "jmapi", {"prompt": "x"})
+    created = store.create("视频", None, None)
+    held = store.hold(created["id"], "req-job", "video_generation", "seedance-2.5", "jmapi",
+                      Quote(unit="second", quantity=5, amount_micro=8_870_970, source="measured"))
+    store.link(str(held["charge_id"]), job_id)
+
+    caps.update_job(job_id, stage="polling")
+    assert store.charges()["items"][0]["state"] == "held"
+
+    caps.update_job(job_id, status="failed")
+    row = store.charges()["items"][0]
+    assert row["state"] == "refunded"
+    assert row["job_status"] == "failed"
