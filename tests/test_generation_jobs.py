@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("SERVICE_TOKEN", "test")
 
+from control_plane.api_keys import ApiKeyStore
 from control_plane.generation_jobs import GenerationJobClient
 
 
@@ -51,6 +54,30 @@ class GenerationJobClientTests(unittest.TestCase):
         app.return_value.control.revoke.assert_not_called()
         self.store.update_job.assert_not_called()
         self.assertEqual(result["status"], "succeeded")
+
+    def _submit_charge(self, data: dict, service: str | None) -> dict:
+        self.store.create_job.return_value = "job-x"
+        with TemporaryDirectory() as directory:
+            keys = ApiKeyStore(Path(directory) / "keys.db")
+            self.client._key_store = keys
+            with patch.object(GenerationJobClient, "_app"):
+                if service is None:
+                    self.client.submit(data)
+                else:
+                    self.client.submit(data, service)
+            return keys.charges()["items"][0]
+
+    def test_image_submit_is_billed_as_image_not_video(self) -> None:
+        """图像与视频共用一个客户端，不显式传服务名就会按「5 秒视频」估价。"""
+        row = self._submit_charge({"model": "moss-image", "image_size": "1K"}, "image_generation")
+        self.assertEqual(row["service"], "image_generation")
+        self.assertEqual(row["unit"], "image")
+        self.assertEqual(row["amount_micro"], 0)
+
+    def test_default_submit_is_billed_as_video(self) -> None:
+        row = self._submit_charge({"model": "seedance-2.5", "duration_seconds": 5}, None)
+        self.assertEqual(row["service"], "video_generation")
+        self.assertEqual(row["amount_micro"], 8_870_970)
 
 
 if __name__ == "__main__":

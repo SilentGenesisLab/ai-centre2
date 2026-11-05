@@ -45,15 +45,18 @@ class GenerationJobClient:
             self._key_store=ApiKeyStore(self.settings.api_keys_db_path)
         return self._key_store
 
-    def submit(self,data:dict[str,Any])->str:
+    def submit(self,data:dict[str,Any],service:str|None=None)->str:
         keys=self._keys()
         key_id=current_api_key_id.get()
         model=str(data.get("model") or "")
         channel=data.get("channel") or "jmapi"
+        # 图像与视频共用这一个客户端，按 service_name 估价会把图当成 5 秒视频，
+        # 所以图像入口显式传 service="image_generation"。
+        service_name=service or self.service_name
         # 先预占额度再建作业：超限时一行都不该留下，调用方拿到的是 429 不是半截作业。
         request_id=uuid4().hex
-        held=keys.hold(key_id,request_id,self.service_name,model or None,channel,
-                       estimate_request(keys.rates_cached(),self.service_name,data,model))
+        held=keys.hold(key_id,request_id,service_name,model or None,channel,
+                       estimate_request(keys.rates_cached(),service_name,data,model))
         jid=self.store.create_job(model,channel,data)
         keys.link(str(held["charge_id"]),jid)
         try: self._app().send_task(self.task_name,kwargs={"job_id":jid},task_id=jid,queue=self.queue_name)

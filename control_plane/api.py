@@ -4894,7 +4894,7 @@ async def create_video_generation_job(request:VideoGenerationRequest)->dict[str,
     await _validate_generation_request(request)
     try: jid=await asyncio.to_thread(get_generation_jobs().submit,request.model_dump())
     except CapabilityNotFound as exc: raise HTTPException(404,"model not found") from exc
-    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
+    except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue video generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/video-generations/jobs/{jid}"}
 
@@ -4915,8 +4915,8 @@ async def cancel_video_generation_job(job_id:UUID)->dict[str,Any]:
 async def create_image_generation_job(request:ImageGenerationRequest)->dict[str,Any]:
     await _validate_image_generation_request(request)
     data=request.model_dump(); data["reference_video_urls"]=[]; data["reference_audio_urls"]=[]
-    try: jid=await asyncio.to_thread(get_generation_jobs().submit,data)
-    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
+    try: jid=await asyncio.to_thread(get_generation_jobs().submit,data,"image_generation")
+    except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue image generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/image-generations/jobs/{jid}"}
 
@@ -4958,7 +4958,7 @@ async def _validate_audio_generation_request(request:AudioGenerationRequest)->No
 async def create_audio_generation_job(request:AudioGenerationRequest)->dict[str,Any]:
     await _validate_audio_generation_request(request)
     try: jid=await asyncio.to_thread(get_audio_generation_jobs().submit,request.model_dump())
-    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
+    except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue audio generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/audio-generations/jobs/{jid}"}
 
@@ -5029,7 +5029,7 @@ async def _validate_text_generation_request(request:TextGenerationRequest)->None
 async def create_text_generation_job(request:TextGenerationRequest)->dict[str,Any]:
     await _validate_text_generation_request(request)
     try: jid=await asyncio.to_thread(get_text_generation_jobs().submit,request.model_dump())
-    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
+    except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue text generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/text-generations/jobs/{jid}"}
 
