@@ -189,6 +189,8 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         ("POST", "/v1/video-upscale/jobs/wait"): RouteInfo("upscale", "upscale_wait", True, True),
         ("POST", "/v1/image-upscale/jobs"): RouteInfo("image_upscale", "upscale", True, True),
         ("POST", "/v1/image-upscale/jobs/wait"): RouteInfo("image_upscale", "upscale_wait", True, True),
+        ("POST", "/v1/color-grade/jobs"): RouteInfo("color_grade", "grade", True, True),
+        ("POST", "/v1/color-grade/jobs/wait"): RouteInfo("color_grade", "grade_wait", True, True),
         ("POST", "/v1/video-generations/minimax-h3/jobs"): RouteInfo("h3", "generate", True, True),
         ("POST", "/v1/video-generations/jobs"): RouteInfo("video_generation", "generate", True, True),
         ("POST", "/v1/image-generations/jobs"): RouteInfo("image_generation", "generate", True, True),
@@ -214,6 +216,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         (re.compile(r"^/v1/audio-separation/jobs/[^/]+$"), RouteInfo("separation", "status", status_query=True)),
         (re.compile(r"^/v1/video-upscale/jobs/[^/]+$"), RouteInfo("upscale", "status", status_query=True)),
         (re.compile(r"^/v1/image-upscale/jobs/[^/]+$"), RouteInfo("image_upscale", "status", status_query=True)),
+        (re.compile(r"^/v1/color-grade/jobs/[^/]+$"), RouteInfo("color_grade", "status", status_query=True)),
         (re.compile(r"^/v1/video-generations/minimax-h3/jobs/[^/]+$"), RouteInfo("h3", "status", status_query=True)),
         (re.compile(r"^/v1/video-generations/jobs/[^/]+$"), RouteInfo("video_generation", "status", status_query=True)),
         (re.compile(r"^/v1/image-generations/jobs/[^/]+$"), RouteInfo("image_generation", "status", status_query=True)),
@@ -229,6 +232,7 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         (re.compile(r"^/v1/audio-separation/jobs/[^/]+/cancel$"), RouteInfo("separation", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-upscale/jobs/[^/]+/cancel$"), RouteInfo("upscale", "cancel", cancel=True)),
         (re.compile(r"^/v1/image-upscale/jobs/[^/]+/cancel$"), RouteInfo("image_upscale", "cancel", cancel=True)),
+        (re.compile(r"^/v1/color-grade/jobs/[^/]+/cancel$"), RouteInfo("color_grade", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-generations/minimax-h3/jobs/[^/]+/cancel$"), RouteInfo("h3", "cancel", cancel=True)),
         (re.compile(r"^/v1/video-generations/jobs/[^/]+/cancel$"), RouteInfo("video_generation", "cancel", cancel=True)),
         (re.compile(r"^/v1/image-generations/jobs/[^/]+/cancel$"), RouteInfo("image_generation", "cancel", cancel=True)),
@@ -262,6 +266,8 @@ def route_info(method: str, path: str) -> RouteInfo | None:
         return RouteInfo("upscale", "read")
     if path.startswith("/v1/image-upscale/"):
         return RouteInfo("image_upscale", "read")
+    if path.startswith("/v1/color-grade/"):
+        return RouteInfo("color_grade", "read")
     if path.startswith("/v1/video-generations/minimax-h3/"):
         return RouteInfo("h3", "read")
     if path.startswith("/v1/video-generations/"):
@@ -285,6 +291,7 @@ def external_job_id(path: str, response: Any | None) -> str | None:
         r"^/v1/watermark-removal/jobs/([^/]+)",
         r"^/v1/video-depth/jobs/([^/]+)",
         r"^/v1/audio-separation/jobs/([^/]+)",
+        r"^/v1/color-grade/jobs/([^/]+)",
         r"^/v1/video-upscale/jobs/([^/]+)",
         r"^/v1/video-generations/minimax-h3/jobs/([^/]+)",
         r"^/v1/video-generations/jobs/([^/]+)",

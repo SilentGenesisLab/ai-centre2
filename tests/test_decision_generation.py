@@ -5,6 +5,9 @@ import json
 import os
 import unittest
 from contextlib import contextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("SERVICE_TOKEN", "test")
@@ -302,9 +305,10 @@ class JobClientTests(unittest.TestCase):
     def test_submit_lands_on_the_decision_queue(self, app: Mock) -> None:
         store = Mock()
         store.create_job.return_value = "job-1"
-        client = DecisionGenerationJobClient(Mock(), store)
-
-        client.submit(decision_request())
+        with TemporaryDirectory() as directory:
+            settings = SimpleNamespace(api_keys_db_path=Path(directory) / "keys.db")
+            client = DecisionGenerationJobClient(settings, store)
+            client.submit(decision_request())
 
         store.create_job.assert_called_once()
         self.assertEqual(store.create_job.call_args.args[0], "jev")

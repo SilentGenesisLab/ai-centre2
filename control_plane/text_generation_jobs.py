@@ -13,3 +13,4 @@ class TextGenerationJobClient(GenerationJobClient):
 
     task_name = TASK_NAME
     queue_name = QUEUE_NAME
+    service_name = "text_generation"

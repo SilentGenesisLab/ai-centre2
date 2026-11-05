@@ -1,10 +1,11 @@
 from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any
+from uuid import uuid4
 from celery.result import AsyncResult
-from .api_keys import ApiKeyStore, CreditQuotaExceeded
+from .api_keys import ApiKeyStore
 from .config import Settings
-from .credit_pricing import estimate
+from .credit_pricing import estimate_request
 
 TASK_NAME="control_plane.video_generation"
 QUEUE_NAME="video_generation"
@@ -31,9 +32,10 @@ def failure_text(job: AsyncResult, fallback: str = "job failed") -> str:
 
 
 class GenerationJobClient:
-    # 子类换掉这两个名字就能复用整条提交/查询/取消链路（见 audio_generation_jobs）。
+    # 子类换掉这三个名字就能复用整条提交/查询/取消链路（见 audio_generation_jobs）。
     task_name=TASK_NAME
     queue_name=QUEUE_NAME
+    service_name="video_generation"
     def __init__(self,settings:Settings,store:Any):
         self.settings,self.store=settings,store
         self._key_store:ApiKeyStore|None=None
@@ -44,25 +46,27 @@ class GenerationJobClient:
         return self._key_store
 
     def submit(self,data:dict[str,Any])->str:
-        jid=self.store.create_job(data["model"],data.get("channel") or "jmapi",data)
+        keys=self._keys()
         key_id=current_api_key_id.get()
-        if key_id:
-            try:
-                self._keys().charge(key_id,jid,estimate(data))
-            except CreditQuotaExceeded as exc:
-                self.store.update_job(jid,status="cancelled",stage="credit_quota",error=str(exc))
-                raise
+        model=str(data.get("model") or "")
+        channel=data.get("channel") or "jmapi"
+        # 先预占额度再建作业：超限时一行都不该留下，调用方拿到的是 429 不是半截作业。
+        request_id=uuid4().hex
+        held=keys.hold(key_id,request_id,self.service_name,model or None,channel,
+                       estimate_request(keys.rates_cached(),self.service_name,data,model))
+        jid=self.store.create_job(model,channel,data)
+        keys.link(str(held["charge_id"]),jid)
         try: self._app().send_task(self.task_name,kwargs={"job_id":jid},task_id=jid,queue=self.queue_name)
         except Exception:
             self.store.update_job(jid,status="failed",stage="enqueue_failed",error="unable to enqueue generation job")
-            if key_id: self._keys().settle(jid,"failed")
+            keys.settle(request_id,"failed")
             raise
         return jid
     def status(self,jid:str)->dict[str,Any]:
         job=self.store.job(jid)
         # 轮询是这条链路里最频繁的调用，顺带把终结状态结算掉，不用再往 worker 里加钩子。
         if job.get("status") in {"succeeded","failed","cancelled"}:
-            self._keys().settle(jid,str(job["status"]))
+            self._keys().settle_job(jid,str(job["status"]))
         return job
     def cancel(self,jid:str)->dict[str,str]:
         job = self.store.job(jid)

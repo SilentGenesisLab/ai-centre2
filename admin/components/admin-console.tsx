@@ -293,16 +293,72 @@ type UnifiedTask = {
   billing?: Record<string, unknown> | null;
 };
 
-type PricingRule = {
+type BillingWindow = "5h" | "24h" | "total";
+
+type BillingGroup = {
+  amount_micro: number;
+  yuan: number;
+  count: number;
+};
+
+type BillingSummary = {
+  amount_micro: number;
+  amount_yuan: number;
+  count: number;
+  by_model: Array<BillingGroup & { model: string }>;
+  by_channel: Array<BillingGroup & { channel: string }>;
+  by_service: Array<BillingGroup & { service: string }>;
+  by_key: Array<BillingGroup & { key: string }>;
+  daily: Array<{ day: string; amount_micro: number; count: number; yuan: number }>;
+  platform: {
+    spent: Record<BillingWindow, number>;
+    spent_yuan: Record<BillingWindow, number>;
+    limits: Record<BillingWindow, number | null>;
+    limits_yuan: Record<BillingWindow, number | null>;
+  };
+};
+
+type BillingCharge = {
   id: string;
+  key_id: string | null;
+  key_name: string;
+  job_id: string | null;
   service: string;
-  operation: string;
-  unit_type: string;
-  currency: string;
-  fixed_fee: string;
-  unit_price: string;
-  effective_from: string;
-  enabled: boolean;
+  model: string | null;
+  channel: string | null;
+  unit: string;
+  quantity: number;
+  amount_micro: number;
+  yuan: number;
+  state: string;
+  job_status: string | null;
+  source: string | null;
+  note: string | null;
+  created_at: string;
+  settled_at: string | null;
+};
+
+type BillingRate = {
+  service: string;
+  model: string;
+  variant: string;
+  unit: string;
+  amount_micro: number;
+  yuan: number;
+  source: string;
+  note: string | null;
+  enabled: boolean | number;
+  updated_at: string;
+};
+
+type BillingSettings = {
+  platform_limit_5h_micro: number | null;
+  platform_limit_24h_micro: number | null;
+  platform_limit_total_micro: number | null;
+  platform_limit_5h: number | null;
+  platform_limit_24h: number | null;
+  platform_limit_total: number | null;
+  credits_per_yuan: number;
 };
 
 type H3Job = {
@@ -445,8 +501,10 @@ type ManagedApiKey = {
   quota: number | null;
   used: number;
   remaining: number | null;
-  daily_credit_quota: number | null;
-  credit_used_today: number | null;
+  limits: Record<BillingWindow, number | null>;
+  limits_yuan: Record<BillingWindow, number | null>;
+  spent: Record<BillingWindow, number>;
+  spent_yuan: Record<BillingWindow, number>;
   expires_at: string | null;
   enabled: boolean;
   created_at: string;
@@ -3294,6 +3352,70 @@ function RecentTasks({
   );
 }
 
+const BILLING_WINDOWS: Array<{ key: BillingWindow; label: string }> = [
+  { key: "5h", label: "5小时" },
+  { key: "24h", label: "24小时" },
+  { key: "total", label: "累计" },
+];
+
+const BILLING_SERVICES = [
+  "video_generation",
+  "image_generation",
+  "audio_generation",
+  "text_generation",
+  "decision_generation",
+  "tts",
+  "asr",
+  "ocr",
+  "upscale",
+  "lipsync",
+  "scene",
+  "review",
+  "watermark",
+  "depth",
+  "separation",
+  "color_grade",
+  "face_mosaic",
+];
+
+const BILLING_STATES: Record<string, string> = {
+  spent: "已结算",
+  held: "进行中",
+  refunded: "已退回",
+};
+
+function billingMoney(value: number | null | undefined) {
+  const number = Number(value || 0);
+  // 千字 TTS 这类单价只有几厘钱，一律保留两位会把它们显示成 0.00。
+  return number !== 0 && Math.abs(number) < 1 ? `¥${number.toFixed(4)}` : money(number);
+}
+
+function billingUnitPrice(amount_micro: number, quantity: number) {
+  if (!quantity) return "—";
+  const yuan = amount_micro / quantity / 1_000_000;
+  return `¥${yuan.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
+}
+
+function billingQuery(values: Record<string, string>) {
+  return Object.entries(values)
+    .filter(([, value]) => value !== "")
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join("&");
+}
+
+// 金额限额：留空 = 不限（发 null，后端据此清掉该窗口）。
+function limitFields(data: FormData) {
+  const amount = (name: string) => {
+    const raw = String(data.get(name) ?? "").trim();
+    return raw === "" ? null : Number(raw);
+  };
+  return {
+    limit_5h: amount("limit_5h"),
+    limit_24h: amount("limit_24h"),
+    limit_total: amount("limit_total"),
+  };
+}
+
 function BillingCenter({
   setError,
   showNotice,
@@ -3301,210 +3423,626 @@ function BillingCenter({
   setError: (value: string) => void;
   showNotice: (value: string) => void;
 }) {
-  const [rules, setRules] = useState<PricingRule[]>([]);
-  const [summary, setSummary] = useState<ObservabilityOverview | null>(null);
-  const from = UI_THIRTY_DAYS_AGO;
-  const to = UI_TODAY;
+  const [tab, setTab] = useState<"overview" | "charges" | "rates" | "limits">(
+    "overview",
+  );
+  const [from, setFrom] = useState(UI_THIRTY_DAYS_AGO);
+  const [to, setTo] = useState(UI_TODAY);
+  const [service, setService] = useState("");
+  const [model, setModel] = useState("");
+  const [channel, setChannel] = useState("");
+  const [state, setState] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [summary, setSummary] = useState<BillingSummary | null>(null);
+  const [rows, setRows] = useState<BillingCharge[]>([]);
+  const [total, setTotal] = useState(0);
+  const [rates, setRates] = useState<BillingRate[]>([]);
+  const [settings, setSettings] = useState<BillingSettings | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const filters = billingQuery({ from, to, service, model, channel, state, keyword });
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+
   const load = useCallback(async () => {
     try {
-      const [ruleResult, overview] = await Promise.all([
-        apiRequest<{ items: PricingRule[] }>(
+      if (tab === "overview") {
+        setSummary(
+          await apiRequest<BillingSummary>(
+            "control",
+            `/internal/admin/billing/summary?from=${from}&to=${to}`,
+          ),
+        );
+      } else if (tab === "charges") {
+        const result = await apiRequest<{ items: BillingCharge[]; total: number }>(
           "control",
-          "/internal/admin/observability/pricing-rules",
-        ),
-        apiRequest<ObservabilityOverview>(
-          "control",
-          `/internal/admin/observability/overview?from=${from}&to=${to}`,
-        ),
-      ]);
-      setRules(ruleResult.items);
-      setSummary(overview);
+          `/internal/admin/billing/charges?${filters}&page=${page}&page_size=${pageSize}`,
+        );
+        setRows(result.items);
+        setTotal(result.total);
+      } else if (tab === "rates") {
+        setRates(
+          (
+            await apiRequest<{ items: BillingRate[] }>(
+              "control",
+              "/internal/admin/billing/rates",
+            )
+          ).items,
+        );
+      } else {
+        setSettings(
+          await apiRequest<BillingSettings>(
+            "control",
+            "/internal/admin/billing/settings",
+          ),
+        );
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "计费数据加载失败");
     }
-  }, [from, to, setError]);
+  }, [tab, from, to, filters, page, pageSize, setError]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
-  async function submit(event: FormEvent<HTMLFormElement>) {
+
+  async function saveRate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setBusy(true);
     try {
-      await apiRequest(
+      const result = await apiRequest<{ items: BillingRate[] }>(
         "control",
-        "/internal/admin/observability/pricing-rules",
+        "/internal/admin/billing/rates",
         {
-          method: "POST",
+          method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            service: data.get("service"),
-            operation: data.get("operation") || "*",
-            unit_type: data.get("unit_type"),
-            fixed_fee: data.get("fixed_fee") || "0",
-            unit_price: data.get("unit_price") || "0",
-            effective_from: new Date(
-              String(data.get("effective_from")),
-            ).toISOString(),
+            service: String(data.get("service") || "").trim(),
+            model: String(data.get("model") || "").trim(),
+            variant: String(data.get("variant") || "*").trim() || "*",
+            unit: String(data.get("unit") || "").trim(),
+            amount_yuan: Number(data.get("amount_yuan") || 0),
+            source: "manual",
           }),
         },
       );
-      showNotice("新价格版本已生效，历史账目不会重算");
-      event.currentTarget.reset();
-      await load();
+      setRates(result.items);
+      form.reset();
+      showNotice("费率已保存，之后提交的请求按新价估价");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "价格规则保存失败");
+      setError(reason instanceof Error ? reason.message : "费率保存失败");
+    } finally {
+      setBusy(false);
     }
   }
+  async function removeRate(rate: BillingRate) {
+    if (
+      !window.confirm(
+        `确认删除 ${rate.service} / ${rate.model} / ${rate.variant} 的费率？删除后按上一级通配价估价。`,
+      )
+    )
+      return;
+    try {
+      const result = await apiRequest<{ items: BillingRate[] }>(
+        "control",
+        `/internal/admin/billing/rates/${encodeURIComponent(rate.service)}/${encodeURIComponent(rate.model)}/${encodeURIComponent(rate.variant)}`,
+        { method: "DELETE" },
+      );
+      setRates(result.items);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "费率删除失败");
+    }
+  }
+  async function saveSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const amount = (name: string) => {
+      const raw = String(data.get(name) ?? "").trim();
+      return raw === "" ? null : Number(raw);
+    };
+    setBusy(true);
+    try {
+      setSettings(
+        await apiRequest<BillingSettings>(
+          "control",
+          "/internal/admin/billing/settings",
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              platform_limit_5h: amount("platform_limit_5h"),
+              platform_limit_24h: amount("platform_limit_24h"),
+              platform_limit_total: amount("platform_limit_total"),
+            }),
+          },
+        ),
+      );
+      showNotice("平台总闸已更新");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "限额保存失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <PageHeading
         eyebrow="INTERNAL COST LEDGER"
         title="计费中心"
-        description="按价格版本核算内部成本。历史账目保留当时价格快照，失败资源消耗单独列为损耗。"
+        description="按上游成本折算成人民币记账。提交前先预占额度、失败退回；所有生成类请求都会留一条明细。"
         actions={
           <a
             className="secondary-button"
-            href={`${BASE_PATH}/api/proxy/control/internal/admin/observability/export.csv?from=${from}&to=${to}`}
+            href={`${BASE_PATH}/api/proxy/control/internal/admin/billing/export.csv?${filters}`}
           >
-            导出30天CSV
+            导出CSV
           </a>
         }
       />
-      <div className="metric-grid">
-        <article className="metric-card accent">
-          <span>30天估算费用</span>
-          <strong>{money(summary?.amount)}</strong>
-          <small>人民币 · 最终成功任务</small>
-        </article>
-        <article className="metric-card">
-          <span>失败损耗</span>
-          <strong>{money(summary?.waste_amount)}</strong>
-          <small>已产生资源消耗的失败任务</small>
-        </article>
-        <article className="metric-card">
-          <span>未定价任务</span>
-          <strong>{summary?.unpriced_tasks || 0}</strong>
-          <small>仅统计用量，不产生金额</small>
-        </article>
-        <article className="metric-card">
-          <span>价格版本</span>
-          <strong>{rules.length}</strong>
-          <small>修改只影响生效时间后的任务</small>
-        </article>
+      <div className="record-tabs">
+        {(
+          [
+            ["overview", "概览"],
+            ["charges", "任务明细"],
+            ["rates", "费率"],
+            ["limits", "限额"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            className={tab === key ? "is-active" : ""}
+            onClick={() => {
+              setTab(key);
+              setPage(1);
+            }}
+          >
+            {label}
+            {key === "charges" && tab === "charges" ? <span>{total}</span> : null}
+          </button>
+        ))}
       </div>
-      <div className="two-column wide-left">
-        <Panel title="价格规则" eyebrow="VERSIONED PRICING">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>服务/操作</th>
-                  <th>单位</th>
-                  <th>固定费</th>
-                  <th>单价</th>
-                  <th>生效时间</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rules.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="empty-cell">
-                      尚未配置价格，当前所有任务均按0元统计。
-                    </td>
-                  </tr>
-                )}
-                {rules.map((rule) => (
-                  <tr key={rule.id}>
-                    <td>
-                      <strong>{rule.service.toUpperCase()}</strong>
-                      <small>{rule.operation}</small>
-                    </td>
-                    <td>{rule.unit_type}</td>
-                    <td>{money(rule.fixed_fee)}</td>
-                    <td>{money(rule.unit_price)}</td>
-                    <td>{formatTime(rule.effective_from)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+      {tab === "overview" && (
+        <>
+          <div className="metric-grid">
+            {BILLING_WINDOWS.map((window) => {
+              const limit = summary?.platform.limits_yuan[window.key] ?? null;
+              return (
+                <article className="metric-card" key={window.key}>
+                  <span>平台{window.label}消耗</span>
+                  <strong>
+                    {billingMoney(summary?.platform.spent_yuan[window.key])}
+                  </strong>
+                  <small>
+                    {limit === null
+                      ? "总闸未设"
+                      : `上限 ${billingMoney(limit)}`}
+                  </small>
+                </article>
+              );
+            })}
+            <article className="metric-card accent">
+              <span>窗口内消耗</span>
+              <strong>{billingMoney(summary?.amount_yuan)}</strong>
+              <small>
+                {from} ~ {to} · {summary?.count ?? 0} 笔
+              </small>
+            </article>
           </div>
-        </Panel>
-        <Panel title="新增价格版本" eyebrow="NEW RULE">
-          <form className="stack-form" onSubmit={submit}>
+          <div className="record-filters">
             <label>
-              服务
-              <Select name="service" required>
-                {[
-                  "asr",
-                  "tts",
-                  "ocr",
-                  "subtitle",
-                  "lipsync",
-                  "face",
-                  "scene",
-                  "depth",
-                  "separation",
-                  "h3",
-                ].map((item) => (
-                  <option key={item}>{item}</option>
+              开始
+              <input
+                type="date"
+                value={from}
+                onChange={(event) => setFrom(event.target.value)}
+              />
+            </label>
+            <label>
+              结束
+              <input
+                type="date"
+                value={to}
+                onChange={(event) => setTo(event.target.value)}
+              />
+            </label>
+            <button className="primary-button" onClick={() => void load()}>
+              查询
+            </button>
+          </div>
+          <Panel title="每日消耗" eyebrow="DAILY">
+            <MetricLineChart
+              data={(summary?.daily ?? []).map((item) => ({
+                label: item.day.slice(5),
+                spend: item.yuan,
+              }))}
+              series={[{ key: "spend", label: "消耗（元）", className: "primary" }]}
+              valueLabel={(value) => billingMoney(value)}
+            />
+          </Panel>
+          <div className="analytics-chart-grid">
+            {(
+              [
+                ["按模型", summary?.by_model, "model"],
+                ["按渠道", summary?.by_channel, "channel"],
+                ["按 Key", summary?.by_key, "key"],
+              ] as const
+            ).map(([title, groups, field]) => (
+              <Panel key={title} title={title} eyebrow="TOP SPEND">
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{title.slice(1)}</th>
+                        <th>笔数</th>
+                        <th>金额</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(groups ?? []).length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="empty-cell">
+                            窗口内没有消耗
+                          </td>
+                        </tr>
+                      )}
+                      {(groups ?? []).slice(0, 12).map((group) => {
+                        const name = String(
+                          (group as Record<string, unknown>)[field] ?? "—",
+                        );
+                        return (
+                          <tr key={name}>
+                            <td className="wrap">{name}</td>
+                            <td>{group.count}</td>
+                            <td>{billingMoney(group.yuan)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Panel>
+            ))}
+          </div>
+        </>
+      )}
+
+      {tab === "charges" && (
+        <>
+          <Panel title="筛选条件" eyebrow="FILTERS">
+            <div className="record-filters">
+              <label>
+                开始
+                <input
+                  type="date"
+                  value={from}
+                  onChange={(event) => {
+                    setFrom(event.target.value);
+                    setPage(1);
+                  }}
+                />
+              </label>
+              <label>
+                结束
+                <input
+                  type="date"
+                  value={to}
+                  onChange={(event) => {
+                    setTo(event.target.value);
+                    setPage(1);
+                  }}
+                />
+              </label>
+              <label>
+                服务
+                <Select
+                  value={service}
+                  onChange={(event) => {
+                    setService(event.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">全部</option>
+                  {BILLING_SERVICES.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label>
+                模型
+                <input
+                  value={model}
+                  onChange={(event) => {
+                    setModel(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="精确匹配，如 seedance-2.5"
+                />
+              </label>
+              <label>
+                渠道
+                <input
+                  value={channel}
+                  onChange={(event) => {
+                    setChannel(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="精确匹配，如 jmapi"
+                />
+              </label>
+              <label>
+                状态
+                <Select
+                  value={state}
+                  onChange={(event) => {
+                    setState(event.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">全部</option>
+                  <option value="spent">已结算</option>
+                  <option value="held">进行中</option>
+                  <option value="refunded">已退回</option>
+                </Select>
+              </label>
+              <label className="filter-search">
+                关键词
+                <input
+                  value={keyword}
+                  onChange={(event) => {
+                    setKeyword(event.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="模型 / 渠道 / 服务 / Key 名"
+                />
+              </label>
+              <button className="primary-button" onClick={() => void load()}>
+                查询
+              </button>
+            </div>
+          </Panel>
+          <Panel title="任务明细" eyebrow={`${total} RECORDS`}>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>Key</th>
+                    <th>服务 / 模型</th>
+                    <th>渠道</th>
+                    <th>数量</th>
+                    <th>单价</th>
+                    <th>金额</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="empty-cell">
+                        没有匹配的账单
+                      </td>
+                    </tr>
+                  )}
+                  {rows.map((row) => (
+                    <tr key={row.id}>
+                      <td>
+                        <strong>{formatTime(row.created_at)}</strong>
+                        <small>{row.job_id ? `作业 ${row.job_id.slice(0, 8)}` : row.source}</small>
+                      </td>
+                      <td>{row.key_name}</td>
+                      <td>
+                        <strong>{row.model || "—"}</strong>
+                        <small>{row.service}</small>
+                      </td>
+                      <td>{row.channel || "—"}</td>
+                      <td>
+                        {row.quantity} {row.unit}
+                      </td>
+                      <td>{billingUnitPrice(row.amount_micro, row.quantity)}</td>
+                      <td>
+                        <strong>{billingMoney(row.yuan)}</strong>
+                      </td>
+                      <td>
+                        <StatusBadge
+                          status={
+                            row.state === "spent"
+                              ? "succeeded"
+                              : row.state === "refunded"
+                                ? "failed"
+                                : "running"
+                          }
+                        />
+                        <small>
+                          {BILLING_STATES[row.state] || row.state}
+                          {row.job_status ? ` · ${row.job_status}` : ""}
+                        </small>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="record-pagination">
+              <span>
+                第 {page} / {pages} 页 · 共 {total} 条
+              </span>
+              <Select
+                value={String(pageSize)}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value));
+                  setPage(1);
+                }}
+              >
+                {[20, 50, 100].map((size) => (
+                  <option key={size} value={String(size)}>
+                    {size} 条/页
+                  </option>
                 ))}
               </Select>
-            </label>
-            <label>
-              操作
-              <input
-                name="operation"
-                defaultValue="*"
-                placeholder="* 表示该服务全部操作"
-              />
-            </label>
-            <label>
-              计量单位
-              <Select name="unit_type" required>
-                <option value="task">每任务</option>
-                <option value="audio_minute">音频分钟</option>
-                <option value="1000_chars">千字符</option>
-                <option value="image">图片/页</option>
-                <option value="video_minute">视频分钟</option>
-                <option value="output_second">输出音频秒</option>
-              </Select>
-            </label>
-            <div className="field-row">
-              <label>
-                固定费
-                <input
-                  name="fixed_fee"
-                  type="number"
-                  min="0"
-                  step="0.000001"
-                  defaultValue="0"
-                />
-              </label>
-              <label>
-                单位价格
-                <input
-                  name="unit_price"
-                  type="number"
-                  min="0"
-                  step="0.000001"
-                  defaultValue="0"
-                />
-              </label>
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+              >
+                上一页
+              </button>
+              <button
+                disabled={page >= pages}
+                onClick={() => setPage((value) => value + 1)}
+              >
+                下一页
+              </button>
             </div>
-            <label>
-              生效时间
-              <input
-                name="effective_from"
-                type="datetime-local"
-                defaultValue={`${to}T00:00`}
-                required
-              />
-            </label>
-            <button className="primary-button">创建价格版本</button>
-          </form>
-        </Panel>
-      </div>
+          </Panel>
+        </>
+      )}
+
+      {tab === "rates" && (
+        <div className="two-column wide-left">
+          <Panel title="费率表" eyebrow={`${rates.length} RATES`}>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>服务 / 模型</th>
+                    <th>变体</th>
+                    <th>单位</th>
+                    <th>每单位</th>
+                    <th>来源</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rates.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="empty-cell">
+                        还没有费率，所有请求都会按 0 元记账
+                      </td>
+                    </tr>
+                  )}
+                  {rates.map((rate) => (
+                    <tr
+                      key={`${rate.service}/${rate.model}/${rate.variant}`}
+                    >
+                      <td>
+                        <strong>{rate.model}</strong>
+                        <small>{rate.service}</small>
+                      </td>
+                      <td>{rate.variant}</td>
+                      <td>{rate.unit}</td>
+                      <td>{billingUnitPrice(rate.amount_micro, 1)}</td>
+                      <td>
+                        {rate.source}
+                        {rate.source === "measured" ? "" : "（待校准）"}
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="danger-link"
+                            onClick={() => void removeRate(rate)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+          <Panel title="新增或覆盖费率" eyebrow="UPSERT">
+            <form className="stack-form" onSubmit={saveRate}>
+              <label>
+                服务
+                <input name="service" required placeholder="例如 video_generation" />
+              </label>
+              <label>
+                模型
+                <input name="model" required placeholder="例如 seedance-2.5，* 表示该服务全部" />
+              </label>
+              <div className="field-row">
+                <label>
+                  变体
+                  <input name="variant" defaultValue="*" placeholder="720p / 1K / *" />
+                </label>
+                <label>
+                  计价单位
+                  <input name="unit" required defaultValue="call" placeholder="second / image / call" />
+                </label>
+              </div>
+              <label>
+                每单位金额（元）
+                <input name="amount_yuan" type="number" min="0" step="0.000001" required />
+              </label>
+              <button className="primary-button" disabled={busy}>
+                {busy ? "保存中…" : "保存费率"}
+              </button>
+              <p className="empty-note">
+                查找顺序：精确变体 → 模型通配 → 服务通配；都没有就按 0 元记，来源标
+                unknown。
+              </p>
+            </form>
+          </Panel>
+        </div>
+      )}
+
+      {tab === "limits" && (
+        <div className="two-column">
+          <Panel title="平台总闸" eyebrow="PLATFORM CAP">
+            <form className="stack-form" onSubmit={saveSettings}>
+              {BILLING_WINDOWS.map((window) => (
+                <label key={window.key}>
+                  {window.label}上限（元）
+                  <input
+                    name={`platform_limit_${window.key}`}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    defaultValue={settings?.[`platform_limit_${window.key}`] ?? ""}
+                    placeholder="留空表示不限"
+                  />
+                </label>
+              ))}
+              <button className="primary-button" disabled={busy}>
+                {busy ? "保存中…" : "保存总闸"}
+              </button>
+              <p className="empty-note">
+                总闸对平台所有来源一起生效（包括服务令牌）。留空即关闭该项检查。
+                当前已消耗见「概览」页。
+              </p>
+            </form>
+          </Panel>
+          <Panel title="口径说明" eyebrow="HOW IT WORKS">
+            <div className="benchmark-list">
+              <div>
+                <span>5小时 / 24小时</span>
+                <strong>滚动窗口，不是自然日</strong>
+              </div>
+              <div>
+                <span>累计</span>
+                <strong>从开始记账起的总和</strong>
+              </div>
+              <div>
+                <span>预占</span>
+                <strong>提交前先扣，失败/取消退回</strong>
+              </div>
+              <div>
+                <span>换算</span>
+                <strong>
+                  62 积分 = ¥1（可在费率页按实测改价）
+                </strong>
+              </div>
+            </div>
+          </Panel>
+        </div>
+      )}
     </>
   );
 }
@@ -8537,7 +9075,6 @@ function ApiKeyManagement({
     try {
       const expires = String(data.get("expires_at") || "");
       const quota = String(data.get("quota") || "");
-      const creditQuota = String(data.get("daily_credit_quota") || "");
       const result = await apiRequest<ManagedApiKey>(
         "control",
         "/internal/admin/api-keys",
@@ -8547,7 +9084,7 @@ function ApiKeyManagement({
           body: JSON.stringify({
             name: data.get("name"),
             quota: quota ? Number(quota) : null,
-            daily_credit_quota: creditQuota ? Number(creditQuota) : null,
+            ...limitFields(data),
             expires_at: expires ? new Date(expires).toISOString() : null,
           }),
         },
@@ -8580,7 +9117,6 @@ function ApiKeyManagement({
     setEditBusy(true);
     const data = new FormData(event.currentTarget);
     const quota = String(data.get("quota") || "");
-    const creditQuota = String(data.get("daily_credit_quota") || "");
     const expires = String(data.get("expires_at") || "");
     try {
       await apiRequest("control", `/internal/admin/api-keys/${editing.id}`, {
@@ -8589,7 +9125,7 @@ function ApiKeyManagement({
         body: JSON.stringify({
           name: String(data.get("name") || "").trim(),
           quota: quota ? Number(quota) : null,
-          daily_credit_quota: creditQuota ? Number(creditQuota) : null,
+          ...limitFields(data),
           expires_at: expires ? new Date(expires).toISOString() : null,
         }),
       });
@@ -8645,7 +9181,7 @@ function ApiKeyManagement({
             </label>
             <div className="field-row">
               <label>
-                请求额度（可选）
+                请求次数额度（可选）
                 <input
                   name="quota"
                   type="number"
@@ -8653,18 +9189,7 @@ function ApiKeyManagement({
                   step="1"
                   placeholder="留空表示不限次数"
                 />
-                <small>每次鉴权请求消耗1次。</small>
-              </label>
-              <label>
-                每日积分额度（可选）
-                <input
-                  name="daily_credit_quota"
-                  type="number"
-                  min="1"
-                  step="1"
-                  placeholder="留空表示不限积分"
-                />
-                <small>按提交的预计消耗扣，失败的作业会退回。</small>
+                <small>硬上限，按次计，与金额无关。</small>
               </label>
               <label>
                 过期时间（可选）
@@ -8672,6 +9197,39 @@ function ApiKeyManagement({
                 <small>留空表示永不过期。</small>
               </label>
             </div>
+            <div className="field-row">
+              <label>
+                5 小时限额（元）
+                <input
+                  name="limit_5h"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="留空表示不限"
+                />
+              </label>
+              <label>
+                24 小时限额（元）
+                <input
+                  name="limit_24h"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="留空表示不限"
+                />
+              </label>
+              <label>
+                总额度（元）
+                <input
+                  name="limit_total"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="留空表示不限"
+                />
+              </label>
+            </div>
+            <small>按预估金额在提交前预占，失败或取消会退回。</small>
             <button className="primary-button" disabled={busy}>
               {busy ? "创建中…" : "创建 API Key"}
             </button>
@@ -8709,8 +9267,10 @@ function ApiKeyManagement({
               <tr>
                 <th>名称 / 前缀</th>
                 <th>状态</th>
-                <th>额度</th>
-                <th>今日积分</th>
+                <th>次数额度</th>
+                <th>5小时</th>
+                <th>24小时</th>
+                <th>累计</th>
                 <th>过期时间</th>
                 <th>最近使用</th>
                 <th>操作</th>
@@ -8719,7 +9279,7 @@ function ApiKeyManagement({
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="empty-cell">
+                  <td colSpan={9} className="empty-cell">
                     暂无独立 API Key
                   </td>
                 </tr>
@@ -8743,16 +9303,22 @@ function ApiKeyManagement({
                       {item.remaining === null ? "" : `剩余 ${item.remaining}`}
                     </small>
                   </td>
-                  <td>
-                    {item.daily_credit_quota === null
-                      ? "不限"
-                      : `${item.credit_used_today ?? 0} / ${item.daily_credit_quota}`}
-                    <small>
-                      {item.daily_credit_quota === null
-                        ? `今日 ${item.credit_used_today ?? 0} 分`
-                        : `剩余 ${Math.max(0, item.daily_credit_quota - (item.credit_used_today ?? 0))}`}
-                    </small>
-                  </td>
+                  {BILLING_WINDOWS.map((window) => {
+                    const spent = item.spent_yuan?.[window.key] ?? 0;
+                    const limit = item.limits_yuan?.[window.key] ?? null;
+                    return (
+                      <td key={window.key}>
+                        {limit === null
+                          ? billingMoney(spent)
+                          : `${billingMoney(spent)} / ${billingMoney(limit)}`}
+                        <small>
+                          {limit === null
+                            ? "不限"
+                            : `剩余 ${billingMoney(Math.max(0, limit - spent))}`}
+                        </small>
+                      </td>
+                    );
+                  })}
                   <td>
                     {item.expires_at ? formatTime(item.expires_at) : "永不过期"}
                   </td>
@@ -8786,7 +9352,9 @@ function ApiKeyManagement({
           <form id="edit-api-key-form" className="stack-form" onSubmit={saveEdit}>
             <label>名称<input name="name" required maxLength={128} defaultValue={editing.name}/></label>
             <label>总请求额度（可选）<input name="quota" type="number" min="1" max="1000000000" step="1" defaultValue={editing.quota??""} placeholder="留空表示不限次数"/><small>已使用 {editing.used} 次；降低到已使用次数以下会使该Key立即无剩余额度。</small></label>
-            <label>每日积分额度（可选）<input name="daily_credit_quota" type="number" min="1" max="1000000000" step="1" defaultValue={editing.daily_credit_quota??""} placeholder="留空表示不限积分"/><small>今日已用 {editing.credit_used_today??0} 分（北京时间零点重置，失败的作业会退回）。</small></label>
+            <label>5 小时限额（元）<input name="limit_5h" type="number" min="0" step="0.01" defaultValue={editing.limits_yuan?.["5h"]??""} placeholder="留空表示不限"/><small>近 5 小时已用 {billingMoney(editing.spent_yuan?.["5h"])}。</small></label>
+            <label>24 小时限额（元）<input name="limit_24h" type="number" min="0" step="0.01" defaultValue={editing.limits_yuan?.["24h"]??""} placeholder="留空表示不限"/><small>近 24 小时已用 {billingMoney(editing.spent_yuan?.["24h"])}。</small></label>
+            <label>总额度（元）<input name="limit_total" type="number" min="0" step="0.01" defaultValue={editing.limits_yuan?.["total"]??""} placeholder="留空表示不限"/><small>累计已用 {billingMoney(editing.spent_yuan?.["total"])}；失败的作业会退回。</small></label>
             <label>过期时间（可选）<input name="expires_at" type="datetime-local" defaultValue={editing.expires_at?new Date(new Date(editing.expires_at).getTime()-new Date(editing.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16):""}/><small>留空表示永不过期，只能设置未来时间。</small></label>
             <div className="note-card"><b>安全说明</b><p>只修改名称、额度和有效期，不会更换API Key明文或前缀，调用方无需修改配置。</p></div>
           </form>

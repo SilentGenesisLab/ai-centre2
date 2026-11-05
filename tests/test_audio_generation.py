@@ -4,6 +4,9 @@ import asyncio
 import json
 import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("SERVICE_TOKEN", "test")
@@ -105,9 +108,10 @@ class JobClientTests(unittest.TestCase):
     def test_submit_lands_on_the_audio_queue(self, app: Mock) -> None:
         store = Mock()
         store.create_job.return_value = "job-1"
-        client = AudioGenerationJobClient(Mock(), store)
-
-        client.submit(music_request(prompt="长安", channel="mxapi"))
+        with TemporaryDirectory() as directory:
+            settings = SimpleNamespace(api_keys_db_path=Path(directory) / "keys.db")
+            client = AudioGenerationJobClient(settings, store)
+            client.submit(music_request(prompt="长安", channel="mxapi"))
 
         store.create_job.assert_called_once()
         self.assertEqual(store.create_job.call_args.args[0], "suno-v6")

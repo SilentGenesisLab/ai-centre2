@@ -66,6 +66,9 @@ from .observability_api import get_observability_store, router as observability_
 from .health_monitor_api import get_health_monitor, router as health_monitor_router
 from .concurrency_api import router as concurrency_router
 from .api_keys import ApiKeyStore, CreditQuotaExceeded
+from .billing_api import router as billing_router
+from .billing_hook import billable, link_current
+from .credit_pricing import from_yuan
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient, current_api_key_id
 from .audio_generation_jobs import AudioGenerationJobClient
@@ -215,6 +218,14 @@ app.openapi_tags.append(
     {
         "name": "MiniMax H3视频生成",
         "description": "纯文本或参考素材驱动的MiniMax H3异步视频生成与多机调度。",
+    }
+)
+# 定型决策的路由早就挂了这个 tag，但漏了登记元数据——test_openapi 钉着「公开端点只能
+# 用登记过的分类」，不补它文档页里这一组没有说明、测试也是红的。
+app.openapi_tags.append(
+    {
+        "name": "定型决策",
+        "description": "给一段上下文状态和一组问题，拿回一组带置信度的结构化判定。",
     }
 )
 
@@ -995,7 +1006,10 @@ class ApiKeyCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=128)
     quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
-    daily_credit_quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
+    # 金额限额，单位元；留空 = 不限。
+    limit_5h: float | None = Field(default=None, ge=0)
+    limit_24h: float | None = Field(default=None, ge=0)
+    limit_total: float | None = Field(default=None, ge=0)
     expires_at: datetime | None = None
 
     @field_validator("expires_at")
@@ -1014,7 +1028,9 @@ class ApiKeyUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=128)
     quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
-    daily_credit_quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
+    limit_5h: float | None = Field(default=None, ge=0)
+    limit_24h: float | None = Field(default=None, ge=0)
+    limit_total: float | None = Field(default=None, ge=0)
     expires_at: datetime | None = None
     enabled: bool | None = None
 
@@ -1116,6 +1132,10 @@ async def require_service_token(authorization: str = Header(default="")) -> None
         code = status.HTTP_429_TOO_MANY_REQUESTS if reason == "quota_exceeded" else status.HTTP_401_UNAUTHORIZED
         raise HTTPException(status_code=code, detail=f"api key {reason}")
     current_api_key_id.set(key["id"] if key else None)
+
+
+# 计费中心的路由要挂在鉴权依赖上，而 require_service_token 到这里才定义完。
+app.include_router(billing_router, dependencies=[Depends(require_service_token)])
 
 
 @lru_cache(maxsize=1)
@@ -1382,7 +1402,7 @@ async def health() -> dict[str, Any]:
     "/v1/asr/transcriptions",
     tags=["语音识别"],
     summary="通过音视频 URL 识别文字",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("asr"))],
 )
 async def transcribe(
     request: ASRUrlRequest,
@@ -1414,7 +1434,7 @@ async def transcribe(
 @app.post(
     "/v1/asr/transcriptions/upload",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("asr"))],
 )
 async def transcribe_upload(
     file: UploadFile = File(...),
@@ -1459,7 +1479,7 @@ async def _transcribe_content(
 @app.post(
     "/v1/tts/speech",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("tts"))],
 )
 async def synthesize(request: TTSRequest) -> Response:
     try:
@@ -1476,7 +1496,7 @@ async def synthesize(request: TTSRequest) -> Response:
     tags=["唇形驱动"],
     summary="通过视频和音频 URL 创建唇形驱动任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("lipsync"))],
 )
 async def create_lipsync_job(
     request: LipSyncUrlRequest,
@@ -1495,7 +1515,7 @@ async def create_lipsync_job(
     "/v1/lipsync/jobs/upload",
     include_in_schema=False,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("lipsync"))],
 )
 async def create_lipsync_upload_job(
     video: UploadFile = File(...),
@@ -1597,7 +1617,7 @@ async def cancel_lipsync_job(job_id: str) -> dict[str, Any]:
     "/v1/ocr/batch",
     tags=["OCR 文字识别"],
     summary="通过图片 URL 批量识别文字",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("ocr"))],
 )
 async def ocr_url_batch(request: OCRUrlBatchRequest) -> Response:
     settings = get_settings()
@@ -1663,7 +1683,7 @@ async def ocr_url_batch(request: OCRUrlBatchRequest) -> Response:
 @app.post(
     "/internal/admin/subtitle/detect",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("ocr"))],
 )
 async def detect_subtitle_events(request: SubtitleDetectRequest) -> Response:
     allowed_root = Path("/home/donxu/ai-centre/runtime").resolve()
@@ -1695,7 +1715,7 @@ async def detect_subtitle_events(request: SubtitleDetectRequest) -> Response:
 @app.post(
     "/internal/admin/ocr/batch",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("ocr"))],
 )
 async def ocr_internal_batch(request: InternalOCRBatchRequest) -> Response:
     allowed_root = Path("/home/donxu/ai-centre/runtime/admin/uploads").resolve()
@@ -1761,7 +1781,7 @@ async def _face_request(method: str, path: str, json_body=None) -> dict[str, Any
     tags=["人脸处理"],
     summary="通过视频 URL 创建人脸处理任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("face_mosaic"))],
 )
 async def create_face_url_job(request: FaceUrlJobRequest) -> dict[str, Any]:
     try:
@@ -1775,7 +1795,7 @@ async def create_face_url_job(request: FaceUrlJobRequest) -> dict[str, Any]:
     "/v1/face-mosaic/jobs/wait",
     tags=["人脸处理"],
     summary="提交人脸处理并等待 OSS 结果",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("face_mosaic"))],
 )
 async def create_face_url_job_and_wait(request: FaceUrlJobRequest) -> dict[str, Any]:
     try:
@@ -1821,7 +1841,7 @@ async def _validate_scene_source(source_uri: str) -> None:
     tags=["视频切片"],
     summary="创建异步 SceneDetect 视频切片任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("scene"))],
 )
 async def create_scene_job(request: SceneUrlJobRequest) -> dict[str, Any]:
     await _validate_scene_source(request.source_uri)
@@ -1849,7 +1869,7 @@ async def create_scene_job(request: SceneUrlJobRequest) -> dict[str, Any]:
     "/v1/video-scenes/jobs/wait",
     tags=["视频切片"],
     summary="高优先级提交视频切片并等待 OSS 结果",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("scene"))],
 )
 async def create_scene_job_and_wait(request: SceneUrlJobRequest) -> dict[str, Any]:
     await _validate_scene_source(request.source_uri)
@@ -1932,7 +1952,7 @@ async def _validate_video_review_source(video_url: str, references: list[dict[st
     tags=["AI 视频拉片"],
     summary="创建无参考 AI 视频拉片与拆审任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("review"))],
 )
 async def create_video_review_job(request: VideoReviewUrlJobRequest) -> dict[str, Any]:
     payload = request.model_dump(mode="json")
@@ -2019,7 +2039,7 @@ async def _validate_watermark_source(source_uri: str) -> None:
     tags=["水印处理"],
     summary="创建异步视频水印处理任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("watermark"))],
 )
 async def create_watermark_job(request: WatermarkUrlJobRequest) -> dict[str, Any]:
     await _validate_watermark_source(request.source_uri)
@@ -2046,7 +2066,7 @@ async def create_watermark_job(request: WatermarkUrlJobRequest) -> dict[str, Any
     "/v1/watermark-removal/jobs/wait",
     tags=["水印处理"],
     summary="同步等待视频水印处理结果",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("watermark"))],
 )
 async def create_watermark_job_and_wait(
     request: WatermarkUrlJobRequest,
@@ -2128,7 +2148,7 @@ async def _validate_video_upscale_source(source_uri: str) -> None:
     tags=["视频超分"],
     summary="创建智能渠道视频超分任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("upscale"))],
 )
 async def create_video_upscale_job(request: VideoUpscaleUrlJobRequest) -> dict[str, Any]:
     await _validate_video_upscale_source(request.source_uri)
@@ -2151,7 +2171,7 @@ async def create_video_upscale_job(request: VideoUpscaleUrlJobRequest) -> dict[s
     "/v1/video-upscale/jobs/wait",
     tags=["视频超分"],
     summary="高优先级提交视频超分并等待智能渠道结果",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("upscale"))],
 )
 async def create_video_upscale_job_and_wait(request: VideoUpscaleUrlJobRequest) -> dict[str, Any]:
     await _validate_video_upscale_source(request.source_uri)
@@ -2217,7 +2237,7 @@ async def _validate_image_upscale_sources(source_uris: list[str]) -> None:
     tags=["图片超分"],
     summary="创建图片超分任务（支持一次多张）",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("upscale"))],
 )
 async def create_image_upscale_job(request: ImageUpscaleJobRequest) -> dict[str, Any]:
     await _validate_image_upscale_sources(request.source_uris)
@@ -2242,7 +2262,7 @@ async def create_image_upscale_job(request: ImageUpscaleJobRequest) -> dict[str,
     "/v1/image-upscale/jobs/wait",
     tags=["图片超分"],
     summary="高优先级提交图片超分并等待结果",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("upscale"))],
 )
 async def create_image_upscale_job_and_wait(request: ImageUpscaleJobRequest) -> dict[str, Any]:
     await _validate_image_upscale_sources(request.source_uris)
@@ -2305,7 +2325,7 @@ async def _validate_depth_source(source_uri: str) -> None:
     tags=["视频深度推理"],
     summary="创建异步单目视频深度推理任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("depth"))],
 )
 async def create_depth_job(request: DepthUrlJobRequest) -> dict[str, Any]:
     await _validate_depth_source(request.source_uri)
@@ -2340,7 +2360,7 @@ async def create_depth_job(request: DepthUrlJobRequest) -> dict[str, Any]:
     "/v1/video-depth/jobs/wait",
     tags=["视频深度推理"],
     summary="高优先级提交视频深度推理并等待结果",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("depth"))],
 )
 async def create_depth_job_and_wait(request: DepthUrlJobRequest) -> dict[str, Any]:
     await _validate_depth_source(request.source_uri)
@@ -2416,7 +2436,7 @@ async def _validate_audio_separation_source(source_uri: str) -> None:
     tags=["音频分离"],
     summary="创建异步对白、音乐和音效分离任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("separation"))],
 )
 async def create_audio_separation_job(
     request: AudioSeparationUrlJobRequest,
@@ -2447,7 +2467,7 @@ async def create_audio_separation_job(
     "/v1/audio-separation/jobs/wait",
     tags=["音频分离"],
     summary="高优先级提交音频分离并等待四轨OSS结果",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("separation"))],
 )
 async def create_audio_separation_job_and_wait(
     request: AudioSeparationUrlJobRequest,
@@ -2536,7 +2556,7 @@ async def _validate_color_grade_sources(request: ColorGradeUrlJobRequest) -> Non
     tags=["视频调色"],
     summary="创建异步 .cube 视频调色任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("color_grade"))],
 )
 async def create_color_grade_job(request: ColorGradeUrlJobRequest) -> dict[str, Any]:
     await _validate_color_grade_sources(request)
@@ -2941,7 +2961,7 @@ def _merge_clone_headers(
     "/v2/tts/speech",
     tags=["语音合成"],
     summary="语音合成或 VoxCPM2 深度语音克隆",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("tts"))],
 )
 async def synthesize_v2(request: TTSPublicSpeechRequest) -> Response:
     settings = get_settings()
@@ -3268,7 +3288,7 @@ async def _segmented_pcm_source(
     "/v2/tts/speech/stream",
     tags=["语音合成"],
     summary="实时流式 VoxCPM2 语音合成",
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("tts"))],
 )
 async def synthesize_v2_stream(request: TTSPublicSpeechRequest) -> StreamingResponse:
     if request.quality_mode == TTSQualityMode.STRICT:
@@ -4574,7 +4594,7 @@ async def _save_reference_audio(
 @app.post(
     "/v2/tts/speech/upload",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("tts"))],
 )
 async def synthesize_v2_upload(
     text: str = Form(min_length=1, max_length=5000),
@@ -4679,7 +4699,7 @@ async def synthesize_v2_upload(
     summary="创建异步语音合成任务",
     response_model=TTSJobAccepted,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("tts"))],
 )
 async def create_tts_job(request: TTSJobRequest) -> TTSJobAccepted:
     if request.reference_audio_url:
@@ -4691,12 +4711,14 @@ async def create_tts_job(request: TTSJobRequest) -> TTSJobAccepted:
         except MediaFetchError as exc:
             raise HTTPException(exc.status_code, exc.detail) from exc
     try:
-        return await asyncio.to_thread(get_tts_jobs().submit, request)
+        accepted = await asyncio.to_thread(get_tts_jobs().submit, request)
     except Exception as exc:
         raise HTTPException(
             status_code=503,
             detail=f"unable to enqueue TTS job: {type(exc).__name__}",
         ) from exc
+    link_current(accepted.job_id)
+    return accepted
 
 
 @app.get(
@@ -4708,9 +4730,12 @@ async def create_tts_job(request: TTSJobRequest) -> TTSJobAccepted:
 )
 async def get_tts_job(job_id: str) -> TTSJobStatus:
     try:
-        return await asyncio.to_thread(get_tts_jobs().status, job_id)
+        job = await asyncio.to_thread(get_tts_jobs().status, job_id)
     except TTSJobNotFound as exc:
         raise HTTPException(status_code=404, detail="TTS job not found") from exc
+    if job.status in {"succeeded", "failed", "cancelled"}:
+        await asyncio.to_thread(get_api_key_store().settle_job, job_id, job.status)
+    return job
 
 
 @app.get(
@@ -5259,7 +5284,7 @@ async def _validate_h3_urls(request: H3VideoJobRequest) -> None:
     tags=["MiniMax H3视频生成"],
     summary="创建异步MiniMax H3视频生成任务",
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_service_token)],
+    dependencies=[Depends(require_service_token), Depends(billable("video_generation", "minimax-h3-rh-enhanced"))],
 )
 async def create_h3_job(request: H3VideoJobRequest) -> dict[str, Any]:
     await _validate_h3_urls(request)
@@ -5274,6 +5299,7 @@ async def create_h3_job(request: H3VideoJobRequest) -> dict[str, Any]:
             status_code=503,
             detail=f"unable to enqueue MiniMax H3 job: {type(exc).__name__}",
         ) from exc
+    link_current(str(job.id))
     model_width, model_height, output_width, output_height = resolve_dimensions(
         request.resolution, request.aspect_ratio, request.width, request.height, request.quality
     )
@@ -5303,9 +5329,13 @@ async def create_h3_job(request: H3VideoJobRequest) -> dict[str, Any]:
 )
 async def get_h3_job(job_id: UUID) -> dict[str, Any]:
     try:
-        return await asyncio.to_thread(get_h3_jobs().status, str(job_id))
+        job = await asyncio.to_thread(get_h3_jobs().status, str(job_id))
     except H3JobNotFound as exc:
         raise HTTPException(status_code=404, detail="MiniMax H3 job not found") from exc
+    status_text = str(job.get("status") or "")
+    if status_text in {"succeeded", "failed", "cancelled"}:
+        await asyncio.to_thread(get_api_key_store().settle_job, str(job_id), status_text)
+    return job
 
 
 @app.get(
@@ -5339,9 +5369,12 @@ async def get_h3_worker_status() -> dict[str, Any]:
 )
 async def cancel_h3_job(job_id: UUID) -> dict[str, Any]:
     try:
-        return await asyncio.to_thread(get_h3_jobs().cancel, str(job_id))
+        result = await asyncio.to_thread(get_h3_jobs().cancel, str(job_id))
     except H3JobNotFound as exc:
         raise HTTPException(status_code=404, detail="MiniMax H3 job not found") from exc
+    if str(result.get("status") or "") in {"succeeded", "failed", "cancelled"}:
+        await asyncio.to_thread(get_api_key_store().settle_job, str(job_id), str(result["status"]))
+    return result
 
 
 @app.get(
@@ -5542,12 +5575,23 @@ async def admin_list_api_keys() -> dict[str, Any]:
 @app.post("/internal/admin/api-keys", include_in_schema=False, status_code=201, dependencies=[Depends(require_service_token)])
 async def admin_create_api_key(request: ApiKeyCreateRequest) -> dict[str, Any]:
     expiration = request.expires_at.astimezone(timezone.utc).isoformat(timespec="milliseconds") if request.expires_at else None
-    return await asyncio.to_thread(get_api_key_store().create, request.name, request.quota, expiration, request.daily_credit_quota)
+    return await asyncio.to_thread(
+        get_api_key_store().create,
+        request.name,
+        request.quota,
+        expiration,
+        from_yuan(request.limit_5h),
+        from_yuan(request.limit_24h),
+        from_yuan(request.limit_total),
+    )
 
 
 @app.patch("/internal/admin/api-keys/{key_id}", include_in_schema=False, dependencies=[Depends(require_service_token)])
 async def admin_update_api_key(key_id: UUID, request: ApiKeyUpdateRequest) -> dict[str, Any]:
     changes = request.model_dump(exclude_unset=True)
+    for window in ("limit_5h", "limit_24h", "limit_total"):
+        if window in changes:
+            changes[f"{window}_micro"] = from_yuan(changes.pop(window))
     if isinstance(changes.get("expires_at"), datetime):
         changes["expires_at"] = changes["expires_at"].astimezone(timezone.utc).isoformat(timespec="milliseconds")
     result = await asyncio.to_thread(get_api_key_store().update, str(key_id), **changes)
