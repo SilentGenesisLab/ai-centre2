@@ -1,10 +1,17 @@
 from __future__ import annotations
+from contextvars import ContextVar
 from typing import Any
 from celery.result import AsyncResult
+from .api_keys import ApiKeyStore, CreditQuotaExceeded
 from .config import Settings
+from .credit_pricing import estimate
 
 TASK_NAME="control_plane.video_generation"
 QUEUE_NAME="video_generation"
+
+# 由 require_service_token 在鉴权时写入；asyncio.to_thread 会把 context 复制进线程，
+# 所以 submit 在 worker 线程里也能读到。
+current_api_key_id: ContextVar[str | None] = ContextVar("current_api_key_id", default=None)
 
 
 def failure_text(job: AsyncResult, fallback: str = "job failed") -> str:
@@ -27,15 +34,36 @@ class GenerationJobClient:
     # 子类换掉这两个名字就能复用整条提交/查询/取消链路（见 audio_generation_jobs）。
     task_name=TASK_NAME
     queue_name=QUEUE_NAME
-    def __init__(self,settings:Settings,store:Any): self.settings,self.store=settings,store
+    def __init__(self,settings:Settings,store:Any):
+        self.settings,self.store=settings,store
+        self._key_store:ApiKeyStore|None=None
+
+    def _keys(self)->ApiKeyStore:
+        if self._key_store is None:
+            self._key_store=ApiKeyStore(self.settings.api_keys_db_path)
+        return self._key_store
+
     def submit(self,data:dict[str,Any])->str:
         jid=self.store.create_job(data["model"],data.get("channel") or "jmapi",data)
+        key_id=current_api_key_id.get()
+        if key_id:
+            try:
+                self._keys().charge(key_id,jid,estimate(data))
+            except CreditQuotaExceeded as exc:
+                self.store.update_job(jid,status="cancelled",stage="credit_quota",error=str(exc))
+                raise
         try: self._app().send_task(self.task_name,kwargs={"job_id":jid},task_id=jid,queue=self.queue_name)
         except Exception:
             self.store.update_job(jid,status="failed",stage="enqueue_failed",error="unable to enqueue generation job")
+            if key_id: self._keys().settle(jid,"failed")
             raise
         return jid
-    def status(self,jid:str)->dict[str,Any]: return self.store.job(jid)
+    def status(self,jid:str)->dict[str,Any]:
+        job=self.store.job(jid)
+        # 轮询是这条链路里最频繁的调用，顺带把终结状态结算掉，不用再往 worker 里加钩子。
+        if job.get("status") in {"succeeded","failed","cancelled"}:
+            self._keys().settle(jid,str(job["status"]))
+        return job
     def cancel(self,jid:str)->dict[str,str]:
         job = self.store.job(jid)
         status = str(job.get("status") or "")

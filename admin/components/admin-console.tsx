@@ -445,6 +445,8 @@ type ManagedApiKey = {
   quota: number | null;
   used: number;
   remaining: number | null;
+  daily_credit_quota: number | null;
+  credit_used_today: number | null;
   expires_at: string | null;
   enabled: boolean;
   created_at: string;
@@ -8535,6 +8537,7 @@ function ApiKeyManagement({
     try {
       const expires = String(data.get("expires_at") || "");
       const quota = String(data.get("quota") || "");
+      const creditQuota = String(data.get("daily_credit_quota") || "");
       const result = await apiRequest<ManagedApiKey>(
         "control",
         "/internal/admin/api-keys",
@@ -8544,6 +8547,7 @@ function ApiKeyManagement({
           body: JSON.stringify({
             name: data.get("name"),
             quota: quota ? Number(quota) : null,
+            daily_credit_quota: creditQuota ? Number(creditQuota) : null,
             expires_at: expires ? new Date(expires).toISOString() : null,
           }),
         },
@@ -8576,6 +8580,7 @@ function ApiKeyManagement({
     setEditBusy(true);
     const data = new FormData(event.currentTarget);
     const quota = String(data.get("quota") || "");
+    const creditQuota = String(data.get("daily_credit_quota") || "");
     const expires = String(data.get("expires_at") || "");
     try {
       await apiRequest("control", `/internal/admin/api-keys/${editing.id}`, {
@@ -8584,6 +8589,7 @@ function ApiKeyManagement({
         body: JSON.stringify({
           name: String(data.get("name") || "").trim(),
           quota: quota ? Number(quota) : null,
+          daily_credit_quota: creditQuota ? Number(creditQuota) : null,
           expires_at: expires ? new Date(expires).toISOString() : null,
         }),
       });
@@ -8650,6 +8656,17 @@ function ApiKeyManagement({
                 <small>每次鉴权请求消耗1次。</small>
               </label>
               <label>
+                每日积分额度（可选）
+                <input
+                  name="daily_credit_quota"
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="留空表示不限积分"
+                />
+                <small>按提交的预计消耗扣，失败的作业会退回。</small>
+              </label>
+              <label>
                 过期时间（可选）
                 <input name="expires_at" type="datetime-local" />
                 <small>留空表示永不过期。</small>
@@ -8693,6 +8710,7 @@ function ApiKeyManagement({
                 <th>名称 / 前缀</th>
                 <th>状态</th>
                 <th>额度</th>
+                <th>今日积分</th>
                 <th>过期时间</th>
                 <th>最近使用</th>
                 <th>操作</th>
@@ -8701,7 +8719,7 @@ function ApiKeyManagement({
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="empty-cell">
+                  <td colSpan={7} className="empty-cell">
                     暂无独立 API Key
                   </td>
                 </tr>
@@ -8723,6 +8741,16 @@ function ApiKeyManagement({
                       : `${item.used} / ${item.quota}`}
                     <small>
                       {item.remaining === null ? "" : `剩余 ${item.remaining}`}
+                    </small>
+                  </td>
+                  <td>
+                    {item.daily_credit_quota === null
+                      ? "不限"
+                      : `${item.credit_used_today ?? 0} / ${item.daily_credit_quota}`}
+                    <small>
+                      {item.daily_credit_quota === null
+                        ? `今日 ${item.credit_used_today ?? 0} 分`
+                        : `剩余 ${Math.max(0, item.daily_credit_quota - (item.credit_used_today ?? 0))}`}
                     </small>
                   </td>
                   <td>
@@ -8758,6 +8786,7 @@ function ApiKeyManagement({
           <form id="edit-api-key-form" className="stack-form" onSubmit={saveEdit}>
             <label>名称<input name="name" required maxLength={128} defaultValue={editing.name}/></label>
             <label>总请求额度（可选）<input name="quota" type="number" min="1" max="1000000000" step="1" defaultValue={editing.quota??""} placeholder="留空表示不限次数"/><small>已使用 {editing.used} 次；降低到已使用次数以下会使该Key立即无剩余额度。</small></label>
+            <label>每日积分额度（可选）<input name="daily_credit_quota" type="number" min="1" max="1000000000" step="1" defaultValue={editing.daily_credit_quota??""} placeholder="留空表示不限积分"/><small>今日已用 {editing.credit_used_today??0} 分（北京时间零点重置，失败的作业会退回）。</small></label>
             <label>过期时间（可选）<input name="expires_at" type="datetime-local" defaultValue={editing.expires_at?new Date(new Date(editing.expires_at).getTime()-new Date(editing.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16):""}/><small>留空表示永不过期，只能设置未来时间。</small></label>
             <div className="note-card"><b>安全说明</b><p>只修改名称、额度和有效期，不会更换API Key明文或前缀，调用方无需修改配置。</p></div>
           </form>

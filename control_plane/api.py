@@ -65,9 +65,9 @@ from .observability import ObservabilityMiddleware
 from .observability_api import get_observability_store, router as observability_router
 from .health_monitor_api import get_health_monitor, router as health_monitor_router
 from .concurrency_api import router as concurrency_router
-from .api_keys import ApiKeyStore
+from .api_keys import ApiKeyStore, CreditQuotaExceeded
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
-from .generation_jobs import GenerationJobClient
+from .generation_jobs import GenerationJobClient, current_api_key_id
 from .audio_generation_jobs import AudioGenerationJobClient
 from .text_generation_jobs import TextGenerationJobClient
 from .decision_generation_jobs import DecisionGenerationJobClient
@@ -995,6 +995,7 @@ class ApiKeyCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=128)
     quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
+    daily_credit_quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
     expires_at: datetime | None = None
 
     @field_validator("expires_at")
@@ -1013,6 +1014,7 @@ class ApiKeyUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=128)
     quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
+    daily_credit_quota: int | None = Field(default=None, ge=1, le=1_000_000_000)
     expires_at: datetime | None = None
     enabled: bool | None = None
 
@@ -1097,7 +1099,9 @@ def get_decision_generation_jobs() -> DecisionGenerationJobClient:
     return DecisionGenerationJobClient(get_settings(),get_capability_store())
 
 
-def require_service_token(authorization: str = Header(default="")) -> None:
+# 必须是 async：同步依赖会被 FastAPI 丢进线程池执行，在那里 set 的 ContextVar
+# 随线程的 context 副本一起丢掉，端点就拿不到 key id。DB 访问仍然下到线程池里做。
+async def require_service_token(authorization: str = Header(default="")) -> None:
     if not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -1105,11 +1109,13 @@ def require_service_token(authorization: str = Header(default="")) -> None:
         )
     token = authorization[7:].strip()
     if secrets.compare_digest(token, get_settings().service_token):
+        current_api_key_id.set(None)
         return
-    accepted, reason = get_api_key_store().authenticate_and_consume(token)
+    accepted, reason, key = await asyncio.to_thread(get_api_key_store().authenticate_and_consume, token)
     if not accepted:
         code = status.HTTP_429_TOO_MANY_REQUESTS if reason == "quota_exceeded" else status.HTTP_401_UNAUTHORIZED
         raise HTTPException(status_code=code, detail=f"api key {reason}")
+    current_api_key_id.set(key["id"] if key else None)
 
 
 @lru_cache(maxsize=1)
@@ -4863,6 +4869,7 @@ async def create_video_generation_job(request:VideoGenerationRequest)->dict[str,
     await _validate_generation_request(request)
     try: jid=await asyncio.to_thread(get_generation_jobs().submit,request.model_dump())
     except CapabilityNotFound as exc: raise HTTPException(404,"model not found") from exc
+    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue video generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/video-generations/jobs/{jid}"}
 
@@ -4884,6 +4891,7 @@ async def create_image_generation_job(request:ImageGenerationRequest)->dict[str,
     await _validate_image_generation_request(request)
     data=request.model_dump(); data["reference_video_urls"]=[]; data["reference_audio_urls"]=[]
     try: jid=await asyncio.to_thread(get_generation_jobs().submit,data)
+    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue image generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/image-generations/jobs/{jid}"}
 
@@ -4925,6 +4933,7 @@ async def _validate_audio_generation_request(request:AudioGenerationRequest)->No
 async def create_audio_generation_job(request:AudioGenerationRequest)->dict[str,Any]:
     await _validate_audio_generation_request(request)
     try: jid=await asyncio.to_thread(get_audio_generation_jobs().submit,request.model_dump())
+    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue audio generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/audio-generations/jobs/{jid}"}
 
@@ -4995,6 +5004,7 @@ async def _validate_text_generation_request(request:TextGenerationRequest)->None
 async def create_text_generation_job(request:TextGenerationRequest)->dict[str,Any]:
     await _validate_text_generation_request(request)
     try: jid=await asyncio.to_thread(get_text_generation_jobs().submit,request.model_dump())
+    except CreditQuotaExceeded as exc: raise HTTPException(429,str(exc)) from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue text generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/text-generations/jobs/{jid}"}
 
@@ -5532,7 +5542,7 @@ async def admin_list_api_keys() -> dict[str, Any]:
 @app.post("/internal/admin/api-keys", include_in_schema=False, status_code=201, dependencies=[Depends(require_service_token)])
 async def admin_create_api_key(request: ApiKeyCreateRequest) -> dict[str, Any]:
     expiration = request.expires_at.astimezone(timezone.utc).isoformat(timespec="milliseconds") if request.expires_at else None
-    return await asyncio.to_thread(get_api_key_store().create, request.name, request.quota, expiration)
+    return await asyncio.to_thread(get_api_key_store().create, request.name, request.quota, expiration, request.daily_credit_quota)
 
 
 @app.patch("/internal/admin/api-keys/{key_id}", include_in_schema=False, dependencies=[Depends(require_service_token)])

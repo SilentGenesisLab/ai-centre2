@@ -11,8 +11,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+# 作业时间按 UTC 落库，页面上的日期筛选却是按北京时间输入的，比较前必须换算。
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 def now() -> str:
@@ -716,10 +720,12 @@ class CapabilityStore:
         if model: clauses.append("m.code=?"); params.append(model)
         if channel: clauses.append("c.code=?"); params.append(channel)
         if status: clauses.append("j.status=?"); params.append(status)
-        if from_date: clauses.append("j.created_at>=?"); params.append(f"{from_date}T00:00:00")
+        if from_date:
+            start=datetime.fromisoformat(f"{from_date}T00:00:00").replace(tzinfo=SHANGHAI)
+            clauses.append("j.created_at>=?"); params.append(start.astimezone(timezone.utc).isoformat(timespec="milliseconds"))
         if to_date:
-            end=(datetime.fromisoformat(to_date)+timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
-            clauses.append("j.created_at<?"); params.append(end)
+            end=datetime.fromisoformat(f"{to_date}T00:00:00").replace(tzinfo=SHANGHAI)+timedelta(days=1)
+            clauses.append("j.created_at<?"); params.append(end.astimezone(timezone.utc).isoformat(timespec="milliseconds"))
         if keyword:
             like=f"%{keyword}%"
             clauses.append("(j.id LIKE ? OR m.code LIKE ? OR c.code LIKE ? OR j.error LIKE ? OR j.request_json LIKE ?)")
