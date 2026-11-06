@@ -89,6 +89,7 @@ class OpenApiTests(unittest.TestCase):
                 "文本生成",
                 "MiniMax H3视频生成",
                 "定型决策",
+                "计费与用量",
             ],
         )
         for path_item in schema["paths"].values():

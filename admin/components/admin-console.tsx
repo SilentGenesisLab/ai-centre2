@@ -1247,6 +1247,7 @@ export function AdminConsole({
           {section === "billing" && (
             <BillingCenter setError={setError} showNotice={showNotice} />
           )}
+          {section === "pricing" && <PricingCenter setError={setError} />}
           {section === "lipsync" && (
             <LipSync
               jobs={jobs}
@@ -3414,6 +3415,278 @@ function limitFields(data: FormData) {
     limit_24h: amount("limit_24h"),
     limit_total: amount("limit_total"),
   };
+}
+
+type PricingRate = {
+  service: string;
+  model: string;
+  variant: string;
+  unit: string;
+  unit_name: string;
+  amount_micro: number;
+  amount_yuan: number;
+  credits: number;
+  source: string;
+  note: string | null;
+  updated_at: string;
+  channels: Array<{ code: string; name: string; enabled: boolean; health_status: string }>;
+  available: boolean;
+};
+
+type UsageModelRow = {
+  service: string;
+  model: string;
+  count: number;
+  amount_micro: number;
+  amount_yuan: number;
+  credits: number;
+};
+
+type UsageWindow = { amount_micro: number; amount_yuan: number; count: number; credits: number };
+
+type UsagePayload = {
+  scope: string;
+  key_id: string | null;
+  window: string;
+  from: string | null;
+  to: string | null;
+  credits_per_yuan: number;
+  windows: Record<string, UsageWindow>;
+  amount_micro: number;
+  amount_yuan: number;
+  count: number;
+  credits: number;
+  by_model: UsageModelRow[];
+};
+
+const BILLING_SERVICE_LABELS: Record<string, string> = {
+  video_generation: "视频生成",
+  image_generation: "图像生成",
+  audio_generation: "音乐生成",
+  text_generation: "文本生成",
+  decision_generation: "定型决策",
+  tts: "语音合成",
+  asr: "语音识别",
+  ocr: "OCR",
+  upscale: "超分",
+  lipsync: "唇形驱动",
+  scene: "视频切片",
+  review: "拉片审查",
+  watermark: "去水印",
+  depth: "视频深度",
+  separation: "音频分离",
+  color_grade: "视频调色",
+  face_mosaic: "人脸处理",
+};
+
+const BILLING_SOURCE_LABELS: Record<string, string> = {
+  measured: "实测",
+  estimated: "估算",
+  free: "免费",
+  manual: "手工",
+  unknown: "未知",
+};
+
+function pricingUnit(value: number) {
+  if (!value) return "0";
+  // 每秒 1.77 元与每千字 0.1 元差两个数量级，固定小数位总有一头看不清。
+  return value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function PricingCenter({ setError }: { setError: (value: string) => void }) {
+  const [scopeWindow, setScopeWindow] = useState<BillingWindow>("24h");
+  const [usage, setUsage] = useState<UsagePayload | null>(null);
+  const [rates, setRates] = useState<PricingRate[]>([]);
+  const [service, setService] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [price, used] = await Promise.all([
+        apiRequest<{ credits_per_yuan: number; items: PricingRate[] }>(
+          "control",
+          "/v1/pricing/models",
+        ),
+        apiRequest<UsagePayload>("control", `/v1/usage?window=${scopeWindow}`),
+      ]);
+      setRates(price.items);
+      setUsage(used);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "定价与用量加载失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [scopeWindow, setError]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const needle = keyword.trim().toLowerCase();
+  const visible = rates.filter(
+    (item) =>
+      (!service || item.service === service) &&
+      (!needle ||
+        `${item.model} ${item.variant} ${item.service}`.toLowerCase().includes(needle)),
+  );
+  const services = Array.from(new Set(rates.map((item) => item.service)));
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="MODEL PRICE LIST"
+        title="模型定价"
+        description="每个模型按上游实测成本折算的单价，以及到目前为止已消耗的积分和各模型的调用次数。改价请到计费中心的费率页。"
+        actions={
+          <button className="secondary-button" disabled={loading} onClick={() => void load()}>
+            {loading ? "刷新中…" : "刷新"}
+          </button>
+        }
+      />
+
+      <div className="metric-grid">
+        {BILLING_WINDOWS.map((item) => (
+          <article className="metric-card" key={item.key}>
+            <span>{item.label}消耗</span>
+            <strong>{billingMoney(usage?.windows[item.key]?.amount_yuan)}</strong>
+            <small>
+              {usage?.windows[item.key]?.credits ?? 0} 积分 ·{" "}
+              {usage?.windows[item.key]?.count ?? 0} 次调用
+            </small>
+          </article>
+        ))}
+        <article className="metric-card accent">
+          <span>累计调用</span>
+          <strong>{usage?.windows.total.count ?? 0}</strong>
+          <small>{usage?.credits ?? 0} 积分</small>
+        </article>
+      </div>
+
+      <Panel
+        title="各模型用量"
+        eyebrow={`${BILLING_WINDOWS.find((item) => item.key === scopeWindow)?.label ?? "24小时"} · ${usage?.scope === "api_key" ? "当前 Key" : "全平台"}`}
+      >
+        <div className="record-filters">
+          {BILLING_WINDOWS.map((item) => (
+            <button
+              key={item.key}
+              className={scopeWindow === item.key ? "primary-button" : ""}
+              onClick={() => setScopeWindow(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>服务</th>
+                <th>模型</th>
+                <th>调用次数</th>
+                <th>消耗</th>
+                <th>折合积分</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(usage?.by_model ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={5} className="empty-cell">
+                    这个窗口内还没有消耗
+                  </td>
+                </tr>
+              )}
+              {(usage?.by_model ?? []).map((row) => (
+                <tr key={`${row.service}:${row.model}`}>
+                  <td>{BILLING_SERVICE_LABELS[row.service] ?? row.service}</td>
+                  <td className="wrap">{row.model}</td>
+                  <td>{row.count}</td>
+                  <td>{billingMoney(row.amount_yuan)}</td>
+                  <td>{row.credits}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      <Panel title="模型单价" eyebrow={`${visible.length} MODELS`}>
+        <div className="record-filters">
+          <label>
+            服务
+            <Select value={service} onChange={(event) => setService(event.target.value)}>
+              <option value="">全部</option>
+              {services.map((item) => (
+                <option key={item} value={item}>
+                  {BILLING_SERVICE_LABELS[item] ?? item}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="filter-search">
+            搜索
+            <input
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="模型名"
+            />
+          </label>
+          <span className="pricing-note">
+            1 元 = {usage?.credits_per_yuan ?? 62} 积分 · 价格为上游成本，未含加价
+          </span>
+        </div>
+        <div className="pricing-grid">
+          {visible.map((item) => (
+            <article className="pricing-card" key={`${item.service}:${item.model}:${item.variant}`}>
+              <header>
+                <span className="pricing-service">
+                  {BILLING_SERVICE_LABELS[item.service] ?? item.service}
+                </span>
+                <span
+                  className={classNames(
+                    "status-badge",
+                    item.source === "measured" && "is-good",
+                  )}
+                >
+                  {BILLING_SOURCE_LABELS[item.source] ?? item.source}
+                </span>
+              </header>
+              <strong className="pricing-model">
+                {item.model}
+                {item.variant !== "*" ? <small> · {item.variant}</small> : null}
+              </strong>
+              <div className="pricing-value">
+                <b>{item.amount_micro === 0 ? "免费" : `¥${pricingUnit(item.amount_yuan)}`}</b>
+                <small> / {item.unit_name}</small>
+              </div>
+              <small className="pricing-credits">
+                {item.amount_micro === 0 ? "本地算力" : `${item.credits} 积分 / ${item.unit_name}`}
+              </small>
+              <footer>
+                {item.channels.length === 0 ? (
+                  <span className="pricing-channel is-off">未登记渠道</span>
+                ) : (
+                  item.channels.map((channel) => (
+                    <span
+                      key={channel.code}
+                      className={classNames("pricing-channel", !channel.enabled && "is-off")}
+                      title={channel.health_status}
+                    >
+                      {channel.name}
+                      {channel.enabled ? "" : "（停用）"}
+                    </span>
+                  ))
+                )}
+              </footer>
+            </article>
+          ))}
+          {visible.length === 0 && <p className="empty-cell">没有匹配的模型</p>}
+        </div>
+      </Panel>
+    </>
+  );
 }
 
 function BillingCenter({

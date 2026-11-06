@@ -653,3 +653,21 @@ table { border-collapse:separate; border-spacing:0; }thead th { background:var(-
 .concurrency-warning { color: var(--red); display: block; font-size: 9px; line-height: 1.6; margin-top: 6px; }
 .concurrency-note { color: var(--muted); font-size: 10px; line-height: 1.8; margin: 0; }
 .concurrency-note + .concurrency-note { margin-top: 8px; }
+
+/* 模型定价：卡片网格照 teamorouter 的 /models 排，一屏能横向读完一组价格。 */
+.pricing-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.pricing-card { background: var(--panel); border: 1px solid var(--line); border-radius: 13px; display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+.pricing-card header { align-items: center; display: flex; justify-content: space-between; }
+.pricing-service { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; }
+.pricing-model { font-size: 14px; overflow-wrap: anywhere; }
+.pricing-model small { color: var(--muted); font-size: 10px; font-weight: 600; }
+.pricing-value { align-items: baseline; display: flex; gap: 4px; }
+.pricing-value b { font-family: Consolas, monospace; font-size: 22px; }
+.pricing-value small { color: var(--muted); font-size: 10px; }
+.pricing-credits { color: var(--muted); font-size: 9px; }
+.pricing-card footer { border-top: 1px dashed var(--line); display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 10px; }
+.pricing-channel { background: var(--accent-soft); border-radius: 99px; color: var(--accent-ink); font-size: 8px; font-weight: 700; padding: 4px 8px; }
+.pricing-channel.is-off { background: var(--surface); color: var(--muted); }
+.pricing-note { color: var(--muted); font-size: 9px; margin-left: auto; }
+@media (max-width: 1180px) { .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .pricing-grid { grid-template-columns: 1fr; } .pricing-note { margin-left: 0; } }

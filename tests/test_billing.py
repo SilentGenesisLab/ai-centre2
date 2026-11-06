@@ -4,11 +4,12 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from control_plane import api
 from control_plane.api_keys import ApiKeyStore
+from control_plane.billing_api import public_router
 from control_plane.billing_api import router as billing_router
 from control_plane.credit_pricing import Quote
 
@@ -18,6 +19,7 @@ def _client(store: ApiKeyStore, monkeypatch) -> TestClient:
     app = FastAPI()
     # 鉴权在 api.py 里由 include_router 统一挂，这里只测处理逻辑。
     app.include_router(billing_router)
+    app.include_router(public_router)
     return TestClient(app)
 
 
@@ -144,3 +146,99 @@ def test_terminal_job_status_settles_without_any_poll(store, monkeypatch) -> Non
     row = store.charges()["items"][0]
     assert row["state"] == "refunded"
     assert row["job_status"] == "failed"
+
+
+class _AsKey:
+    """冒充 require_service_token：在请求上下文里把当前 Key 设好。"""
+
+    def __init__(self, key_id: str) -> None:
+        self.key_id = key_id
+
+    async def __call__(self) -> None:
+        from control_plane.generation_jobs import current_api_key_id
+
+        current_api_key_id.set(self.key_id)
+
+
+class _Catalog:
+    def models(self):
+        return [
+            {
+                "code": "seedance-2.5",
+                "channels": [
+                    {"channel_code": "libtv", "channel_name": "LibTV", "enabled": True,
+                     "channel_enabled": True, "health_status": "online"},
+                    {"channel_code": "jmapi", "channel_name": "即梦", "enabled": True,
+                     "channel_enabled": False, "health_status": "offline"},
+                ],
+            }
+        ]
+
+
+def test_pricing_lists_every_model_with_credits_and_channels(store, monkeypatch) -> None:
+    monkeypatch.setattr(api, "get_capability_store", lambda: _Catalog())
+    client = _client(store, monkeypatch)
+
+    body = client.get("/v1/pricing/models").json()
+    assert body["credits_per_yuan"] == 62
+    row = next(item for item in body["items"]
+               if item["model"] == "seedance-2.5" and item["variant"] == "*")
+    # 110 积分/秒 ÷ 62 = ¥1.774194，反过来乘回 62 要还原成 110 积分。
+    assert row["amount_micro"] == 1_774_194
+    assert row["credits"] == 110.0
+    assert row["unit_name"] == "秒"
+    assert [bind["code"] for bind in row["channels"]] == ["libtv", "jmapi"]
+    # 只有一个渠道是启用的，模型整体仍算可用。
+    assert row["available"] is True
+
+    filtered = client.get("/v1/pricing/models", params={"service": "video_generation"}).json()["items"]
+    assert filtered and all(item["service"] == "video_generation" for item in filtered)
+    assert len(filtered) < body["total"]
+
+
+def test_usage_reports_credits_and_calls_per_model(store, monkeypatch) -> None:
+    monkeypatch.setattr(api, "get_capability_store", lambda: _Catalog())
+    created = store.create("视频", None, None)
+    store.hold(created["id"], "req-1", "video_generation", "seedance-2.5", "jmapi",
+               Quote(unit="second", quantity=5, amount_micro=8_870_970, source="measured"))
+    store.settle("req-1", "succeeded")
+    store.hold(created["id"], "req-2", "image_generation", "gpt-image-2.5", "grsai",
+               Quote(unit="image", quantity=1, amount_micro=300_000, source="estimated"))
+    store.settle("req-2", "succeeded")
+    store.hold(created["id"], "req-3", "image_generation", "gpt-image-2.5", "grsai",
+               Quote(unit="image", quantity=1, amount_micro=300_000, source="estimated"))
+    store.settle("req-3", "failed")
+
+    client = _client(store, monkeypatch)
+    body = client.get("/v1/usage", params={"window": "total"}).json()
+
+    assert body["count"] == 2, "退回的失败单不算消耗，也不能算一次调用"
+    assert body["amount_yuan"] == 9.171
+    assert body["credits"] == round(9_170_970 / 1_000_000 * 62, 4)
+    by_model = {row["model"]: row for row in body["by_model"]}
+    assert by_model["seedance-2.5"]["count"] == 1
+    assert by_model["gpt-image-2.5"]["count"] == 1
+    assert set(body["windows"]) == {"5h", "24h", "total"}
+    assert body["windows"]["total"]["amount_micro"] == 9_170_970
+
+
+def test_usage_is_scoped_to_the_calling_key(store, monkeypatch) -> None:
+    first = store.create("甲", None, None)
+    second = store.create("乙", None, None)
+    store.hold(first["id"], "req-a", "video_generation", "seedance-2.5", "jmapi",
+               Quote(unit="second", quantity=1, amount_micro=1_000_000, source="measured"))
+    store.settle("req-a", "succeeded")
+    store.hold(second["id"], "req-b", "video_generation", "seedance-2.5", "jmapi",
+               Quote(unit="second", quantity=2, amount_micro=2_000_000, source="measured"))
+    store.settle("req-b", "succeeded")
+
+    client = _client(store, monkeypatch)
+    assert client.get("/v1/usage").json()["amount_micro"] == 3_000_000
+
+    # 客户 Key 的视角：鉴权依赖在请求上下文里 set 这个 ContextVar，外面的线程里 set 传不进去。
+    scoped_app = FastAPI()
+    scoped_app.include_router(public_router, dependencies=[Depends(_AsKey(first["id"]))])
+    scoped = TestClient(scoped_app).get("/v1/usage").json()
+    assert scoped["scope"] == "api_key"
+    assert scoped["amount_micro"] == 1_000_000
+    assert scoped["count"] == 1

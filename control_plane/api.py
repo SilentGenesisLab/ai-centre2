@@ -66,6 +66,7 @@ from .observability_api import get_observability_store, router as observability_
 from .health_monitor_api import get_health_monitor, router as health_monitor_router
 from .concurrency_api import router as concurrency_router
 from .api_keys import ApiKeyStore, CreditQuotaExceeded
+from .billing_api import public_router as pricing_router
 from .billing_api import router as billing_router
 from .billing_hook import BillingRoute, billable, link_current
 from .credit_pricing import from_yuan
@@ -228,6 +229,12 @@ app.openapi_tags.append(
     {
         "name": "定型决策",
         "description": "给一段上下文状态和一组问题，拿回一组带置信度的结构化判定。",
+    }
+)
+app.openapi_tags.append(
+    {
+        "name": "计费与用量",
+        "description": "各模型的计费单价与可用渠道，以及已消耗的积分和各模型的调用次数。",
     }
 )
 
@@ -1138,6 +1145,8 @@ async def require_service_token(authorization: str = Header(default="")) -> None
 
 # 计费中心的路由要挂在鉴权依赖上，而 require_service_token 到这里才定义完。
 app.include_router(billing_router, dependencies=[Depends(require_service_token)])
+# 价格表与用量查询是对外接口（进 OpenAPI 文档），同一把鉴权：服务令牌看全平台，客户 Key 只看自己。
+app.include_router(pricing_router, dependencies=[Depends(require_service_token)])
 
 
 @lru_cache(maxsize=1)
@@ -5607,3 +5616,4 @@ async def admin_delete_api_key(key_id: UUID) -> dict[str, Any]:
     if not await asyncio.to_thread(get_api_key_store().delete, str(key_id)):
         raise HTTPException(status_code=404, detail="api key not found")
     return {"deleted": True, "id": str(key_id)}
+

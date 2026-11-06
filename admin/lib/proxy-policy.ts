@@ -30,6 +30,7 @@ const POLICIES: Record<BackendName, Array<{ methods: string[]; pattern: RegExp }
     { methods: ["PUT"], pattern: /^\/internal\/admin\/h3\/pool\/config$/ },
     { methods: ["POST"], pattern: /^\/internal\/admin\/h3\/pool\/workers$/ },
     { methods: ["DELETE"], pattern: /^\/internal\/admin\/h3\/pool\/workers\/[0-9a-f-]+$/ },
+    { methods: ["GET"], pattern: /^\/v1\/(?:pricing\/models|usage)$/ },
     { methods: ["GET", "POST"], pattern: /^\/internal\/admin\/api-keys$/ },
     { methods: ["PATCH", "DELETE"], pattern: /^\/internal\/admin\/api-keys\/[0-9a-f-]+$/ },
     { methods: ["GET", "POST"], pattern: /^\/v2\/tts\/(?:speech(?:\/(?:upload|stream))?|jobs|providers|voices|quality)(?:\/[A-Za-z0-9_-]+(?:\/audio)?)?$/ },

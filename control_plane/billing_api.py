@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from .api_keys import ApiKeyStore
+from .api_keys import WINDOWS, ApiKeyStore
 from .credit_pricing import MICRO, from_yuan
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -25,6 +25,12 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 # 与其它 /internal/admin/* 一致：内部接口不进公开文档（tests/test_openapi.py 钉着公开
 # 端点只能有固定的那组中文分类）。
 router = APIRouter(prefix="/internal/admin/billing", tags=["计费"], include_in_schema=False)
+
+# 对外公开的两条：价格表与用量查询。要进接口文档，所以不能 include_in_schema=False；
+# 鉴权同样由 api.py 的 include_router 统一挂（服务令牌看全平台，客户 Key 只看自己）。
+public_router = APIRouter(prefix="/v1", tags=["计费与用量"])
+
+UNIT_NAMES = {"second": "秒", "image": "张", "track": "首", "call": "次", "1000_chars": "千字"}
 
 
 def _store() -> ApiKeyStore:
@@ -236,4 +242,125 @@ async def update_settings(request: SettingsRequest) -> dict[str, Any]:
         "platform_limit_5h": _yuan_of(settings["platform_limit_5h_micro"]),
         "platform_limit_24h": _yuan_of(settings["platform_limit_24h_micro"]),
         "platform_limit_total": _yuan_of(settings["platform_limit_total_micro"]),
+    }
+
+
+# ---- 对外：价格表 ----
+
+def _channels_by_model() -> dict[str, list[dict[str, Any]]]:
+    """能力目录里每个模型的渠道，按登记的优先级。定价接口只做展示，查不到就是空表。"""
+    from .api import get_capability_store
+
+    result: dict[str, list[dict[str, Any]]] = {}
+    for item in get_capability_store().models():
+        result[str(item["code"])] = [
+            {
+                "code": bind["channel_code"],
+                "name": bind["channel_name"],
+                "enabled": bool(bind["enabled"] and bind["channel_enabled"]),
+                "health_status": bind["health_status"],
+            }
+            for bind in item["channels"]
+        ]
+    return result
+
+
+@public_router.get(
+    "/pricing/models",
+    summary="查询各个模型的计费单价与可用渠道",
+    response_description="费率表：每个服务·模型·变体的单位价格（元与积分）、来源、可用渠道",
+)
+async def pricing_models(
+    service: str | None = Query(default=None, description="按服务过滤，如 video_generation"),
+    model: str | None = Query(default=None, description="按模型过滤，如 seedance-2.5"),
+) -> dict[str, Any]:
+    store = _store()
+    rates, settings = await asyncio.gather(
+        asyncio.to_thread(store.rates),
+        asyncio.to_thread(store.settings),
+    )
+    per_yuan = float(settings["credits_per_yuan"])
+    channels = await asyncio.to_thread(_channels_by_model)
+
+    items: list[dict[str, Any]] = []
+    for row in rates:
+        if not row["enabled"]:
+            continue
+        if service and row["service"] != service:
+            continue
+        if model and row["model"] != model:
+            continue
+        binds = channels.get(row["model"], [])
+        micro = int(row["amount_micro"])
+        items.append(
+            {
+                "service": row["service"],
+                "model": row["model"],
+                "variant": row["variant"],
+                "unit": row["unit"],
+                "unit_name": UNIT_NAMES.get(row["unit"], row["unit"]),
+                "amount_micro": micro,
+                "amount_yuan": round(micro / MICRO, 6),
+                "credits": round(micro / MICRO * per_yuan, 4),
+                "source": row["source"],
+                "note": row["note"],
+                "updated_at": row["updated_at"],
+                "channels": binds,
+                "available": any(bind["enabled"] for bind in binds),
+            }
+        )
+    # 具体型号排前、服务级通配（model='*'）垫后，否则通配价会混在真模型中间看着像一款模型。
+    items.sort(key=lambda item: (item["service"], item["model"] == "*", -item["amount_micro"], item["model"]))
+    return {
+        "credits_per_yuan": per_yuan,
+        "total": len(items),
+        "items": items,
+    }
+
+
+# ---- 对外：用量 ----
+
+@public_router.get(
+    "/usage",
+    summary="查询目前消耗了多少积分与各个模型的调用次数",
+    response_description="5 小时 / 24 小时 / 累计三个滚动窗口的金额与次数，以及所选区间按模型汇总的调用量",
+)
+async def usage(
+    window: str = Query(default="24h", pattern="^(5h|24h|total)$", description="不传 from/to 时按这个窗口统计"),
+    start: str | None = Query(default=None, alias="from", description="北京时间起点，如 2026-11-01 或 2026-11-01T08:00:00"),
+    end: str | None = Query(default=None, alias="to", description="北京时间终点，只给日期时取当天整天"),
+) -> dict[str, Any]:
+    from .generation_jobs import current_api_key_id
+
+    key_id = current_api_key_id.get()
+    store = _store()
+    if start or end:
+        begin = _bound(start)
+        finish = _bound(end, exclusive_end=True)
+    else:
+        delta = WINDOWS[window]
+        begin = (datetime.now(timezone.utc) - delta).isoformat(timespec="milliseconds") if delta else None
+        finish = None
+
+    summary, windows, settings = await asyncio.gather(
+        asyncio.to_thread(store.usage_report, start=begin, end=finish, key_id=key_id),
+        asyncio.to_thread(store.usage_windows, key_id=key_id),
+        asyncio.to_thread(store.settings),
+    )
+    per_yuan = float(settings["credits_per_yuan"])
+    for row in summary["by_model"]:
+        row["credits"] = round(row["amount_micro"] / MICRO * per_yuan, 4)
+    for values in windows.values():
+        values["credits"] = round(values["amount_micro"] / MICRO * per_yuan, 4)
+
+    return {
+        "scope": "api_key" if key_id else "platform",
+        "key_id": key_id,
+        "window": window,
+        "from": begin,
+        "to": finish,
+        "credits_per_yuan": per_yuan,
+        "windows": windows,
+        **summary,
+        "credits": round(summary["amount_micro"] / MICRO * per_yuan, 4),
     }

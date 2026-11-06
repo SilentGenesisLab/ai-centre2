@@ -1,6 +1,6 @@
 export const SECTIONS = [
   { id: "overview", label: "数据分析" }, { id: "calls", label: "任务日志" },
-  { id: "billing", label: "计费中心" }, { id: "api-keys", label: "API Key 管理" },
+  { id: "billing", label: "计费中心" }, { id: "pricing", label: "模型定价" }, { id: "api-keys", label: "API Key 管理" },
   { id: "channels", label: "渠道管理" }, { id: "ai-models", label: "模型管理" },
   { id: "ai-job-logs", label: "渠道任务日志" },
   { id: "text-gen", label: "文本生成" }, { id: "asr", label: "语音识别" }, { id: "ocr", label: "OCR 与字幕" },
@@ -25,6 +25,7 @@ export const NAVIGATION: NavigationItem[] = [
   { id: "overview", label: "数据分析", icon: "dashboard", href: "overview" },
   { id: "calls", label: "任务日志", icon: "logs", href: "calls" },
   { id: "billing", label: "计费中心", icon: "billing", href: "billing" },
+  { id: "pricing", label: "模型定价", icon: "billing", href: "pricing" },
   { id: "api-keys", label: "API Key 管理", icon: "key", href: "api-keys" },
   { id: "ai-capabilities", label: "AI 能力", icon: "models", children: [
     { id: "channels", label: "渠道管理", icon: "resources", href: "channels" },

@@ -572,6 +572,65 @@ class ApiKeyStore:
             },
         }
 
+    def usage_report(self, *, start: str | None = None, end: str | None = None,
+                     key_id: str | None = None) -> dict[str, Any]:
+        """按模型汇总：每个模型被调了多少次、花了多少。key_id 为 None 时是全平台。
+
+        与 summary 同一口径：退回的账不算消耗，明细里仍然看得到。
+        """
+        clauses = ["c.state!='refunded'"]
+        params: list[Any] = []
+        if start:
+            clauses.append("c.created_at>=?")
+            params.append(start)
+        if end:
+            clauses.append("c.created_at<?")
+            params.append(end)
+        if key_id is not None:
+            clauses.append("c.key_id=?")
+            params.append(key_id)
+        where = "WHERE " + " AND ".join(clauses)
+        with self._connect() as db:
+            amount, count = db.execute(
+                f"SELECT COALESCE(SUM(c.amount_micro),0), COUNT(*) FROM usage_charges c {where}",
+                params,
+            ).fetchone()
+            rows = db.execute(
+                f"""SELECT c.service service, COALESCE(c.model,'(未知)') model,
+                           COALESCE(SUM(c.amount_micro),0) amount_micro, COUNT(*) count
+                    FROM usage_charges c {where}
+                    GROUP BY c.service, c.model ORDER BY amount_micro DESC, count DESC""",
+                params,
+            ).fetchall()
+        return {
+            "amount_micro": int(amount or 0),
+            "amount_yuan": to_yuan(int(amount or 0)),
+            "count": int(count or 0),
+            "by_model": [dict(row) | {"amount_yuan": to_yuan(row["amount_micro"])} for row in rows],
+        }
+
+    def usage_windows(self, *, key_id: str | None = None) -> dict[str, dict[str, Any]]:
+        """5h / 24h / 累计三个滚动窗口的金额与调用次数，看「现在花掉多少」用这个。"""
+        result: dict[str, dict[str, Any]] = {}
+        with self._connect() as db:
+            for window in WINDOWS:
+                since = _since(window)
+                clause = "state!='refunded'" + (" AND created_at>=?" if since else "")
+                params: list[Any] = [since] if since else []
+                if key_id is not None:
+                    clause += " AND key_id=?"
+                    params.append(key_id)
+                amount, count = db.execute(
+                    f"SELECT COALESCE(SUM(amount_micro),0), COUNT(*) FROM usage_charges WHERE {clause}",
+                    params,
+                ).fetchone()
+                result[window] = {
+                    "amount_micro": int(amount or 0),
+                    "amount_yuan": to_yuan(int(amount or 0)),
+                    "count": int(count or 0),
+                }
+        return result
+
     @staticmethod
     def _group(db: sqlite3.Connection, base: str, params: list[Any], expression: str, alias: str) -> list[dict[str, Any]]:
         rows = db.execute(
