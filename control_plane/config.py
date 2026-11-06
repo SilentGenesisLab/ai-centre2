@@ -243,6 +243,10 @@ class Settings(BaseSettings):
     h3_wait_for_worker_seconds: int = 604800
     h3_failed_retention_seconds: int = 86400
     h3_upload_timeout_seconds: float = 300
+    # 参考素材要推给租用的 worker，走的是它的公网隧道（实测 10~25 KB/s），
+    # 所以上传必须单独给一个远长于生成轮询的超时，并按体积阈值先压一遍图。
+    h3_worker_upload_timeout_seconds: float = 900
+    h3_reference_image_shrink_bytes: int = 400 * 1024
     suanli_token: str | None = None
     suanli_base_url: str = "https://openapi.suanli.cn"
     h3_pool_reconcile_seconds: float = 10

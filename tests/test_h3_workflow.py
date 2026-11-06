@@ -6,7 +6,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from control_plane.h3_store import H3Store
-from control_plane.h3_workflow import build_prompt_graph, resolve_dimensions, validate_part_durations
+from control_plane.h3_workflow import (
+    build_prompt_graph,
+    resolve_dimensions,
+    shrink_reference_image,
+    validate_part_durations,
+)
 
 
 class H3WorkflowTests(unittest.TestCase):
@@ -235,6 +240,48 @@ class H3StoreTests(unittest.TestCase):
             self.assertEqual(store.worker(worker_id)["status"], "unknown")
             self.assertEqual(store.schedulable_workers(), [])
             self.assertTrue(store.queue_position(job_id)["queued"])
+
+
+class ReferenceImageShrinkTests(unittest.TestCase):
+    @staticmethod
+    def _render(target: Path, *, pix_fmt: str) -> Path:
+        import subprocess
+
+        import imageio_ffmpeg
+
+        subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y",
+             "-f", "lavfi", "-i", "testsrc2=size=1600x900", "-frames:v", "1",
+             "-pix_fmt", pix_fmt, str(target)],
+            check=True,
+        )
+        return target
+
+    def test_small_image_is_left_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = directory / "small.png"
+            source.write_bytes(b"x" * 1024)
+            self.assertEqual(
+                shrink_reference_image(source, directory / "out.jpg", min_bytes=2048), source
+            )
+
+    def test_large_opaque_image_is_reencoded_smaller(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = self._render(directory / "large.png", pix_fmt="rgb24")
+            self.assertGreater(source.stat().st_size, 100_000)
+            result = shrink_reference_image(source, directory / "out.jpg", min_bytes=0)
+            self.assertEqual(result, directory / "out.jpg")
+            self.assertLess(result.stat().st_size, source.stat().st_size)
+
+    def test_image_with_alpha_is_left_untouched(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = self._render(directory / "alpha.png", pix_fmt="rgba")
+            self.assertEqual(
+                shrink_reference_image(source, directory / "out.jpg", min_bytes=0), source
+            )
 
 
 if __name__ == "__main__":

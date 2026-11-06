@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import shutil
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,7 @@ from .h3_workflow import (
     probe_video,
     render_delivery,
     resolve_dimensions,
+    shrink_reference_image,
     split_reference,
     validate_part_durations,
 )
@@ -77,6 +80,38 @@ def _cached_source(work_dir: Path) -> Path | None:
 def _check_cancel(store: H3Store, job_id: str) -> None:
     if store.is_cancel_requested(job_id):
         raise H3Cancelled("job was cancelled")
+
+
+_LEASE_HEARTBEAT_SECONDS = 10.0
+
+
+@contextmanager
+def _keep_lease(scheduler: H3Scheduler, worker_id: str, lease_value: str):
+    """续租 worker lease，覆盖上传这类阻塞动作。
+
+    续租原本只在生成轮询里发生，而 lease 只有 30s —— 把参考素材推给 worker
+    （隧道 10~25 KB/s）只要超过 30s，lease 就静默过期，别的作业会把这台 worker
+    抢走，第一次轮询就报 "worker lease was lost"。
+    """
+    lost = threading.Event()
+    stopped = threading.Event()
+
+    def beat() -> None:
+        while not stopped.wait(_LEASE_HEARTBEAT_SECONDS):
+            try:
+                if not scheduler.renew(worker_id, lease_value):
+                    lost.set()
+                    return
+            except Exception:
+                continue
+
+    thread = threading.Thread(target=beat, name=f"h3-lease-{worker_id}", daemon=True)
+    thread.start()
+    try:
+        yield lost
+    finally:
+        stopped.set()
+        thread.join(timeout=5)
 
 
 @celery_app.task(
@@ -182,16 +217,35 @@ def generate_minimax_h3(self) -> dict[str, Any]:
             output_parts: list[Path] = []
             prompt_ids: list[str] = []
             try:
-                with ComfyH3Client(str(worker["base_url"]), timeout_seconds=120) as client:
-                    image_names = [client.upload(path, f"{job_id}-reference-image-{index}{path.suffix.lower()}") for index, path in enumerate(reference_images, start=1)]
-                    audio_names = [client.upload(path, f"{job_id}-reference-audio-{index}{path.suffix.lower()}") for index, path in enumerate(reference_audios, start=1)]
-                    extra_video_names = [client.upload(path, f"{job_id}-reference-extra-{index}.mp4") for index, path in enumerate(reference_videos[1:], start=2)]
+                with _keep_lease(scheduler, worker_id, lease_value) as lease_lost, ComfyH3Client(
+                    str(worker["base_url"]),
+                    timeout_seconds=120,
+                    upload_timeout_seconds=settings.h3_worker_upload_timeout_seconds,
+                ) as client:
+                    upload_images = [
+                        shrink_reference_image(
+                            path, work_dir / f"upload-image-{index}.jpg",
+                            min_bytes=settings.h3_reference_image_shrink_bytes,
+                        )
+                        for index, path in enumerate(reference_images, start=1)
+                    ]
+
+                    def upload(path: Path, remote_name: str) -> str:
+                        if lease_lost.is_set():
+                            raise H3WorkerError("worker lease was lost")
+                        return client.upload(path, remote_name)
+
+                    image_names = [upload(path, f"{job_id}-reference-image-{index}{path.suffix.lower()}") for index, path in enumerate(upload_images, start=1)]
+                    audio_names = [upload(path, f"{job_id}-reference-audio-{index}{path.suffix.lower()}") for index, path in enumerate(reference_audios, start=1)]
+                    extra_video_names = [upload(path, f"{job_id}-reference-extra-{index}.mp4") for index, path in enumerate(reference_videos[1:], start=2)]
+                    if lease_lost.is_set():
+                        raise H3WorkerError("worker lease was lost")
                     for index, (part, part_duration, prompt) in enumerate(
                         zip(parts, durations, request["prompts"], strict=True), start=1
                     ):
                         _check_cancel(store, job_id)
                         video_name = (
-                            client.upload(part, f"{job_id}-reference-{index}.mp4") if part else None
+                            upload(part, f"{job_id}-reference-{index}.mp4") if part else None
                         )
                         graph = build_prompt_graph(
                             video_name, str(prompt), part_duration, model_width,

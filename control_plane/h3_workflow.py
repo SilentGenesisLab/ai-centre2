@@ -239,14 +239,59 @@ def build_prompt_graph(
     return graph
 
 
+def _image_pix_fmt(path: Path) -> str:
+    completed = subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for line in completed.stderr.splitlines():
+        if line.strip().startswith("Stream #") and "Video:" in line:
+            fields = line.split("Video:", 1)[1].split(",")
+            if len(fields) > 1:
+                return fields[1].strip().split("(")[0].lower()
+    return ""
+
+
+def shrink_reference_image(source: Path, target: Path, *, min_bytes: int) -> Path:
+    """Re-encode an oversized reference image so it can actually be uploaded.
+
+    Uploads go through the worker's public tunnel, measured at 10-25 KB/s, so a
+    2.5 MB PNG needs over two minutes -- longer than both the worker lease and
+    the client timeout. The same pixels as a quality-3 JPEG are 5-7x smaller.
+    Images carrying transparency are left alone: JPEG would flatten the alpha.
+    """
+    if source.stat().st_size <= min_bytes:
+        return source
+    if _image_pix_fmt(source).startswith(("rgba", "argb", "abgr", "ya", "yuva", "gbrap", "pal8")):
+        return source
+    completed = subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error", "-y",
+         "-i", str(source), "-q:v", "3", str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0 or not target.is_file() or not target.stat().st_size:
+        return source
+    return target if target.stat().st_size < source.stat().st_size else source
+
+
 class ComfyH3Client:
-    def __init__(self, base_url: str, timeout_seconds: float = 120) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 120,
+        upload_timeout_seconds: float | None = None,
+    ) -> None:
         self.client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=httpx.Timeout(timeout_seconds, connect=10),
             follow_redirects=False,
             trust_env=False,
         )
+        self.upload_timeout = httpx.Timeout(upload_timeout_seconds or timeout_seconds, connect=10)
 
     def close(self) -> None:
         self.client.close()
@@ -264,6 +309,7 @@ class ComfyH3Client:
                     "/upload/image",
                     files={"image": (remote_name, stream, "application/octet-stream")},
                     data={"type": "input", "overwrite": "true"},
+                    timeout=self.upload_timeout,
                 )
             response.raise_for_status()
             return str(response.json()["name"])
