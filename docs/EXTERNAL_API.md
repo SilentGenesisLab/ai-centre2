@@ -788,7 +788,7 @@ curl -X POST "$BASE/v1/video-generations/minimax-h3/jobs" \
 - `reference_image_urls`、`reference_video_urls`、`reference_audio_urls`均为可选URL列表；全部不传时为纯文本生成。
 - `prompt`为必填字符串；每次请求只生成一个片段，不支持`segment_mode`、`prompts`或`split_seconds`。
 - `duration_seconds`范围2～15秒，默认5秒。需要多段时由上层Agent分别提交多个原子任务并负责连续性和剪辑。
-- `resolution`支持`480p | 720p | 1080p`，默认`480p`；`aspect_ratio`支持`9:16 | 16:9 | 1:1 | 4:3 | 3:4`，默认`9:16`。
+- `resolution`支持`480p | 720p | 1080p`，默认`480p`；`aspect_ratio`支持`9:16 | 16:9 | 1:1 | 4:3 | 3:4`，默认`9:16`。**分辨率直接决定成本，`1080p` 最贵、耗时也最长：客户没明确要求高清时用 `720p`，`1080p` 只用于最终交付镜头。**
 - `quality`支持`low | medium | high`，默认`medium`：`low`走4步Euler快速预览和较小内部画布；`medium`走4步Euler原生安全画布；`high`走4步`res_multistep/simple`质量采样，耗时明显增加。兼容旧拼写`midia`并归一化为`medium`。
 - `priority`范围为`1～1000`，默认`500`，数值越高越先获得下一台空闲Worker；同优先级按提交时间先后处理。优先级不会中断已经在GPU上运行的任务。
 - 720P/1080P使用安全模型尺寸生成，再一次性缩放到标准交付尺寸，避免远程5090显存溢出。旧调用方仍可同时传`width`和`height`使用自定义模型尺寸。

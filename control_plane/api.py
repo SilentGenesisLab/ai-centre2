@@ -719,7 +719,11 @@ class VideoGenerationRequest(BaseModel):
     duration_seconds: int = Field(default=5, ge=2, le=30)
     # 768p 是 RunningHub 那档 H3 的原生分辨率（也只有它接受，见 generation_tasks._compatible）；
     # 2K 目前没有任何视频绑定支持，是历史遗留的取值。
-    resolution: Literal["480p", "720p", "768p", "1080p", "2K"] = "720p"
+    resolution: Literal["480p", "720p", "768p", "1080p", "2K"] = Field(
+        default="720p",
+        description="分辨率直接决定成本，1080p 明显最贵且是上游单独计价的高清档。"
+                    "提交前先确认客户要哪个分辨率；没确认就用 720p，1080p 只用于最终交付镜头。",
+    )
     aspect_ratio: Literal["9:16", "16:9", "1:1", "4:3", "3:4"] = "9:16"
     sound: bool = False
     # AI 生成显式标识（算法备案）：转 true 才在画面上叠「AI生成」角标（左上角）。
@@ -913,7 +917,11 @@ class H3VideoJobRequest(BaseModel):
     reference_audio_urls: list[str] = Field(default_factory=list, max_length=8)
     prompt: str = Field(min_length=1, max_length=20_000)
     duration_seconds: float = Field(default=5, ge=2, le=15)
-    resolution: Literal["480p", "720p", "1080p"] = "720p"
+    resolution: Literal["480p", "720p", "1080p"] = Field(
+        default="720p",
+        description="分辨率直接决定成本，1080p 明显最贵、耗时也最长。"
+                    "客户没明确要求高清时用 720p，1080p 只用于最终交付镜头。",
+    )
     quality: Literal["low", "medium", "midia", "high"] = Field(
         default="medium",
         description="质量路由：low快速预览；medium默认生产；high质量采样。midia兼容为medium。",
