@@ -682,9 +682,9 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 | `wan-2.5` | `wanxiang-preview` | 文生/单图 | 2～10 | 720p/1080p | 五种 |
 | `wan-2.2` | `wanxiang-plus` | 文生/单图 | 2～10 | 720p/1080p | 五种 |
 | `vidu-q3-pro` | `viduq3-pro` | 文生/单图 | 1～16 | 720p/1080p | 五种 |
-| `vidu-q2-pro` | `viduq2-pro` | 文生/单图 | 1～10 | 720p/1080p | 五种 |
+| `vidu-q2-pro` | `viduq2-pro` | 单图 | 1～10 | 720p/1080p | 五种 |
 | `vidu-q2` | `viduq2` | 文生/单图 | 1～10 | 720p/1080p | 五种 |
-| `vidu-q2-turbo` | `viduq2-turbo` | 文生/单图 | 1～10 | 720p/1080p | 五种 |
+| `vidu-q2-turbo` | `viduq2-turbo` | 单图 | 1～10 | 720p/1080p | 五种 |
 | `happy-horse-1.1` | `happy-horse-1.1` | 首尾帧/视频编辑/多图 | 3～15 | 720p/1080p | 五种 |
 | `happy-horse-1.0` | `happy-horse-1` | 首尾帧/视频编辑/多图 | 3～15 | 720p/1080p | 五种 |
 | `pixverse-5.5` | `pixverse-v5.5` | 文生/单图/首尾帧 | 5、8 或 10 | 720p/1080p | 五种 |
@@ -699,6 +699,8 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
   `kling-3.0-motion-control` 是唯一要「1 图 + 1 视频」的组合。
 - **没有文字模式**的型号（Kling 全系、Hailuo 2.3、Wan 2.7、Happy Horse、MJ、OmniHuman）
   收到纯文字请求会在提交前 422，不会把一言不发的提示词硬塞给上游。
+  `vidu-q2-pro` / `vidu-q2-turbo` 上游虽然声明了 `text2video`，但**实测每次都失败**
+  （720p/1080p × 2s/5s 三种组合都在 ~10s 内回「视频生成失败」），所以只开放单图模式。
 - **「固定 `auto`」的分辨率/画幅**表示该型号没有可选档，中台按型号自己那一档发包，
   `resolution`/`aspect_ratio` 传什么都会被忽略（不是报错）。
 - **`2K` 只在型号本身有 1080p 时接受**：上游把 2K 映射成 1080p，所以表里写 1080p 的都能收；

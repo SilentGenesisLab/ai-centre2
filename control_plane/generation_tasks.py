@@ -456,7 +456,7 @@ def _compatible(binding:dict[str,Any],r:dict[str,Any])->bool:
                 return False
         elif resolution == "768p":
             return False
-    # libtv 的 34 个视频型号各自只支持部分模式 / 比例 / 时长档位，且上游是**先校验再挑号**
+    # libtv 的 37 个视频型号各自只支持部分模式 / 比例 / 时长档位，且上游是**先校验再挑号**
     # （错了一分钱不花但作业会失败）。在本地判掉，auto 才会去选真正能接的那一家。
     if c.get("modes") is not None and _libtv_mode(
             c["modes"],

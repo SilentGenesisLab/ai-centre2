@@ -93,10 +93,10 @@ class CapabilityStore:
 
     def _seed(self, db: sqlite3.Connection) -> None:
         stamp = now()
-        # ── libtv 视频型号总表（2026-11-04）──────────────────────────────────────
-        # 真值是上游 `POST /libtv/api/v1/video/models` 返回的 34 条，字段语义与其校验层
-        # （LiptvApi/api-server/lib/models.js）一致。这里列 31 条：seedance-2.0 /
-        # seedance-2.5 / minimax-h3 的绑定在下面已有的 bindings 里。
+        # ── libtv 视频型号总表（2026-11-06）──────────────────────────────────────
+        # 真值是上游 `POST /libtv/api/v1/video/models` 返回的 37 条，字段语义与其校验层
+        # （LiptvApi/api-server/lib/models.js）一致。这里列 35 条：seedance-2.0 /
+        # seedance-2.5 的绑定在下面已有的 bindings 里。
         #
         # 每行 = (上游 key, 中台 code, 名称, modes, ratios, resolutions,
         #         时长, 素材上限, 有音轨, 固定分辨率, 固定比例)
@@ -148,13 +148,13 @@ class CapabilityStore:
              ["16:9","1:1","9:16"],None,(3,15,None),(2,0,10),True,"auto",None),
             ("kling-video-o1","kling-o1","Kling O1",
              "singleImage2video|frames2video|mixed2video|videoEdit2video|audio2video",
-             ["16:9","1:1","9:16"],None,(None,None,[5,10]),(30,10,10),True,"auto",None),
+             ["16:9","1:1","9:16"],None,(3,10,None),(30,10,10),True,"auto",None),
             ("kling-v2-6","kling-2.6","Kling 2.6",
              "singleImage2video|frames2video",
              ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto",None),
             ("kling-v2-5-turbo-pro","kling-2.5","Kling 2.5",
              "singleImage2video|frames2video",
-             ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto","auto"),
+             ["16:9","1:1","9:16"],None,(3,10,None),(2,0,0),True,"auto",None),
             ("kling-2.1","kling-2.1","Kling 2.1",
              "singleImage2video",
              ["16:9","1:1","9:16"],None,(3,10,None),(1,0,0),True,"auto",None),
@@ -183,7 +183,7 @@ class CapabilityStore:
              [],["768p","1080p"],(None,None,[6,10]),(1,0,0),False,None,"auto"),
             ("MiniMax-Hailuo-o2","hailuo-o2","Hailuo 02",
              "singleImage2video",
-             [],["768p","1080p"],(None,None,[6,10]),(1,0,0),False,None,"auto"),
+             ["16:9","1:1","9:16"],["768p","1080p"],(3,6,None),(1,0,0),False,None,None),
             ("wanx2.7-video","wan-2.7","Wan 2.7",
              "frames2video|video2video|mixed2video|audio2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(30,10,10),True,None,None),
@@ -192,22 +192,24 @@ class CapabilityStore:
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,15,None),(1,0,0),True,None,None),
             ("wanxiang-preview","wan-2.5","Wan 2.5",
              "text2video|singleImage2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(None,None,[5,10]),(1,0,0),True,None,None),
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
             ("wanxiang-plus","wan-2.2","Wan 2.2",
              "text2video|singleImage2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(None,None,[5]),(1,0,0),True,None,None),
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
             ("viduq3-pro","vidu-q3-pro","Vidu Q3 Pro",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,16,None),(1,0,0),True,None,None),
+            # text2video 上游声明了但**实测每次都失败**（720p/1080p × 2s/5s 三种组合都在 ~10s
+            # 内回「视频生成失败，积分将会在2小时内返还」），所以不开放，只留单图生视频。
             ("viduq2-pro","vidu-q2-pro","Vidu Q2 Pro",
              "singleImage2video",
-             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto",None),
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
             ("viduq2","vidu-q2","Vidu Q2",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
             ("viduq2-turbo","vidu-q2-turbo","Vidu Q2 Turbo",
              "singleImage2video",
-             [],["720p","1080p"],(1,10,None),(1,0,0),True,"auto",None),
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,10,None),(1,0,0),True,None,None),
             ("happy-horse-1.1","happy-horse-1.1","Happy Horse 1.1",
              "frames2video|videoEdit2video|image2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(3,15,None),(30,1,0),False,None,None),
@@ -225,7 +227,7 @@ class CapabilityStore:
              ["16:9","1:1","9:16"],["720p","1080p"],(3,10,None),(1,0,0),False,None,None),
             ("omnihuman-1.5","omnihuman-1.5","OmniHuman 1.5",
              "audio2video",
-             ["16:9","1:1","9:16"],None,(3,10,None),(1,0,10),True,"auto","auto"),
+             ["16:9","1:1","9:16"],["720p","1080p"],(3,10,None),(1,0,10),True,None,None),
         ]
         presets = [
             ("local", "本地部署", "local", "local_h3", "http://127.0.0.1:8320", 1, 10),
@@ -338,7 +340,7 @@ class CapabilityStore:
         for code,name,capability_type,inputs,output in models:
             db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        (str(uuid4()),name,code,capability_type,json.dumps(inputs),output,json.dumps(schema),1,None,stamp,stamp))
-        # libtv 的 35 个视频型号：型号行由上面的 catalog 派生，不重复抄一遍上游事实。
+        # libtv 的 37 个视频型号：型号行由上面的 catalog 派生，不重复抄一遍上游事实。
         for _key, _code, _name, _modes, _ratios, _res, _dur, _media, _sound, _dres, _dratio in libtv_video_catalog:
             _m = set(_modes.split("|"))
             _inputs = ["text"] if "text2video" in _m else []
@@ -447,7 +449,7 @@ class CapabilityStore:
         for model,channel,upstream,submit,query,caps,enabled,priority in bindings:
             db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid4()),mids[model],ids[channel],upstream,submit,query,None,json.dumps(caps),"{}",enabled,priority,stamp,stamp))
-        # libtv 的 35 条新绑定。capabilities 里多出来的几个键都是上游**真的会校验**的闸门：
+        # libtv 的 35 条新绑定（上游 37 条减去 Seedance 2.0/2.5 那两条）。capabilities 里多出来的几个键都是上游**真的会校验**的闸门：
         #   modes           —— 该型号接受哪些模式；发包时按素材挑一个（_libtv_mode），
         #                      接不了的模式在本地就判掉，不白跑一趟上游。
         #   ratios / resolutions —— 上游白名单 ∩ 中台取值。中台没有 540p，Vidu/Pixverse
@@ -572,14 +574,15 @@ class CapabilityStore:
                 _caps.pop("resolutions", None)
             else:
                 _caps["resolutions"] = _c[5]
+            # 序号 9 是「固定分辨率」、10 是「固定比例」，别写反（写反会把 auto 塞错字段）。
             if _c[9]:
-                _caps["default_ratio"] = _c[9]
-            else:
-                _caps.pop("default_ratio", None)
-            if _c[10]:
-                _caps["default_resolution"] = _c[10]
+                _caps["default_resolution"] = _c[9]
             else:
                 _caps.pop("default_resolution", None)
+            if _c[10]:
+                _caps["default_ratio"] = _c[10]
+            else:
+                _caps.pop("default_ratio", None)
             _caps["cli_sync"] = "2026-11-04d"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
@@ -600,6 +603,47 @@ class CapabilityStore:
             _caps["resolutions"] = _c[5]
             _caps.update({"images": _c[7][0], "videos": _c[7][1], "audios": _c[7][2]})
             _caps["libtv_sync"] = "2026-11-06"
+            db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(_caps), stamp, _row[0]))
+        # 2026-11-06 第二轮：上游把参数校验换成按模式的白名单（modeSettings / paramCapability，
+        # commit e56fab3），几个型号的 `default_ratio="auto"` 反而成了必拒 —— validateParams
+        # 现在会拿它与型号自己的比例白名单逐字比对，而那几家早就写的是 16:9/1:1/9:16。
+        # `omnihuman-1.5` 的 `default_resolution="auto"` 同理（上游是 720P/1080P）。
+        # 另外四个型号的时长白名单从中台的离散档改回了区间（Kling O1 / Wan 2.5 / Wan 2.2）。
+        # 按 catalog 整体覆盖一次；打了标记就不再动，管理员改过的保留。
+        for _code in ("kling-o1", "kling-2.5", "hailuo-o2", "wan-2.2", "wan-2.5",
+                      "vidu-q2-pro", "vidu-q2-turbo", "omnihuman-1.5"):
+            _row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[_code], ids["libtv"]),
+            ).fetchone()
+            if _row is None:
+                continue
+            _caps = json.loads(_row[1] or "{}")
+            if _caps.get("libtv_sync") == "2026-11-06b":
+                continue
+            _c = _sync[_code]
+            _lo, _hi, _vals = _c[6]
+            _caps["modes"] = _c[3].split("|")
+            _caps["ratios"] = _c[4]
+            _caps.update({"images": _c[7][0], "videos": _c[7][1], "audios": _c[7][2]})
+            if _c[5] is None:
+                _caps.pop("resolutions", None)
+            else:
+                _caps["resolutions"] = _c[5] + (["2k"] if "1080p" in _c[5] else [])
+            if _vals is not None:
+                _caps["duration_values"] = _vals
+                _caps.pop("duration_min", None)
+                _caps.pop("duration_max", None)
+            else:
+                _caps.update({"duration_min": _lo, "duration_max": _hi})
+                _caps.pop("duration_values", None)
+            for _slot, _field in ((9, "default_resolution"), (10, "default_ratio")):
+                if _c[_slot]:
+                    _caps[_field] = _c[_slot]
+                else:
+                    _caps.pop(_field, None)
+            _caps["libtv_sync"] = "2026-11-06b"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",
