@@ -109,12 +109,14 @@ class CapabilityStore:
         # 这些数字上游**真的会校验**（validateParams 先校验再挑号，错了一分钱不花但作业会失败），
         # 所以照抄而不是拍脑袋；它们同时是 `_compatible` 的闸门，让 auto 与点名 422 在本地判准。
         libtv_video_catalog = [
+            # 2026-11-06：Fast / Mini 两档上游只有 480p/720p（models.js 6bfafe4 已改），
+            # 且 mixed 素材上限是 3视频+9图+3音频，不是 30/10/10 —— 照 2.0 VIP 抄的那两栏是错的。
             ("star-video2-fast","seedance-2.0-fast","Seedance 2.0 Fast VIP",
              "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(4,15,None),(30,10,10),True,None,None),
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p"],(4,15,None),(9,3,3),True,None,None),
             ("star-video2-mini","seedance-2.0-mini","Seedance 2.0 Mini",
              "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(4,15,None),(30,10,10),True,None,None),
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p"],(4,15,None),(9,3,3),True,None,None),
             ("seedance-1.5-pro","seedance-1.5-pro","Seedance 1.5 Pro",
              "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
              ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(4,12,None),(30,10,10),True,None,None),
@@ -124,6 +126,17 @@ class CapabilityStore:
             ("doubao-seedance-lite","seedance-1.0-lite","Seedance 1.0 Lite",
              "text2video|singleImage2video",
              ["16:9","1:1","9:16"],["480p","720p","1080p"],(3,10,None),(1,0,0),True,None,None),
+            # 2026-11-06 上游新增。Kling 4.0 的 CLI 只开放三个模式（单图/首尾帧还没放出来），
+            # mixed 与 videoEdit 两模式下上游不收 ratio（modeSettings 里的 ratio_auto，
+            # normalizeParams 会把它删掉、角度跟随输入素材），所以这里不需要 default_ratio。
+            # 4.0 没有单图模式，默认落 mixed2video；allowAudioOnly 允许只给音频。
+            ("kling-v4","kling-4.0","Kling 4.0",
+             "text2video|mixed2video|videoEdit2video",
+             ["16:9","1:1","9:16"],["720p","1080p"],(3,30,None),(10,5,3),False,None,None),
+            # Flash 只出 720p、单图模式不收 ratio；mixed 不接受音频（audios=0）。
+            ("kling-v4-flash","kling-4.0-flash","Kling 4.0 Flash",
+             "text2video|singleImage2video|mixed2video|videoEdit2video",
+             ["16:9","1:1","9:16"],["720p"],(3,20,None),(10,5,0),False,None,None),
             ("kling-v3-turbo","kling-3.0-turbo","Kling 3.0 Turbo",
              "singleImage2video|audio2video",
              ["16:9","1:1","9:16"],None,(3,15,None),(1,0,10),True,"pro",None),
@@ -151,6 +164,17 @@ class CapabilityStore:
             ("MiniMax-Hailuo-H3-Max","minimax-h3-max","MiniMax H3 Max",
              "text2video|singleImage2video|frames2video",
              ["16:9","4:3","1:1","3:4","9:16"],["480p","768p"],(5,15,None),(2,0,0),False,None,None),
+            # 2026-11-06 上游新增的标准 H3。上游 key 的别名里有 `minimax-h3`，但那个 code 已被
+            # **本地 H3 池**（local 渠道）占用，不能复用它，否则这条会顶掉自建池的绑定 ——
+            # 命名沿用 `minimax-h3-rh-enhanced` 的「渠道限定」写法。
+            # 2K 是它的原生高档（上游 768P/2K 两档，没有 1080p，所以不吃 2k→1080p 的别名映射）。
+            ("MiniMax-Hailuo-H3","minimax-h3-libtv","Minimax H3",
+             "text2video|singleImage2video|frames2video|mixed2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["768p","2k"],(5,15,None),(9,3,3),False,None,None),
+            # Highspeed（约 30s 出片）：只出 768P；比标准版多一个 image2video 模式。
+            ("minimax-h3-hs","minimax-h3-hs","H3-Highspeed",
+             "text2video|singleImage2video|frames2video|image2video|mixed2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["768p"],(4,15,None),(9,3,3),False,None,None),
             ("MiniMax-Hailuo-2.3","hailuo-2.3","Hailuo 2.3",
              "singleImage2video",
              [],["768p","1080p"],(None,None,[6,10]),(1,0,0),False,None,"auto"),
@@ -314,7 +338,7 @@ class CapabilityStore:
         for code,name,capability_type,inputs,output in models:
             db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        (str(uuid4()),name,code,capability_type,json.dumps(inputs),output,json.dumps(schema),1,None,stamp,stamp))
-        # libtv 的 31 个视频型号：型号行由上面的 catalog 派生，不重复抄一遍上游事实。
+        # libtv 的 35 个视频型号：型号行由上面的 catalog 派生，不重复抄一遍上游事实。
         for _key, _code, _name, _modes, _ratios, _res, _dur, _media, _sound, _dres, _dratio in libtv_video_catalog:
             _m = set(_modes.split("|"))
             _inputs = ["text"] if "text2video" in _m else []
@@ -322,7 +346,9 @@ class CapabilityStore:
                 _inputs.append("image")
             if _m & {"mixed2video","videoEdit2video","video2video"}:
                 _inputs.append("video")
-            if _m & {"audio2video","mixed2video"}:
+            # 素材上限为 0 的不声明输入：Kling 4.0 Flash 有 mixed2video 但不收音频，
+            # 只看模式会把它标成「能听音频」，而绑定那边的 audios=0 又会把请求挡掉。
+            if _media[2] and _m & {"audio2video","mixed2video"}:
                 _inputs.append("audio")
             db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        (str(uuid4()),_name,_code,"video_generation",json.dumps(_inputs),"video",json.dumps(schema),1,None,stamp,stamp))
@@ -421,7 +447,7 @@ class CapabilityStore:
         for model,channel,upstream,submit,query,caps,enabled,priority in bindings:
             db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid4()),mids[model],ids[channel],upstream,submit,query,None,json.dumps(caps),"{}",enabled,priority,stamp,stamp))
-        # libtv 的 31 条新绑定。capabilities 里多出来的几个键都是上游**真的会校验**的闸门：
+        # libtv 的 35 条新绑定。capabilities 里多出来的几个键都是上游**真的会校验**的闸门：
         #   modes           —— 该型号接受哪些模式；发包时按素材挑一个（_libtv_mode），
         #                      接不了的模式在本地就判掉，不白跑一趟上游。
         #   ratios / resolutions —— 上游白名单 ∩ 中台取值。中台没有 540p，Vidu/Pixverse
@@ -555,6 +581,25 @@ class CapabilityStore:
             else:
                 _caps.pop("default_resolution", None)
             _caps["cli_sync"] = "2026-11-04d"
+            db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(_caps), stamp, _row[0]))
+        # 2026-11-06：Seedance 2.0 Fast / Mini 的上游白名单早就是 480p/720p、mixed 素材上限是
+        # 3视频+9图+3音频（种子当初照 2.0 VIP 抄成了 1080p / 30·10·10），已建好的绑定不会
+        # 跟着改。按 catalog 覆盖一次；打了标记就不再动，管理员改过的保留。
+        for _code in ("seedance-2.0-fast", "seedance-2.0-mini"):
+            _row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[_code], ids["libtv"]),
+            ).fetchone()
+            if _row is None:
+                continue
+            _caps = json.loads(_row[1] or "{}")
+            if _caps.get("libtv_sync") == "2026-11-06":
+                continue
+            _c = _sync[_code]
+            _caps["resolutions"] = _c[5]
+            _caps.update({"images": _c[7][0], "videos": _c[7][1], "audios": _c[7][2]})
+            _caps["libtv_sync"] = "2026-11-06"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         db.execute("UPDATE model_channels SET upstream_model='seedance2.0_vip',capabilities_json=?,updated_at=? WHERE model_id=? AND channel_id=?",

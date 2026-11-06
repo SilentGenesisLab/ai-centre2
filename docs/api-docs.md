@@ -656,11 +656,13 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 
 | `model` | 上游型号 | 模式 | 时长 | 分辨率 | 画幅 |
 |---|---|---|---|---|---|
-| `seedance-2.0-fast` | `star-video2-fast` | 文/首帧/尾帧/多图/混合/音频 | 4～15 | 480p/720p/1080p | 五种 |
-| `seedance-2.0-mini` | `star-video2-mini` | 同上 | 4～15 | 480p/720p/1080p | 五种 |
+| `seedance-2.0-fast` | `star-video2-fast` | 文/首帧/尾帧/多图/混合/音频 | 4～15 | 480p/720p | 五种 |
+| `seedance-2.0-mini` | `star-video2-mini` | 同上 | 4～15 | 480p/720p | 五种 |
 | `seedance-1.5-pro` | `seedance-1.5-pro` | 同上 | 4～12 | 480p/720p/1080p | 五种 |
 | `seedance-1.0-pro` | `doubao-seedance-pro` | 文生/单图 | 3～10 | 480p/720p/1080p | 16:9 / 1:1 / 9:16 |
 | `seedance-1.0-lite` | `doubao-seedance-lite` | 文生/单图 | 3～10 | 480p/720p/1080p | 16:9 / 1:1 / 9:16 |
+| `kling-4.0` | `kling-v4` | 文生/混合/视频编辑（可只给音频） | 3～30 | 720p/1080p | 16:9 / 1:1 / 9:16 |
+| `kling-4.0-flash` | `kling-v4-flash` | 文生/单图/混合/视频编辑（不收音频） | 3～20 | 720p | 16:9 / 1:1 / 9:16 |
 | `kling-3.0-turbo` | `kling-v3-turbo` | 单图/音频 | 3～15 | 固定 `pro` | 16:9 / 1:1 / 9:16 |
 | `kling-o3` | `kling-v3-omni` | 单图/首尾帧/混合/视频编辑/音频 | 3～15 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
 | `kling-3.0` | `kling-video-o3` | 单图/首尾帧/音频 | 3～15 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
@@ -670,6 +672,8 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 | `kling-2.1` | `kling-2.1` | 单图 | 3～10 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
 | `kling-3.0-motion-control` | `kling-v3-motion-control` | 单图 + 1 视频 | 3～10 | 固定 `auto` | 16:9 / 1:1 / 9:16 |
 | `minimax-h3-max` | `MiniMax-Hailuo-H3-Max` | 文生/单图/首尾帧 | 5～15 | 480p/768p | 五种 |
+| `minimax-h3-libtv` | `MiniMax-Hailuo-H3` | 文生/单图/首尾帧/混合 | 5～15 | 768p/2K | 五种 |
+| `minimax-h3-hs` | `minimax-h3-hs` | 文生/单图/首尾帧/多图/混合 | 4～15 | 768p | 五种 |
 | `hailuo-2.3` | `MiniMax-Hailuo-2.3` | 单图 | 6 或 10 | 768p/1080p | 固定 `auto` |
 | `hailuo-2.3-fast` | `MiniMax-Hailuo-2.3-Fast` | 单图 | 6 或 10 | 768p/1080p | 固定 `auto` |
 | `hailuo-o2` | `MiniMax-Hailuo-o2` | 单图 | 3～6 | 768p/1080p | 16:9 / 1:1 / 9:16 |
@@ -698,11 +702,15 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 - **「固定 `auto`」的分辨率/画幅**表示该型号没有可选档，中台按型号自己那一档发包，
   `resolution`/`aspect_ratio` 传什么都会被忽略（不是报错）。
 - **`2K` 只在型号本身有 1080p 时接受**：上游把 2K 映射成 1080p，所以表里写 1080p 的都能收；
-  `minimax-h3-max` 只有 480p/768p，传 `2K` 会 422。
+  `minimax-h3-max` 只有 480p/768p，传 `2K` 会 422。例外是 `minimax-h3-libtv`：它的 2K 是上游
+  自带的原生档（不是别名映射），所以表里直接写了 `2K`。
 - 这些型号的结果**同样转存 OSS 并打 AI 标识**，与 Seedance 同一条路径。
-- 上游 **LibTV 画布界面上出现的 `Wan 3.0`、`Kling 4.0`、`H3-Highspeed`、`Wan 3.0 Prime`
-  目前不在开放 API 里**（用必被拒的入参逐个探过，一律 `400 未知模型`），所以这里没有。
-  等上游开放后再加绑定即可，不需要改代码。
+- `minimax-h3-libtv` 与自建的 `minimax-h3` 是**两条不同的路由**：后者走本机 H3 池
+  （`local` 渠道），前者走 LibTV。上游的型号别名里就有 `minimax-h3`，但那个 code 已被
+  自建池占用，所以这里带渠道后缀。
+- 上游 LibTV 画布界面上的 `Wan 3.0`、`Wan 3.0 Prime` 目前仍不在开放 API 里（探针回
+  `400 未知模型`），所以这里没有。`Kling 4.0`、`Kling 4.0 Flash`、`Minimax H3`、
+  `H3-Highspeed`、`Seedance 2.0 Fast VIP` 已于 2026-11-06 补上。
 
 
 
