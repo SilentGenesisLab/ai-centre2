@@ -45,7 +45,13 @@ class GenerationJobClient:
             self._key_store=ApiKeyStore(self.settings.api_keys_db_path)
         return self._key_store
 
-    def submit(self,data:dict[str,Any],service:str|None=None)->str:
+    def submit(self,data:dict[str,Any],service:str|None=None,idempotency_key:str|None=None)->tuple[str,bool]:
+        """建作业。返回 (job_id, deduplicated)。
+
+        幂等键优先用 `Idempotency-Key` 头，没有就退回请求体里的 `external_ref`——
+        两者都没有就每次新建（与改造前一致）。命中已有的那条时**不重复预占、
+        不重复入队**，直接把旧 job_id 返回给调用方，所以握手断在响应前重试不会二次扣费。
+        """
         keys=self._keys()
         key_id=current_api_key_id.get()
         model=str(data.get("model") or "")
@@ -53,18 +59,26 @@ class GenerationJobClient:
         # 图像与视频共用这一个客户端，按 service_name 估价会把图当成 5 秒视频，
         # 所以图像入口显式传 service="image_generation"。
         service_name=service or self.service_name
+        dedupe_key=str(idempotency_key or data.get("external_ref") or "").strip() or None
+        if dedupe_key:
+            existing=self.store.job_by_idempotency(key_id,dedupe_key)
+            if existing: return str(existing["id"]),True
         # 先预占额度再建作业：超限时一行都不该留下，调用方拿到的是 429 不是半截作业。
         request_id=uuid4().hex
         held=keys.hold(key_id,request_id,service_name,model or None,channel,
-                       estimate_request(keys.rates_cached(),service_name,data,model))
-        jid=self.store.create_job(model,channel,data)
+                       estimate_request(keys.rates_for_billing(),service_name,data,model))
+        jid,created=self.store.create_job(model,channel,data,key_id=key_id,idempotency_key=dedupe_key)
+        if not created:
+            # 并发重试：另一个人已经把作业建出来了，把这次预占退掉。
+            keys.settle(request_id,"failed")
+            return jid,True
         keys.link(str(held["charge_id"]),jid)
         try: self._app().send_task(self.task_name,kwargs={"job_id":jid},task_id=jid,queue=self.queue_name)
         except Exception:
             self.store.update_job(jid,status="failed",stage="enqueue_failed",error="unable to enqueue generation job")
             keys.settle(request_id,"failed")
             raise
-        return jid
+        return jid,False
     def status(self,jid:str)->dict[str,Any]:
         job=self.store.job(jid)
         # 轮询是这条链路里最频繁的调用，顺带把终结状态结算掉，不用再往 worker 里加钩子。

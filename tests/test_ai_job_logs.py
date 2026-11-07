@@ -31,7 +31,7 @@ class JobLogTests(unittest.TestCase):
     def _job(self, *, model: str = "gpt-image-2", status: str = "succeeded",
              channel: str | None = "grsai", error: str | None = None,
              attempts: list[dict] | None = None, elapsed: float = 12.5) -> str:
-        job_id = self.store.create_job(model, "auto", {
+        job_id, _ = self.store.create_job(model, "auto", {
             "model": model,
             "prompt": "一只猫",
             "reference_image_urls": [],

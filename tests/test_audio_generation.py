@@ -107,7 +107,7 @@ class JobClientTests(unittest.TestCase):
     @patch("control_plane.generation_jobs.GenerationJobClient._app")
     def test_submit_lands_on_the_audio_queue(self, app: Mock) -> None:
         store = Mock()
-        store.create_job.return_value = "job-1"
+        store.create_job.return_value = ("job-1", True)
         with TemporaryDirectory() as directory:
             settings = SimpleNamespace(api_keys_db_path=Path(directory) / "keys.db")
             client = AudioGenerationJobClient(settings, store)

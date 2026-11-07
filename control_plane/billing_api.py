@@ -10,6 +10,7 @@ import asyncio
 import csv
 import io
 from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatchcase
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -206,16 +207,26 @@ async def delete_rate(service: str, model: str, variant: str) -> dict[str, Any]:
 
 @router.get("/settings")
 async def billing_settings() -> dict[str, Any]:
-    settings = await asyncio.to_thread(_store().settings)
+    store = _store()
+    settings = await asyncio.to_thread(store.settings)
     return settings | {
         "platform_limit_5h": _yuan_of(settings["platform_limit_5h_micro"]),
         "platform_limit_24h": _yuan_of(settings["platform_limit_24h_micro"]),
         "platform_limit_total": _yuan_of(settings["platform_limit_total_micro"]),
+        "promo_active": await asyncio.to_thread(store.promo_active),
     }
 
 
 def _yuan_of(amount_micro: int | None) -> float | None:
     return None if amount_micro is None else round(amount_micro / MICRO, 4)
+
+
+class PromoItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    unit: str = Field(default="second", max_length=32)
 
 
 class SettingsRequest(BaseModel):
@@ -225,6 +236,9 @@ class SettingsRequest(BaseModel):
     platform_limit_24h: float | None = Field(default=None, ge=0)
     platform_limit_total: float | None = Field(default=None, ge=0)
     credits_per_yuan: float | None = Field(default=None, gt=0)
+    # 活动促销：这些服务·型号在 promo_free_until 之前按 0 元记账（仍然记 usage，金额为 0）。
+    promo_free_items: list[PromoItem] | None = None
+    promo_free_until: str | None = Field(default=None, max_length=40)
 
 
 @router.put("/settings")
@@ -236,12 +250,76 @@ async def update_settings(request: SettingsRequest) -> dict[str, Any]:
             changes[f"{field}_micro"] = from_yuan(getattr(request, field))
     if "credits_per_yuan" in request.model_fields_set:
         changes["credits_per_yuan"] = request.credits_per_yuan
+    if "promo_free_items" in request.model_fields_set:
+        changes["promo_free_items"] = [
+            item.model_dump() for item in (request.promo_free_items or [])
+        ]
+    if "promo_free_until" in request.model_fields_set:
+        until = (request.promo_free_until or "").strip() or None
+        if until is not None:
+            try:
+                datetime.fromisoformat(until)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"invalid datetime: {until!r}") from exc
+        changes["promo_free_until"] = until
     await asyncio.to_thread(store.set_settings, changes)
     settings = await asyncio.to_thread(store.settings)
     return settings | {
         "platform_limit_5h": _yuan_of(settings["platform_limit_5h_micro"]),
         "platform_limit_24h": _yuan_of(settings["platform_limit_24h_micro"]),
         "platform_limit_total": _yuan_of(settings["platform_limit_total_micro"]),
+        "promo_active": await asyncio.to_thread(store.promo_active),
+    }
+
+
+# ---- 对外：余额与限额 ----
+
+@public_router.get(
+    "/balance",
+    summary="查询本 Key 的额度、已花金额与剩余可用",
+    response_description="请求次数额度、5 小时 / 24 小时 / 累计三条金额窗口的已用与剩余（元与积分）",
+)
+async def balance() -> dict[str, Any]:
+    """中台没有预付费钱包：额度就是这三条滚动窗口的上限，充值＝调高上限。
+
+    服务令牌调用时没有 Key，返回平台口径（不加 key 过滤）。
+    """
+    from .generation_jobs import current_api_key_id
+
+    key_id = current_api_key_id.get()
+    store = _store()
+    key, windows, settings = await asyncio.gather(
+        asyncio.to_thread(store.key, key_id) if key_id else asyncio.sleep(0, result=None),
+        asyncio.to_thread(store.usage_windows, key_id=key_id),
+        asyncio.to_thread(store.settings),
+    )
+    per_yuan = float(settings["credits_per_yuan"])
+    limits = (key or {}).get("limits") or {}
+
+    items: dict[str, dict[str, Any]] = {}
+    for window, values in windows.items():
+        limit_micro = limits.get(window)
+        remaining = None if limit_micro is None else limit_micro - values["amount_micro"]
+        items[window] = values | {
+            "limit_micro": limit_micro,
+            "limit_yuan": _yuan_of(limit_micro),
+            "remaining_micro": remaining,
+            "remaining_yuan": _yuan_of(remaining),
+            "credits": round(values["amount_micro"] / MICRO * per_yuan, 4),
+        }
+    return {
+        "scope": "api_key" if key_id else "platform",
+        "key_id": key_id,
+        "key_name": (key or {}).get("name"),
+        "key_prefix": (key or {}).get("prefix"),
+        "request_quota": {
+            "quota": (key or {}).get("quota"),
+            "used": (key or {}).get("used"),
+            "remaining": (key or {}).get("remaining"),
+        },
+        "credits_per_yuan": per_yuan,
+        "windows": items,
+        "top_up": "调高这个 Key 的 limit_5h / limit_24h / limit_total 即可（或加请求次数额度），中台没有预付费钱包",
     }
 
 
@@ -263,6 +341,31 @@ def _channels_by_model() -> dict[str, list[dict[str, Any]]]:
             for bind in item["channels"]
         ]
     return result
+
+
+def _channels_for(model: str, channels: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """费率行的 model 串 → 能力目录里的渠道。
+
+    费率行允许通配（`kling-*` 覆盖 kling-2.x/3.x/4.x），直接拿通配串去查渠道表永远
+    查不到，于是 kling-4.0 这种「提交得动」的型号在价目表里被标成 available=false。
+    这里按 fnmatch 把通配串展开到真实型号上，同名渠道去重。
+    单独的 `*`（服务级通配）不展开——它不代表某一款模型。
+    """
+    if "*" not in model:
+        return channels.get(model, [])
+    if model == "*":
+        return []
+    seen: set[str] = set()
+    binds: list[dict[str, Any]] = []
+    for code, entries in channels.items():
+        if not fnmatchcase(code, model):
+            continue
+        for bind in entries:
+            if bind["code"] in seen:
+                continue
+            seen.add(bind["code"])
+            binds.append(bind)
+    return binds
 
 
 @public_router.get(
@@ -290,7 +393,7 @@ async def pricing_models(
             continue
         if model and row["model"] != model:
             continue
-        binds = channels.get(row["model"], [])
+        binds = _channels_for(str(row["model"]), channels)
         micro = int(row["amount_micro"])
         items.append(
             {

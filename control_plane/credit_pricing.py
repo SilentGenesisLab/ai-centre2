@@ -64,8 +64,23 @@ _RATE_SEED_CREDITS: list[tuple[str, str, str, str, Decimal | None, str]] = [
     ("video_generation", "seedance-2.0-fast", "*", "second", Decimal(22), "measured"),
     ("video_generation", "seedance-2.0-mini", "*", "second", Decimal(32), "measured"),
     ("video_generation", "minimax-h3-rh-enhanced", "*", "second", Decimal(14), "measured"),
+    # 只有上面这些型号有实测锚点；`minimax-h3-max` 没对过账，先按增强版同价估，
+    # 至少不会掉进 0.23 元/秒的服务级通配里冒充一款已知型号。
+    ("video_generation", "minimax-h3-max", "*", "second", Decimal(14), "estimated"),
     ("audio_generation", "suno-v6", "*", "track", Decimal(186), "estimated"),
     ("audio_generation", "suno-sound", "*", "track", Decimal(62), "estimated"),
+]
+
+# 分辨率分档。实测锚点全部是 720P（LibTV 只公开了这一档），所以 720p 行与通配同价；
+# 1080p 上游没有公开单价，只能给 **估算倍率 2×**，source 标 estimated。
+# `variant_for("video_generation")` 取的是 `resolution` 字段，所以 720p/1080p 的请求
+# 会命中这里更精确的行，其他分辨率仍然落 `*`。
+_RESOLUTION_TIERS: list[tuple[str, Decimal, Decimal]] = [
+    ("seedance-2.5", Decimal(110), Decimal(220)),
+    ("seedance-2.0", Decimal(49), Decimal(98)),
+    ("seedance-2.0-fast", Decimal(22), Decimal(44)),
+    ("seedance-2.0-mini", Decimal(32), Decimal(64)),
+    ("minimax-h3-rh-enhanced", Decimal(14), Decimal(28)),
 ]
 
 # 没有实测积分、直接按元估的（(service, model, variant, unit, 元/单位, source)）
@@ -75,6 +90,10 @@ _RATE_SEED_YUAN: list[tuple[str, str, str, str, str, str]] = [
     # 必须精确到这个型号，否则会落进下面那条 video_generation 通配的 0.23 元/秒。
     ("video_generation", "free", "*", "second", "0", "free"),
     ("video_generation", "kling-*", "*", "second", "0.23", "estimated"),
+    # kling 4.0 两档补独立行：价目表按型号查渠道，通配行的型号串查不到任何渠道，
+    # 它们就会显示成 available=false（渠道其实是好的）。价格先与 kling-* 同价。
+    ("video_generation", "kling-4.0", "*", "second", "0.23", "estimated"),
+    ("video_generation", "kling-4.0-flash", "*", "second", "0.23", "estimated"),
     ("video_generation", "hailuo-*", "*", "second", "0.23", "estimated"),
     ("video_generation", "wan-*", "*", "second", "0.23", "estimated"),
     ("video_generation", "vidu-*", "*", "second", "0.23", "estimated"),
@@ -114,6 +133,9 @@ def seed_rates() -> list[tuple[str, str, str, str, int, str]]:
     rows: list[tuple[str, str, str, str, int, str]] = []
     for service, model, variant, unit, credits, source in _RATE_SEED_CREDITS:
         rows.append((service, model, variant, unit, credits_to_micro(credits), source))
+    for model, p720, p1080 in _RESOLUTION_TIERS:
+        rows.append(("video_generation", model, "720p", "second", credits_to_micro(p720), "measured"))
+        rows.append(("video_generation", model, "1080p", "second", credits_to_micro(p1080), "estimated"))
     for service, model, variant, unit, yuan, source in _RATE_SEED_YUAN:
         rows.append((service, model, variant, unit, int(Decimal(yuan) * MICRO), source))
     return rows

@@ -89,6 +89,16 @@ class CapabilityStore:
             columns = {row[1] for row in db.execute("PRAGMA table_info(generation_jobs)")}
             if "attempts_json" not in columns:
                 db.execute("ALTER TABLE generation_jobs ADD COLUMN attempts_json TEXT")
+            # 提交幂等：api_key_id + idempotency_key（Idempotency-Key 头，缺省退回 external_ref）。
+            # 唯一索引是幂等的真正保障——两次并发重试同时查不到、同时插入时，后一条会撞索引。
+            if "api_key_id" not in columns:
+                db.execute("ALTER TABLE generation_jobs ADD COLUMN api_key_id TEXT")
+            if "idempotency_key" not in columns:
+                db.execute("ALTER TABLE generation_jobs ADD COLUMN idempotency_key TEXT")
+            db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_generation_jobs_idem "
+                "ON generation_jobs(api_key_id,idempotency_key) WHERE idempotency_key IS NOT NULL"
+            )
             self._seed(db)
 
     def _seed(self, db: sqlite3.Connection) -> None:
@@ -815,12 +825,39 @@ class CapabilityStore:
         if not requested or requested=="auto": return candidates
         return [requested]+[code for code in candidates if code!=requested]
 
-    def create_job(self, model_code:str, requested_channel:str, request:dict[str,Any])->str:
+    def create_job(self, model_code:str, requested_channel:str, request:dict[str,Any], *,
+                   key_id:str|None=None, idempotency_key:str|None=None)->tuple[str,bool]:
+        """新建作业。返回 (job_id, created)；created=False 表示命中了幂等键、返回的是旧作业。
+
+        幂等键缺省为 None（每次都新建）。给了就落到 (api_key_id, idempotency_key) 唯一索引上，
+        并发重试时后一条 INSERT 会撞索引，然后回查拿到先建出来的那条。
+        """
         models={m["code"]:m for m in self.models()}
         if model_code not in models or not models[model_code]["enabled"]: raise CapabilityNotFound(model_code)
         jid=str(uuid4()); stamp=now()
-        with self._db() as db: db.execute("INSERT INTO generation_jobs(id,model_id,requested_channel,status,stage,request_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",(jid,models[model_code]["id"],requested_channel,"queued","queued",json.dumps(request,ensure_ascii=False),stamp,stamp))
-        return jid
+        owner=key_id or ""
+        if idempotency_key:
+            with self._db() as db:
+                row=db.execute("SELECT id FROM generation_jobs WHERE api_key_id=? AND idempotency_key=?",(owner,idempotency_key)).fetchone()
+            if row: return str(row[0]),False
+        try:
+            with self._db() as db: db.execute("INSERT INTO generation_jobs(id,model_id,requested_channel,status,stage,request_json,api_key_id,idempotency_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(jid,models[model_code]["id"],requested_channel,"queued","queued",json.dumps(request,ensure_ascii=False),owner,idempotency_key,stamp,stamp))
+        except sqlite3.IntegrityError:
+            with self._db() as db:
+                row=db.execute("SELECT id FROM generation_jobs WHERE api_key_id=? AND idempotency_key=?",(owner,idempotency_key)).fetchone()
+            if row is None: raise
+            return str(row[0]),False
+        return jid,True
+
+    def job_by_idempotency(self,key_id:str|None,idempotency_key:str)->dict[str,Any]|None:
+        """按幂等键找作业（幂等键缺省就是请求体里的 external_ref）。只在本 Key 范围内找。"""
+        with self._db() as db:
+            row=db.execute(
+                "SELECT id FROM generation_jobs WHERE (idempotency_key=? OR json_extract(request_json,'$.external_ref')=?) "
+                "AND coalesce(api_key_id,'')=? ORDER BY created_at LIMIT 1",
+                (idempotency_key,idempotency_key,key_id or ""),
+            ).fetchone()
+        return self.job(str(row[0])) if row else None
 
     def update_job(self,jid:str,**values:Any)->None:
         values["updated_at"]=now()

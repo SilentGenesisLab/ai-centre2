@@ -1421,7 +1421,7 @@ async def health() -> dict[str, Any]:
     "/v1/asr/transcriptions",
     tags=["语音识别"],
     summary="通过音视频 URL 识别文字",
-    dependencies=[Depends(require_service_token), Depends(billable("asr"))],
+    dependencies=[Depends(require_service_token), Depends(billable("asr", "whisper-large-v3"))],
 )
 async def transcribe(
     request: ASRUrlRequest,
@@ -1453,7 +1453,7 @@ async def transcribe(
 @app.post(
     "/v1/asr/transcriptions/upload",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token), Depends(billable("asr"))],
+    dependencies=[Depends(require_service_token), Depends(billable("asr", "whisper-large-v3"))],
 )
 async def transcribe_upload(
     file: UploadFile = File(...),
@@ -1636,7 +1636,7 @@ async def cancel_lipsync_job(job_id: str) -> dict[str, Any]:
     "/v1/ocr/batch",
     tags=["OCR 文字识别"],
     summary="通过图片 URL 批量识别文字",
-    dependencies=[Depends(require_service_token), Depends(billable("ocr"))],
+    dependencies=[Depends(require_service_token), Depends(billable("ocr", "PP-OCRv6-medium+th-PP-OCRv5-mobile"))],
 )
 async def ocr_url_batch(request: OCRUrlBatchRequest) -> Response:
     settings = get_settings()
@@ -1702,7 +1702,7 @@ async def ocr_url_batch(request: OCRUrlBatchRequest) -> Response:
 @app.post(
     "/internal/admin/subtitle/detect",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token), Depends(billable("ocr"))],
+    dependencies=[Depends(require_service_token), Depends(billable("ocr", "PP-OCRv6-medium+th-PP-OCRv5-mobile"))],
 )
 async def detect_subtitle_events(request: SubtitleDetectRequest) -> Response:
     allowed_root = Path("/home/donxu/ai-centre/runtime").resolve()
@@ -1734,7 +1734,7 @@ async def detect_subtitle_events(request: SubtitleDetectRequest) -> Response:
 @app.post(
     "/internal/admin/ocr/batch",
     include_in_schema=False,
-    dependencies=[Depends(require_service_token), Depends(billable("ocr"))],
+    dependencies=[Depends(require_service_token), Depends(billable("ocr", "PP-OCRv6-medium+th-PP-OCRv5-mobile"))],
 )
 async def ocr_internal_batch(request: InternalOCRBatchRequest) -> Response:
     allowed_root = Path("/home/donxu/ai-centre/runtime/admin/uploads").resolve()
@@ -4909,13 +4909,21 @@ async def _validate_image_generation_request(request:ImageGenerationRequest)->No
 
 
 @app.post("/v1/video-generations/jobs",tags=["通用视频生成"],summary="创建原子视频生成任务",status_code=202,dependencies=[Depends(require_service_token)])
-async def create_video_generation_job(request:VideoGenerationRequest)->dict[str,Any]:
+async def create_video_generation_job(request:VideoGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_generation_request(request)
-    try: jid=await asyncio.to_thread(get_generation_jobs().submit,request.model_dump())
+    try: jid,deduplicated=await asyncio.to_thread(
+        get_generation_jobs().submit,request.model_dump(),None,idempotency_key)
     except CapabilityNotFound as exc: raise HTTPException(404,"model not found") from exc
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue video generation job") from exc
-    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/video-generations/jobs/{jid}"}
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/video-generations/jobs/{jid}"}
+
+
+@app.get("/v1/video-generations/jobs",tags=["通用视频生成"],summary="按 external_ref 查视频生成任务",dependencies=[Depends(require_service_token)])
+async def find_video_generation_job(external_ref:str=Query(min_length=1,max_length=256,description="提交时带的 external_ref（或 Idempotency-Key）"))->dict[str,Any]:
+    job=await asyncio.to_thread(get_generation_jobs().store.job_by_idempotency,current_api_key_id.get(),external_ref)
+    if job is None: raise HTTPException(404,"generation job not found for this external_ref")
+    return job
 
 
 @app.get("/v1/video-generations/jobs/{job_id}",tags=["通用视频生成"],summary="查询原子视频生成任务",dependencies=[Depends(require_service_token)])
@@ -4931,13 +4939,13 @@ async def cancel_video_generation_job(job_id:UUID)->dict[str,Any]:
 
 
 @app.post("/v1/image-generations/jobs",tags=["图像生成"],summary="创建原子图像生成任务",status_code=202,dependencies=[Depends(require_service_token)])
-async def create_image_generation_job(request:ImageGenerationRequest)->dict[str,Any]:
+async def create_image_generation_job(request:ImageGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_image_generation_request(request)
     data=request.model_dump(); data["reference_video_urls"]=[]; data["reference_audio_urls"]=[]
-    try: jid=await asyncio.to_thread(get_generation_jobs().submit,data,"image_generation")
+    try: jid,deduplicated=await asyncio.to_thread(get_generation_jobs().submit,data,"image_generation",idempotency_key)
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue image generation job") from exc
-    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/image-generations/jobs/{jid}"}
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/image-generations/jobs/{jid}"}
 
 
 @app.get("/v1/image-generations/jobs/{job_id}",tags=["图像生成"],summary="查询原子图像生成任务",dependencies=[Depends(require_service_token)])
@@ -4974,12 +4982,12 @@ async def _validate_audio_generation_request(request:AudioGenerationRequest)->No
 
 
 @app.post("/v1/audio-generations/jobs",tags=["音乐生成"],summary="创建音乐/音效生成任务",status_code=202,dependencies=[Depends(require_service_token)])
-async def create_audio_generation_job(request:AudioGenerationRequest)->dict[str,Any]:
+async def create_audio_generation_job(request:AudioGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_audio_generation_request(request)
-    try: jid=await asyncio.to_thread(get_audio_generation_jobs().submit,request.model_dump())
+    try: jid,deduplicated=await asyncio.to_thread(get_audio_generation_jobs().submit,request.model_dump(),None,idempotency_key)
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue audio generation job") from exc
-    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/audio-generations/jobs/{jid}"}
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/audio-generations/jobs/{jid}"}
 
 
 @app.get("/v1/audio-generations/jobs/{job_id}",tags=["音乐生成"],summary="查询音乐/音效生成任务",dependencies=[Depends(require_service_token)])
@@ -5015,11 +5023,11 @@ async def _validate_decision_generation_request(request:DecisionGenerationReques
 
 
 @app.post("/v1/decision-generations/jobs",tags=["定型决策"],summary="创建定型决策任务",status_code=202,dependencies=[Depends(require_service_token)])
-async def create_decision_generation_job(request:DecisionGenerationRequest)->dict[str,Any]:
+async def create_decision_generation_job(request:DecisionGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_decision_generation_request(request)
-    try: jid=await asyncio.to_thread(get_decision_generation_jobs().submit,request.model_dump())
+    try: jid,deduplicated=await asyncio.to_thread(get_decision_generation_jobs().submit,request.model_dump(),None,idempotency_key)
     except Exception as exc: raise HTTPException(503,"unable to enqueue decision generation job") from exc
-    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/decision-generations/jobs/{jid}"}
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/decision-generations/jobs/{jid}"}
 
 
 @app.get("/v1/decision-generations/jobs/{job_id}",tags=["定型决策"],summary="查询定型决策任务",dependencies=[Depends(require_service_token)])
@@ -5045,12 +5053,12 @@ async def _validate_text_generation_request(request:TextGenerationRequest)->None
 
 
 @app.post("/v1/text-generations/jobs",tags=["文本生成"],summary="创建文本生成任务",status_code=202,dependencies=[Depends(require_service_token)])
-async def create_text_generation_job(request:TextGenerationRequest)->dict[str,Any]:
+async def create_text_generation_job(request:TextGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_text_generation_request(request)
-    try: jid=await asyncio.to_thread(get_text_generation_jobs().submit,request.model_dump())
+    try: jid,deduplicated=await asyncio.to_thread(get_text_generation_jobs().submit,request.model_dump(),None,idempotency_key)
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue text generation job") from exc
-    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"status_url":f"/v1/text-generations/jobs/{jid}"}
+    return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/text-generations/jobs/{jid}"}
 
 
 @app.get("/v1/text-generations/jobs/{job_id}",tags=["文本生成"],summary="查询文本生成任务",dependencies=[Depends(require_service_token)])

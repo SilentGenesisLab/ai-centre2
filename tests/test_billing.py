@@ -133,7 +133,7 @@ def test_terminal_job_status_settles_without_any_poll(store, monkeypatch) -> Non
     monkeypatch.setattr(ai_capabilities, "_api_key_store", lambda: store)
     # 用 mkdtemp 不清理：Windows 上 sqlite 句柄没关，rmtree 会 PermissionError。
     caps = CapabilityStore(Path(tempfile.mkdtemp()) / "cap.db", "unit-secret")
-    job_id = caps.create_job("seedance-2.5", "jmapi", {"prompt": "x"})
+    job_id, _ = caps.create_job("seedance-2.5", "jmapi", {"prompt": "x"})
     created = store.create("视频", None, None)
     held = store.hold(created["id"], "req-job", "video_generation", "seedance-2.5", "jmapi",
                       Quote(unit="second", quantity=5, amount_micro=8_870_970, source="measured"))
@@ -242,3 +242,94 @@ def test_usage_is_scoped_to_the_calling_key(store, monkeypatch) -> None:
     assert scoped["scope"] == "api_key"
     assert scoped["amount_micro"] == 1_000_000
     assert scoped["count"] == 1
+
+
+class _WildcardCatalog:
+    def models(self):
+        return [
+            {"code": "kling-4.0",
+             "channels": [{"channel_code": "libtv", "channel_name": "LibTV", "enabled": True,
+                           "channel_enabled": True, "health_status": "online"}]},
+            {"code": "kling-4.0-flash",
+             "channels": [{"channel_code": "libtv", "channel_name": "LibTV", "enabled": True,
+                           "channel_enabled": True, "health_status": "online"}]},
+        ]
+
+
+def test_wildcard_rate_rows_resolve_to_real_model_channels(store, monkeypatch) -> None:
+    """`kling-*` 是通配费率行，之前拿它去查渠道表永远查不到 → 可用型号被标成 available=false。"""
+    monkeypatch.setattr(api, "get_capability_store", lambda: _WildcardCatalog())
+    client = _client(store, monkeypatch)
+
+    rows = client.get("/v1/pricing/models", params={"model": "kling-4.0"}).json()["items"]
+    assert [row["channels"] for row in rows] and all(
+        [bind["code"] for bind in row["channels"]] == ["libtv"] for row in rows
+    )
+    assert all(row["available"] is True for row in rows)
+
+
+def test_promo_rates_zero_out_only_the_named_models_until_the_deadline(store, monkeypatch) -> None:
+    from control_plane.credit_pricing import estimate_request
+
+    client = _client(store, monkeypatch)
+    store.set_settings({
+        "promo_free_items": [{"service": "video_generation", "model": "kling-4.0-flash", "unit": "second"}],
+        "promo_free_until": "2099-01-01T00:00:00+08:00",
+    })
+
+    rates = store.rates_for_billing()
+    discounted = estimate_request(rates, "video_generation", {"resolution": "720p"}, "kling-4.0-flash")
+    normal = estimate_request(rates, "video_generation", {"resolution": "720p"}, "kling-4.0")
+
+    assert discounted.amount_micro == 0
+    assert discounted.source == "promo"
+    assert normal.amount_micro > 0
+    # 原价行没被改写：促销只多一行 0 元，过期自动失效。
+    assert any(row["model"] == "kling-4.0-flash" and row["amount_micro"] > 0 for row in store.rates_cached())
+    assert client.get("/internal/admin/billing/settings").json()["promo_active"] is True
+
+    store.set_settings({"promo_free_until": "2000-01-01T00:00:00+08:00"})
+    assert store.promo_active() is False
+    assert estimate_request(store.rates_for_billing(), "video_generation", {}, "kling-4.0-flash").amount_micro > 0
+
+
+def test_promo_settings_are_validated_and_round_trip(store, monkeypatch) -> None:
+    client = _client(store, monkeypatch)
+    response = client.put("/internal/admin/billing/settings", json={
+        "promo_free_items": [{"service": "video_generation", "model": "minimax-h3", "unit": "second"}],
+        "promo_free_until": "2026-11-11T23:59:59+08:00",
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert body["promo_free_items"] == [
+        {"service": "video_generation", "model": "minimax-h3", "unit": "second"}
+    ]
+    assert body["promo_free_until"] == "2026-11-11T23:59:59+08:00"
+
+    assert client.put("/internal/admin/billing/settings",
+                      json={"promo_free_until": "not-a-date"}).status_code == 400
+
+
+def test_balance_reports_limits_and_remaining(store, monkeypatch) -> None:
+    created = store.create("先钦2", 20000, None,
+                           limit_5h_micro=5_000_000_000,
+                           limit_24h_micro=8_000_000_000,
+                           limit_total_micro=20_000_000_000)
+    store.hold(created["id"], "req-bal", "video_generation", "seedance-2.5", "jmapi",
+               Quote(unit="second", quantity=5, amount_micro=8_870_970, source="measured"))
+    store.settle("req-bal", "succeeded")
+
+    app = FastAPI()
+    monkeypatch.setattr(api, "get_api_key_store", lambda: store)
+    app.include_router(public_router, dependencies=[Depends(_AsKey(created["id"]))])
+    body = TestClient(app).get("/v1/balance").json()
+
+    assert body["scope"] == "api_key"
+    assert body["key_name"] == "先钦2"
+    assert body["request_quota"] == {"quota": 20000, "used": 0, "remaining": 20000}
+    five_hour = body["windows"]["5h"]
+    assert five_hour["amount_micro"] == 8_870_970
+    assert five_hour["limit_yuan"] == 5000.0
+    assert five_hour["remaining_micro"] == 5_000_000_000 - 8_870_970
+    assert body["windows"]["24h"]["remaining_yuan"] == 7991.1290
+    assert "预付费钱包" in body["top_up"]

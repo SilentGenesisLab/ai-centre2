@@ -58,7 +58,7 @@ async def _payload(request: Request) -> dict[str, Any]:
 async def _hold(service: str, request: Request, model_hint: str | None) -> tuple[ApiKeyStore, BillingContext]:
     store = _store()
     data = await _payload(request)
-    rates = await asyncio.to_thread(store.rates_cached)
+    rates = await asyncio.to_thread(store.rates_for_billing)
     model = model_hint or str(data.get("model") or "")
     quote = estimate_request(rates, service, data, model)
     request_id = uuid4().hex
@@ -104,10 +104,16 @@ def billable(service: str, model: str | None = None):
     return dependency
 
 
-async def _settle(request: Request, outcome: str) -> None:
+async def _settle(request: Request, outcome: str, response: Response | None = None) -> None:
     ctx = getattr(request.state, "billing_charge", None)
     if not isinstance(ctx, BillingContext) or ctx.deferred:
         return
+    # TTS 的型号要到请求跑完才知道（按 provider 顺序回退），从响应头补记，
+    # 否则用量页里 tts 一栏只能显示「未知」。
+    if response is not None and ctx.service == "tts":
+        provider = response.headers.get("x-tts-provider")
+        if provider:
+            await asyncio.to_thread(_store().set_charge_model, ctx.charge_id, provider)
     await asyncio.to_thread(_store().settle, ctx.request_id, outcome)
 
 
@@ -128,7 +134,7 @@ class BillingRoute(APIRoute):
             except BaseException:
                 await _settle(request, "failed")
                 raise
-            await _settle(request, "succeeded" if response.status_code < 400 else "failed")
+            await _settle(request, "succeeded" if response.status_code < 400 else "failed", response)
             return response
 
         return wrapped

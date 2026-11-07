@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import sqlite3
 import threading
@@ -24,6 +25,9 @@ SETTING_KEYS = {
     "platform_limit_24h_micro",
     "platform_limit_total_micro",
     "credits_per_yuan",
+    # 活动促销：到期的型号按 0 元记账，到期后自动失效（不动 usage_rates 里的原价行）。
+    "promo_free_items",
+    "promo_free_until",
 }
 
 
@@ -52,6 +56,19 @@ def _since(window: str) -> str:
 def _yuan(amount_micro: int) -> str:
     # 别用「¥」：U+00A5 在 GBK 控制台上打不出来，异常信息一进 Windows 终端就炸。
     return f"CNY {amount_micro / MICRO:.4f}"
+
+
+def _promo_items(raw: str | None) -> list[dict[str, Any]]:
+    """促销型号清单存成 JSON 串（`[{"service":...,"model":...}]`），坏数据当没有。"""
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return []
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict) and item.get("service") and item.get("model")]
 
 
 class ApiKeyStore:
@@ -269,6 +286,12 @@ class ApiKeyStore:
             rows = db.execute("SELECT * FROM api_keys ORDER BY created_at DESC").fetchall()
             return [self._public(row, db) for row in rows]
 
+    def key(self, key_id: str) -> dict[str, Any] | None:
+        """单个 Key 的公开字段（含限额与已花金额）。给 /v1/balance 用。"""
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM api_keys WHERE id=?", (key_id,)).fetchone()
+            return self._public(row, db) if row else None
+
     def update(self, identifier: str, **changes: Any) -> dict[str, Any] | None:
         allowed = {"name", "quota", "expires_at", "enabled", *LIMIT_COLUMNS.values()}
         values = {key: value for key, value in changes.items() if key in allowed}
@@ -364,6 +387,11 @@ class ApiKeyStore:
         with self._lock, self._connect() as db:
             db.execute("UPDATE usage_charges SET job_id=? WHERE id=?", (job_id, charge_id))
 
+    def set_charge_model(self, charge_id: str, model: str) -> None:
+        """提交时还不知道型号的端点（TTS 按 provider 回退），事后补记。"""
+        with self._lock, self._connect() as db:
+            db.execute("UPDATE usage_charges SET model=? WHERE id=?", (model, charge_id))
+
     def settle(self, request_id: str, status: str, job_status: str | None = None) -> None:
         """作业终结时结算：成功落定，失败/取消退额度。重复调用无副作用。"""
         if status not in {"succeeded", "failed", "cancelled"}:
@@ -426,6 +454,50 @@ class ApiKeyStore:
     def invalidate_rates(self) -> None:
         self._rates_cache = None
 
+    def rates_for_billing(self) -> list[dict[str, Any]]:
+        """估价用的费率：原价行 + 活动促销行。
+
+        促销行放在最后：lookup() 同分取后写入的那条，所以精确型号的 0 元促销会盖住
+        同模型的原价行；通配行（`kling-*`）本来分数就低，也盖得住。
+        """
+        rates = self.rates_cached()
+        promo = self._active_promo()
+        return rates + promo if promo else rates
+
+    def _active_promo(self) -> list[dict[str, Any]]:
+        settings = self.settings()
+        items = settings.get("promo_free_items") or []
+        until = settings.get("promo_free_until")
+        if not items or not until:
+            return []
+        try:
+            deadline = datetime.fromisoformat(str(until))
+        except ValueError:
+            return []
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=SHANGHAI)
+        if datetime.now(UTC) >= deadline.astimezone(UTC):
+            return []
+        stamp = _now()
+        return [
+            {
+                "service": str(item.get("service") or ""),
+                "model": str(item.get("model") or ""),
+                "variant": "*",
+                "unit": str(item.get("unit") or "second"),
+                "amount_micro": 0,
+                "source": "promo",
+                "note": f"活动促销至 {until}",
+                "enabled": 1,
+                "updated_at": stamp,
+            }
+            for item in items
+            if isinstance(item, Mapping) and item.get("service") and item.get("model")
+        ]
+
+    def promo_active(self) -> bool:
+        return bool(self._active_promo())
+
     def set_rate(self, service: str, model: str, variant: str, unit: str,
                  amount_micro: int, source: str = "manual", note: str | None = None,
                  enabled: bool = True) -> dict[str, Any]:
@@ -460,6 +532,8 @@ class ApiKeyStore:
             "platform_limit_24h_micro": int(rows["platform_limit_24h_micro"]) if rows.get("platform_limit_24h_micro") else None,
             "platform_limit_total_micro": int(rows["platform_limit_total_micro"]) if rows.get("platform_limit_total_micro") else None,
             "credits_per_yuan": float(rows.get("credits_per_yuan") or 62),
+            "promo_free_items": _promo_items(rows.get("promo_free_items")),
+            "promo_free_until": rows.get("promo_free_until") or None,
         }
 
     def set_settings(self, values: Mapping[str, Any]) -> dict[str, Any]:
@@ -467,6 +541,8 @@ class ApiKeyStore:
             for key, value in values.items():
                 if key not in SETTING_KEYS:
                     continue
+                if key == "promo_free_items":
+                    value = json.dumps(list(value or []), ensure_ascii=False)
                 db.execute(
                     """INSERT INTO billing_settings(key,value,updated_at) VALUES(?,?,?)
                        ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at""",
