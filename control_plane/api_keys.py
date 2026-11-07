@@ -498,6 +498,10 @@ class ApiKeyStore:
     def promo_active(self) -> bool:
         return bool(self._active_promo())
 
+    def promo_rows(self) -> list[dict[str, Any]]:
+        """当前生效的活动促销行（没有活动就是空表）。价目表要展示它就调这个。"""
+        return self._active_promo()
+
     def set_rate(self, service: str, model: str, variant: str, unit: str,
                  amount_micro: int, source: str = "manual", note: str | None = None,
                  enabled: bool = True) -> dict[str, Any]:

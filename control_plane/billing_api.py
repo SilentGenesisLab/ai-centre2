@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .api_keys import WINDOWS, ApiKeyStore
-from .credit_pricing import MICRO, from_yuan
+from .credit_pricing import MICRO, from_yuan, lookup
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -378,14 +378,20 @@ async def pricing_models(
     model: str | None = Query(default=None, description="按模型过滤，如 seedance-2.5"),
 ) -> dict[str, Any]:
     store = _store()
-    rates, settings = await asyncio.gather(
+    rates, promo, settings = await asyncio.gather(
         asyncio.to_thread(store.rates),
+        asyncio.to_thread(store.promo_rows),
         asyncio.to_thread(store.settings),
     )
     per_yuan = float(settings["credits_per_yuan"])
     channels = await asyncio.to_thread(_channels_by_model)
+    # 活动促销按型号整款覆盖（promo 行不分分辨率），所以这里按 (service, model) 建索引：
+    # 命中的型号原价行全部改成 0 并保留原价，客户看到的「挂牌价」就和实际扣款一致了。
+    promo_models = {(str(row["service"]), str(row["model"])): row for row in promo}
+    promo_until = settings.get("promo_free_until") if promo else None
 
     items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
     for row in rates:
         if not row["enabled"]:
             continue
@@ -393,29 +399,73 @@ async def pricing_models(
             continue
         if model and row["model"] != model:
             continue
+        seen.add((str(row["service"]), str(row["model"])))
+        base_micro = int(row["amount_micro"])
+        hit = promo_models.get((str(row["service"]), str(row["model"])))
+        micro = 0 if hit else base_micro
         binds = _channels_for(str(row["model"]), channels)
-        micro = int(row["amount_micro"])
-        items.append(
-            {
-                "service": row["service"],
-                "model": row["model"],
-                "variant": row["variant"],
-                "unit": row["unit"],
-                "unit_name": UNIT_NAMES.get(row["unit"], row["unit"]),
-                "amount_micro": micro,
-                "amount_yuan": round(micro / MICRO, 6),
-                "credits": round(micro / MICRO * per_yuan, 4),
-                "source": row["source"],
-                "note": row["note"],
-                "updated_at": row["updated_at"],
-                "channels": binds,
-                "available": any(bind["enabled"] for bind in binds),
+        item = {
+            "service": row["service"],
+            "model": row["model"],
+            "variant": row["variant"],
+            "unit": row["unit"],
+            "unit_name": UNIT_NAMES.get(row["unit"], row["unit"]),
+            "amount_micro": micro,
+            "amount_yuan": round(micro / MICRO, 6),
+            "credits": round(micro / MICRO * per_yuan, 4),
+            "source": "promo" if hit else row["source"],
+            "note": row["note"],
+            "updated_at": row["updated_at"],
+            "channels": binds,
+            "available": any(bind["enabled"] for bind in binds),
+        }
+        if hit:
+            item |= {
+                "original_amount_micro": base_micro,
+                "original_amount_yuan": round(base_micro / MICRO, 6),
+                "original_credits": round(base_micro / MICRO * per_yuan, 4),
+                "promo_until": promo_until,
             }
-        )
+        items.append(item)
+
+    # 促销覆盖了某个型号、但费率表里没有它的独立行（例如只靠 `kling-*` 通配定价的
+    # `minimax-h3-hs`）：补一行 0 元，原价按通配算出来，否则客户在表里根本看不到它。
+    for (promo_service, promo_model), hit in promo_models.items():
+        if (promo_service, promo_model) in seen:
+            continue
+        if service and promo_service != service:
+            continue
+        if model and promo_model != model:
+            continue
+        found = lookup(rates, promo_service, promo_model, "*")
+        base_micro = found[0] if found else 0
+        binds = _channels_for(promo_model, channels)
+        items.append({
+            "service": promo_service,
+            "model": promo_model,
+            "variant": "*",
+            "unit": hit["unit"],
+            "unit_name": UNIT_NAMES.get(hit["unit"], hit["unit"]),
+            "amount_micro": 0,
+            "amount_yuan": 0.0,
+            "credits": 0.0,
+            "source": "promo",
+            "note": hit["note"],
+            "updated_at": hit["updated_at"],
+            "channels": binds,
+            "available": any(bind["enabled"] for bind in binds),
+            "original_amount_micro": base_micro,
+            "original_amount_yuan": round(base_micro / MICRO, 6),
+            "original_credits": round(base_micro / MICRO * per_yuan, 4),
+            "promo_until": promo_until,
+        })
+
     # 具体型号排前、服务级通配（model='*'）垫后，否则通配价会混在真模型中间看着像一款模型。
     items.sort(key=lambda item: (item["service"], item["model"] == "*", -item["amount_micro"], item["model"]))
     return {
         "credits_per_yuan": per_yuan,
+        "promo_active": bool(promo),
+        "promo_until": promo_until,
         "total": len(items),
         "items": items,
     }

@@ -293,6 +293,34 @@ def test_promo_rates_zero_out_only_the_named_models_until_the_deadline(store, mo
     assert estimate_request(store.rates_for_billing(), "video_generation", {}, "kling-4.0-flash").amount_micro > 0
 
 
+def test_pricing_table_shows_the_promo_price_and_the_original(store, monkeypatch) -> None:
+    """客户看的是这张表：活动期挂牌价必须并行显示 0，否则会以为没生效。"""
+    monkeypatch.setattr(api, "get_capability_store", lambda: _WildcardCatalog())
+    client = _client(store, monkeypatch)
+    store.set_settings({
+        "promo_free_items": [
+            {"service": "video_generation", "model": "kling-4.0-flash", "unit": "second"},
+            {"service": "video_generation", "model": "minimax-h3-hs", "unit": "second"},
+        ],
+        "promo_free_until": "2099-01-01T00:00:00+08:00",
+    })
+
+    body = client.get("/v1/pricing/models", params={"service": "video_generation"}).json()
+    assert body["promo_active"] is True
+    rows = {item["model"]: item for item in body["items"]}
+
+    # 费率表里有独立行的型号：原行改挂 0 元，原价留在 original_* 里。
+    flash = rows["kling-4.0-flash"]
+    assert (flash["amount_micro"], flash["source"]) == (0, "promo")
+    assert flash["original_amount_yuan"] == 0.23
+    assert rows["kling-4.0"]["amount_micro"] > 0, "没进促销的型号不能被带着一起降价"
+
+    # 只靠 `kling-*` 通配定价、没有独立行的型号：补一行 0 元，原价按通配算。
+    hs = rows["minimax-h3-hs"]
+    assert (hs["amount_micro"], hs["source"]) == (0, "promo")
+    assert hs["original_amount_yuan"] == 0.23
+
+
 def test_promo_settings_are_validated_and_round_trip(store, monkeypatch) -> None:
     client = _client(store, monkeypatch)
     response = client.put("/internal/admin/billing/settings", json={
