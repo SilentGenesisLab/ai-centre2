@@ -69,6 +69,7 @@ from .api_keys import ApiKeyStore, CreditQuotaExceeded
 from .billing_api import public_router as pricing_router
 from .billing_api import router as billing_router
 from .billing_hook import BillingRoute, billable, link_current
+from .billing_reconcile import reconcile_held
 from .credit_pricing import from_yuan
 from .ai_capabilities import CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient, current_api_key_id
@@ -1388,12 +1389,26 @@ async def _health_monitor_loop() -> None:
             await asyncio.sleep(60)
 
 
+async def _billing_reconcile_loop() -> None:
+    """H3 这类只靠客户端轮询结算的端点，没人轮询时预占额度会永久挂着。"""
+    while True:
+        try:
+            await asyncio.to_thread(reconcile_held)
+            await asyncio.sleep(600)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            await asyncio.sleep(60)
+
+
 @app.on_event("startup")
 async def start_observability_reconciler() -> None:
     _run_background(_observability_reconcile_loop())
     _run_background(_h3_health_loop())
     _run_background(_health_monitor_loop())
     _run_background(_h3_pool_loop())
+    _run_background(_billing_reconcile_loop())
+
 
 
 @app.on_event("shutdown")

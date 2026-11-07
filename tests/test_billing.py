@@ -350,6 +350,32 @@ def test_promo_settings_are_validated_and_round_trip(store, monkeypatch) -> None
                       json={"promo_free_until": "not-a-date"}).status_code == 400
 
 
+def test_reconcile_settles_stuck_held_rows_and_leaves_live_jobs_alone(store, monkeypatch) -> None:
+    """H3 只靠客户端轮询结算：没人轮询，作业成功了账上还是 held，额度被永久占住。"""
+    from control_plane import billing_reconcile
+
+    monkeypatch.setattr(api, "get_api_key_store", lambda: store)
+    created = store.create("视频", None, None)
+    for request_id, quote_micro in (("req-done", 1_000_000), ("req-live", 1_000_000),
+                                     ("req-orphan", 1_000_000)):
+        held = store.hold(created["id"], request_id, "video_generation", "seedance-2.5", "jmapi",
+                          Quote(unit="second", quantity=1, amount_micro=quote_micro, source="measured"))
+        if request_id != "req-orphan":
+            store.link(str(held["charge_id"]), f"job-{request_id}")
+    # 把三条都倒回 7 小时前，跨过清扫阈值。
+    with store._connect() as db:
+        db.execute("UPDATE usage_charges SET created_at='2020-01-01T00:00:00.000+00:00'")
+
+    statuses = {"job-req-done": "succeeded", "job-req-live": "running"}
+    result = billing_reconcile.reconcile_held(status_of=statuses.get)
+
+    assert result == {"settled": 1, "refunded": 1, "pending": 1}
+    states = {row["request_id"]: row["state"] for row in store.charges()["items"]}
+    assert states["req-done"] == "spent"
+    assert states["req-orphan"] == "refunded"
+    assert states["req-live"] == "held", "还在跑的单不能退，宁可继续占着额度"
+
+
 def test_balance_reports_limits_and_remaining(store, monkeypatch) -> None:
     created = store.create("先钦2", 20000, None,
                            limit_5h_micro=5_000_000_000,

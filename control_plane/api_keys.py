@@ -422,6 +422,17 @@ class ApiKeyStore:
                 (job_status, request_id),
             )
 
+    def held_charges(self, older_than_hours: float) -> list[dict[str, Any]]:
+        """预占超过这个时长还没落定的账，给对账清扫用。"""
+        cutoff = (datetime.now(UTC) - timedelta(hours=older_than_hours)).isoformat(timespec="milliseconds")
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id,request_id,job_id,service,model,amount_micro,created_at FROM usage_charges "
+                "WHERE state='held' AND created_at < ? ORDER BY created_at",
+                (cutoff,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def usage(self, key_id: str) -> dict[str, Any]:
         with self._connect() as db:
             row = db.execute("SELECT * FROM api_keys WHERE id=?", (key_id,)).fetchone()
