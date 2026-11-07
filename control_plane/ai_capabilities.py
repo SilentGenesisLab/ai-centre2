@@ -354,6 +354,15 @@ class CapabilityStore:
                 _inputs.append("audio")
             db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        (str(uuid4()),_name,_code,"video_generation",json.dumps(_inputs),"video",json.dumps(schema),1,None,stamp,stamp))
+        # 2026-11-07：`free` 不是上游型号，而是 libtv 侧的**畅用池**型号 —— 它自己不带上游 key，
+        # 由 libtv-api 按「可灵4.0 → Kling 4.0 Flash → Seedance 2.0 Fast → Minimax H3 →
+        # H3-Highspeed → Seedance 2.0 Mini」的顺序，挑第一个持畅用卡且有空位的账号，全程 0 积分。
+        # 能力声明取这批型号的**并集**，只作本地宽闸门；真正能不能接由 libtv-api 逐个候选校验
+        # （模式/比例/时长/素材数量不匹配的候选会被跳过），失败不会退回付费型号。
+        # 计费上 usage_rates 里给它一条 0 元 / source=free 的费率，调用方的 API Key 不扣钱。
+        db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                   (str(uuid4()),"Free 畅用池","free","video_generation",
+                    json.dumps(["text","image","video","audio"]),"video",json.dumps(schema),1,None,stamp,stamp))
         db.execute("UPDATE models SET capability_type='image_generation',output_modality='image',updated_at=? WHERE code IN ('gpt-image-2','gpt-image-2.5','gpt-image-2.5-sunburst','gpt-image-2.5-flare','nano-banana-2')",(stamp,))
         audio_schema = {"prompt":{"type":"string"},"lyrics":{"type":"string"},"tags":{"type":"string"},"title":{"type":"string"},"instrumental":{"type":"boolean"},"loop":{"type":"boolean"}}
         db.execute("UPDATE models SET parameter_schema_json=?,updated_at=? WHERE code IN ('suno-v6','suno-sound')",(json.dumps(audio_schema),stamp))
@@ -484,6 +493,23 @@ class CapabilityStore:
               (str(uuid4()),mids[_code],ids["libtv"],_key,
                "/libtv/api/v1/video/publish","/libtv/api/v1/video/query/{task_id}",
                None,json.dumps(_caps),"{}",1,30,stamp,stamp))
+        # `free` 畅用池的绑定。capabilities 取六个候选型号的**并集**（kling-v4 /
+        # kling-v4-flash / star-video2-fast / MiniMax-Hailuo-H3 / minimax-h3-hs /
+        # star-video2-mini），只当本地宽闸门：真正的逐型号校验在 libtv-api 的
+        # resolveAutoModel 里做，接不了这组参数的候选会被跳过。
+        # 时长 3（kling-v4 下界）～30（kling-v4 上界），素材上限取最小公共值之外的最大值
+        # （10 图 / 5 视频 / 3 音频，超出时由候选逐个判）。
+        db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          (str(uuid4()),mids["free"],ids["libtv"],"free",
+           "/libtv/api/v1/video/publish","/libtv/api/v1/video/query/{task_id}",
+           None,json.dumps({
+               "images": 10, "videos": 5, "audios": 3,
+               "modes": ["text2video","singleImage2video","frames2video","image2video",
+                         "mixed2video","videoEdit2video","audio2video"],
+               "ratios": ["16:9","4:3","1:1","3:4","9:16","21:9"],
+               "resolutions": ["480p","720p","768p","1080p","2k"],
+               "sound": False, "sound_param": False,
+               "duration_min": 3, "duration_max": 30}),"{}",1,30,stamp,stamp))
         # seedance-2.0 / seedance-2.5 的 libtv 绑定早于这套能力声明，INSERT OR IGNORE 不会
         # 更新它们 —— 光改上面的种子不生效。只在缺 modes 时补，管理员改过的不覆盖。
         for _code, _modes, _ratios, _res, _dur in [

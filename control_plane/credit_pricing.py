@@ -70,6 +70,10 @@ _RATE_SEED_CREDITS: list[tuple[str, str, str, str, Decimal | None, str]] = [
 
 # 没有实测积分、直接按元估的（(service, model, variant, unit, 元/单位, source)）
 _RATE_SEED_YUAN: list[tuple[str, str, str, str, str, str]] = [
+    # `free` 畅用池：上游走 LibTV 的「0 积分畅用」权益（慢队列），我们一分钱不花，
+    # 所以费率是 0、source 标 free —— 与 moss-image / voxcpm2 同一种写法。
+    # 必须精确到这个型号，否则会落进下面那条 video_generation 通配的 0.23 元/秒。
+    ("video_generation", "free", "*", "second", "0", "free"),
     ("video_generation", "kling-*", "*", "second", "0.23", "estimated"),
     ("video_generation", "hailuo-*", "*", "second", "0.23", "estimated"),
     ("video_generation", "wan-*", "*", "second", "0.23", "estimated"),

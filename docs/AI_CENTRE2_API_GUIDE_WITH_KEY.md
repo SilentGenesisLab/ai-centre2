@@ -297,9 +297,42 @@ curl -X POST -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
 
 ## 9. TTS 语音合成与语音克隆
 
-### 同步合成
+### 三条路，先选一条
 
-`POST /v2/tts/speech`
+| 想要 | 用什么 | 关键字段 |
+|---|---|---|
+| 用**已有音色**把文字念出来 | 9.1 | `text` + `voice_profile_id` |
+| 用**一段话指挥怎么念**（情绪/停连/重音） | 9.2 | `emotion`（+ `emotion_enhance`） |
+| 用**一段参考音频**复刻这个人的声音 | 9.3 | `reference_audio_url` + `prompt_text` |
+
+三条都打 `POST /v2/tts/speech`，只是多带不同字段。
+
+### 9.0 音色表是什么
+
+`GET /v2/tts/voices` 列出可用的「声音档案」。一个档案 = 一个音色 ID + 它到各厂商音色的映射：
+
+```json
+{
+  "voice_profile_id": "zh-female-news",
+  "display_name": "中文 · 女 · 新闻播报",
+  "languages": ["zh-CN"],
+  "bindings": {
+    "minimax": {"voice_id": "Chinese (Mandarin)_News_Anchor"},
+    "voxcpm2": {"reference_audio": "/home/donxu/voices/zh-female-news.wav",
+                "reference_text": "参考音频里说出的原文"}
+  },
+  "fallback_order": ["voxcpm2", "minimax"]
+}
+```
+
+**音色列表本质上就是一批预先克隆好的语音**：`voxcpm2.reference_audio` 指向那一段参考音频，
+选它就等于每次拿这段音频做克隆；`minimax.voice_id` 是厂商自己的系统音色。
+用音色表的好处是不用每次上传参考音频、也不用每次跑 ASR。
+
+当前（2026-11-01）只有 `default` 一条。想按名字点 200 个中英文音色，需要把档案铺起来，
+铺的来源与做法见运维文档 `docs/TTS_PROVIDER_API.md` / 脚本 `scripts/import_tts_voice_catalog.py`。
+
+### 9.1 普通合成（选音色）
 
 ```bash
 curl -X POST "$AI_CENTRE2_BASE_URL/v2/tts/speech" \
@@ -310,49 +343,62 @@ curl -X POST "$AI_CENTRE2_BASE_URL/v2/tts/speech" \
     "language": "zh",
     "voice_profile_id": "default",
     "provider": "auto",
-    "audio": {
-      "format": "wav",
-      "sample_rate": 48000,
-      "channels": 1
-    },
-    "prosody": {
-      "speed": 1.0,
-      "volume": 1.0,
-      "pitch": 1.0
-    },
-    "quality_mode": "standard"
+    "audio": {"format": "wav", "sample_rate": 48000, "channels": 1},
+    "prosody": {"speed": 1.0, "volume": 1.0, "pitch": 1.0}
   }' \
   -o speech.wav
 ```
 
-`provider` 支持：`auto`、`voxcpm2`、`doubao`、`elevenlabs`。
+`voice_profile_id` 必须是 `GET /v2/tts/voices` 里存在的，否则 404。
+`provider`：`auto`、`voxcpm2`、`minimax`、`doubao`、`elevenlabs`。
 
-### 参考音频克隆
+### 9.2 prompt 合成（指挥怎么念）
 
-在同步请求中增加：
-
-```json
-{
-  "reference_audio_url": "https://example.com/audio/reference.wav",
-  "prompt_text": "参考音频中准确说出的文本",
-  "clone_mode": "auto",
-  "emotion_strategy": "inherit"
-}
+```bash
+curl -X POST "$AI_CENTRE2_BASE_URL/v2/tts/speech" \
+  -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data-binary '{
+    "text": "这个价格，我真的没想到。",
+    "voice_profile_id": "default",
+    "emotion": "先压住语气，到「没想到」突然扬起，重读「真的」，句尾留半拍停顿",
+    "emotion_enhance": false
+  }' \
+  -o styled.wav
 ```
 
-`clone_mode`：`auto`、`controllable`、`ultimate`。  
-`emotion_strategy`：`auto`、`inherit`、`force`。  
-`quality_mode`：`standard`、`strict`。
+`emotion` 最多 200 字；`emotion_enhance=true` 会先把这段要求扩写成结构化表演方案
+（需要豆包大模型 key，没配会自动降级，响应头 `X-TTS-Emotion-Enhancement` 会写明）。
+**它管「怎么念」，不管「谁的声音」**。
 
-### 流式合成
+### 9.3 参考音频克隆
 
-将同一请求体发送到：
-
-```text
-POST /v2/tts/speech/stream
+```bash
+curl -X POST "$AI_CENTRE2_BASE_URL/v2/tts/speech" \
+  -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data-binary '{
+    "text": "欢迎体验我们的新产品。",
+    "voice_profile_id": "default",
+    "reference_audio_url": "https://example.com/audio/reference.wav",
+    "prompt_text": "参考音频中准确说出的文本",
+    "clone_mode": "auto",
+    "emotion_strategy": "inherit"
+  }' \
+  -o cloned.wav
 ```
 
-### 异步 TTS
+- `reference_audio_url` 必须是**公网 HTTPS 直链**；带它就启用深度克隆。
+- `prompt_text` 是参考音频的原文；留空会先自动 ASR（更慢，且识别错会拖低相似度）。
+- `clone_mode`：`auto`、`controllable`、`ultimate`。
+- `emotion_strategy`：`auto`、`inherit`、`force`。
+- `quality_mode`：`standard`、`strict`（`strict` 走三道候选 + 质量门禁，更慢）。
+
+### 9.4 流式与异步
+
+- 流式：把同一请求体发到 `POST /v2/tts/speech/stream`，响应是 48kHz/16bit/单声道 PCM。
+- 长文本：`POST /v2/tts/jobs`，正文最多 20000 字符，`idempotency_key` 必填（8～256 字符）；
+  用 `GET /v2/tts/jobs/{job_id}` 查状态、`GET /v2/tts/jobs/{job_id}/audio` 下载。
 
 ```bash
 curl -X POST "$AI_CENTRE2_BASE_URL/v2/tts/jobs" \
@@ -365,30 +411,20 @@ curl -X POST "$AI_CENTRE2_BASE_URL/v2/tts/jobs" \
     "provider": "auto",
     "idempotency_key": "order-001-tts"
   }'
-```
 
-查询和下载：
-
-```bash
 curl -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
   "$AI_CENTRE2_BASE_URL/v2/tts/jobs/JOB_ID"
 
 curl -L -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
-  "$AI_CENTRE2_BASE_URL/v2/tts/jobs/JOB_ID/audio" \
-  -o speech.wav
+  "$AI_CENTRE2_BASE_URL/v2/tts/jobs/JOB_ID/audio" -o speech.wav
 ```
 
-### 服务商、音色和质量审计
+### 9.5 服务商、音色与质量审计
 
 ```bash
-curl -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
-  "$AI_CENTRE2_BASE_URL/v2/tts/providers"
-
-curl -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
-  "$AI_CENTRE2_BASE_URL/v2/tts/voices"
-
-curl -H "Authorization: Bearer $AI_CENTRE2_API_KEY" \
-  "$AI_CENTRE2_BASE_URL/v2/tts/quality/REQUEST_ID"
+curl -H "Authorization: Bearer $AI_CENTRE2_API_KEY" "$AI_CENTRE2_BASE_URL/v2/tts/providers"
+curl -H "Authorization: Bearer $AI_CENTRE2_API_KEY" "$AI_CENTRE2_BASE_URL/v2/tts/voices"
+curl -H "Authorization: Bearer $AI_CENTRE2_API_KEY" "$AI_CENTRE2_BASE_URL/v2/tts/quality/REQUEST_ID"
 ```
 
 ## 10. 常见状态码

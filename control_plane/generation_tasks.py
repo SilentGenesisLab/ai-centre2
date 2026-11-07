@@ -49,6 +49,8 @@ OSS_PERSISTED_MODELS = {
     # 否则「功能都在、就是没标识」。清单与 ai_capabilities.libtv_video_catalog 一一对应。
     "seedance-2.0-fast", "seedance-2.0-mini", "seedance-1.5-pro",
     "seedance-1.0-pro", "seedance-1.0-lite",
+    # `free` 畅用池伪型号：结果同样是 libtv-api 给的临时链接，不转存就没有 AI 标识。
+    "free",
     "kling-3.0-turbo", "kling-o3", "kling-3.0", "kling-o1", "kling-2.6", "kling-2.5",
     "kling-2.1", "kling-3.0-motion-control", "kling-4.0", "kling-4.0-flash",
     "minimax-h3-max", "minimax-h3-libtv", "minimax-h3-hs",

@@ -58,6 +58,18 @@ aicentre2.sligenai.cn {
 		}
 	}
 
+	# libtv 代理：上游 chorify3.sligenai.cn/libtv 没有 CORS，且 publish 会花积分，
+	# 所以由 127.0.0.1:8399 这层做反向代理 + X-Libtv-Token 校验。
+	handle_path /libtv-api/* {
+		reverse_proxy 127.0.0.1:8399
+	}
+
+	# 抖音采集服务在 http://121.43.51.197（纯 HTTP），本站在 https 下必须走这层转发，
+	# 否则浏览器按混合内容拦掉；token 由代理在服务端注入。
+	handle_path /douyin-api/* {
+		reverse_proxy 127.0.0.1:8398
+	}
+
 	@jmapi_admin path /jmapi-admin /jmapi-admin/*
 	handle @jmapi_admin {
 		root * /home/donxu/ai-centre/runtime
