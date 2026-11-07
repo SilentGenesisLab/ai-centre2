@@ -87,7 +87,7 @@ curl -sS -X POST "$BASE_URL/v1/uploads" \
 - 空文件返回 `422`；中台未配置对象存储时返回 `503`。
 - 前缀由服务端决定，调用方不能指定；每次上传生成新的随机文件名，不会覆盖已有对象。
 - 返回的 `url` 是对象的公网直链，无需再签名，可直接使用。
-- 上传的素材同样受 §13 的保密要求约束：不要放进浏览器前端或公开仓库。
+- 上传的素材同样受 §14 的保密要求约束：不要放进浏览器前端或公开仓库。
 
 ### 1.5 渠道选择：点名是优先，不是唯一
 
@@ -176,6 +176,16 @@ curl -sS -X POST "$BASE_URL/v1/uploads" \
 | 取消定型决策任务 | POST | `/v1/decision-generations/jobs/{job_id}/cancel` | JSON |
 
 给一段事实描述和一组问题，拿回一组带置信度的定型答案（不是图片/视频/音频，所以 `result_urls` 恒为空）。详见第 9 节。
+
+### 2.8 计费、用量与余额
+
+| 中文接口名 | 方法 | 路径 | 说明 |
+|---|---|---|---|
+| 查询价目表 | GET | `/v1/pricing/models` | 每个服务·型号的单价（元与积分）、可用渠道；活动期并行给出原价 |
+| 查询用量 | GET | `/v1/usage` | 5 小时 / 24 小时 / 累计三个窗口的金额与次数，以及按型号的调用量 |
+| 查询余额 | GET | `/v1/balance` | 本 Key 的三条额度上限、已用与剩余；附充值方式说明 |
+
+三条都只看「本 Key」的口径，服务令牌调用时返回全平台数字。详见第 12 节。
 
 ## 3. 生文与文本能力
 
@@ -602,11 +612,52 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 
 渠道分辨率说明：当前 jmapi 的 `seedance2.0_vip` 不接受 `480p`，所以请求 480P 时这家会被跳过、由 libtv 接单——传 `channel: "jmapi"` 也一样，不会返回 422；720P 已在两个渠道完成生产验证。
 
+#### 重复提交与断线重试（幂等）
+
+提交口支持幂等：**同一个幂等键只会建一个作业、只扣一次钱**。幂等键按下面的顺序取第一个非空的：
+
+1. 请求头 `Idempotency-Key`
+2. 请求体里的 `external_ref`
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Idempotency-Key: order-20261108-0001" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"model":"seedance-2.0","prompt":"...","duration_seconds":5}'
+```
+
+命中已有作业时返回**同一个 `job_id`**，并把 `deduplicated` 置为 `true`：
+
+```json
+{"job_id": "...", "status": "queued", "model": "seedance-2.0",
+ "requested_channel": "jmapi", "deduplicated": true,
+ "status_url": "/v1/video-generations/jobs/..."}
+```
+
+所以握手超时、TLS 断连、客户端拿不到响应时，**用同一个幂等键原样重发即可**，不需要先去查有没有建成功。两条注意事项：
+
+- 幂等键**按 Key 隔离**，不同 Key 用同一个字符串不会互相去重。
+- 键会一直生效——想要「再次生成同一单」必须换一个新键，否则拿回的还是老作业。
+
+不传幂等键也不传 `external_ref` 时行为和以前一致：每次提交都新建作业。
+
+#### 按业务单号反查任务
+
+```
+GET /v1/video-generations/jobs?external_ref=video-order-001
+```
+
+返回该 `external_ref` 对应的作业（`200`）；查不到返回 `404`。参数里填当时的 `Idempotency-Key` 值也能查到——去重键只有一个，存的就是先取到的那个字符串。丢响应后既可以用幂等键重发，也可以先用这个接口确认作业到底建没建。
+
+> 生图 / 生音乐 / 生文 / 定型决策的提交口同样支持 `Idempotency-Key` 与 `external_ref` 去重。
+
 > ⚠️ **分辨率是这一节最贵的参数，`1080p` 尤其贵。提交前先确认用哪个分辨率。**
 >
 > - **没确认就一律用 `720p`。** 接口默认值也是 `720p`，不要主动往大改。
 > - **`1080p` 不用于预览、试错、抽卡。** 上游把它做成独立计价的高清档：Seedance 先出 `480p` 草稿，草稿出片后 7 天内再单独开启 `1080p` 成片，等于高清要在草稿之外再付一次钱。
-> - 已确认的单价锚点（libtv，积分/秒）：Seedance 2.5 的 `720p` ≈ **46**、Seedance 2.0 的 `720p` ≈ **27**；`480p` 与 `1080p` 上游未公布单价，**不要拿 720P 的价去估算 `1080p`**，按明显更高预留预算。
+> - 单价以 `GET /v1/pricing/models` 为准（中台按**上游实测成本**记账，见 §12）。2026-11 的实测锚点（元/秒，`720p`）：Seedance 2.5 ≈ **1.77 元**、Seedance 2.0 ≈ **0.79 元**、Seedance 2.0 Fast ≈ **0.35 元**、Seedance 2.0 Mini ≈ **0.52 元**。`1080p` 各档另行计价，**不要拿 720P 的价去估算 `1080p`**，按明显更高预留预算。
+> - 一分钟 `720p` 的 Seedance 2.5 大约 **106 元**——所以「先出草稿、再出成片」的分辨率策略直接决定成本。
 > - 省钱又不牺牲交付：先用 `480p` 把镜头、时长、构图定稿，只对最终保留的镜头出高清。
 
 ### 5.1.1 Seedance 2.5
@@ -1547,11 +1598,87 @@ done
 
 ### 10.3 幂等与业务关联
 
-- TTS异步接口使用必填的 `idempotency_key`。
-- 其他接口建议设置唯一 `external_ref`，但它不一定阻止重复提交。
-- 网络超时后先查询已有任务或使用业务侧去重，再决定是否重试。
+- TTS 异步接口使用必填的 `idempotency_key`。
+- 作业型接口（视频 / 图片 / 音乐 / 生文 / 定型决策）支持 `Idempotency-Key` 请求头，也认请求体里的 `external_ref`：同一个键只会建一个作业、只扣一次钱，重复提交返回同一个 `job_id` 且 `deduplicated: true`。见 §5.1「重复提交与断线重试」。
+- 视频作业可以按 `external_ref` 反查：`GET /v1/video-generations/jobs?external_ref=...`。
+- 网络超时后**优先用同一个幂等键原样重发**，不要换新键，也不要另起一单。
 
-## 12. HTTP 状态码与排错
+## 12. 计费、用量与余额
+
+中台按**金额**记账，对账口径是人民币元，同时给出积分（默认 `62 积分 = 1 元`，以接口返回的 `credits_per_yuan` 为准）。三条接口都是 GET，鉴权与其它接口一致。
+
+### 12.1 价目表
+
+```
+GET /v1/pricing/models?service=video_generation&model=seedance-2.0
+```
+
+两个参数都可省略。`model` 支持精确型号名，返回按型号展开的**每一档**单价：
+
+```json
+{"credits_per_yuan": 62.0, "promo_active": false, "promo_until": null, "total": 28,
+ "items": [{"service": "video_generation", "model": "seedance-2.0", "variant": "720p",
+            "unit": "second", "unit_name": "秒",
+            "amount_micro": 790323, "amount_yuan": 0.790323, "credits": 49.0,
+            "source": "measured", "channels": [{"code": "libtv", "enabled": true, ...}],
+            "available": true}]}
+```
+
+要看的几个字段：
+
+| 字段 | 含义 |
+|---|---|
+| `variant` | 分辨率档（`720p` / `1080p`），`*` 表示不分档的通用价 |
+| `amount_yuan` / `credits` | 每单位（按 `unit_name`，视频是「秒」）的实际价格 |
+| `source` | `measured` 是实测价、`estimated` 是估算价（可能调整）、`promo` 是活动价 |
+| `channels` / `available` | 这个价格当前能走哪些渠道；`available=false` 说明所有绑定渠道都不可用 |
+| `original_amount_yuan` | **仅活动期出现**：原价，方便看出折了多少 |
+
+活动期（`promo_active: true`、`promo_until` 给出截止时间）某些型号挂牌价是 `0`，**实际扣款也是 0**，用量照常记录。
+
+### 12.2 用量
+
+```
+GET /v1/usage?window=24h
+GET /v1/usage?from=2026-11-01&to=2026-11-07
+```
+
+时间按**北京时间**填写，只给日期时取当天整天。不给 `from/to` 时按 `window` 统计（`5h` / `24h` / `total`）。返回三个滚动窗口与按型号的调用量：
+
+```json
+{"scope": "api_key", "window": "24h", "credits_per_yuan": 62.0,
+ "amount_micro": 418340000, "amount_yuan": 418.34, "credits": 25937.08, "count": 379,
+ "windows": {"5h": {...}, "24h": {...}, "total": {...}},
+ "by_model": [{"service": "video_generation", "model": "seedance-2.5",
+               "amount_micro": ..., "amount_yuan": ..., "credits": ..., "count": 71}]}
+```
+
+- **失败和取消的单不计入消耗**（预扣的钱会退回），所以 `count` 是「真正成功的调用次数」。
+- 没有「型号」概念的服务（超分、切片、去水印等）在 `by_model` 里按服务名归类，不会出现 `(未知)`。
+
+### 12.3 余额与充值
+
+```
+GET /v1/balance
+```
+
+```json
+{"scope": "api_key", "key_id": "...", "key_name": "...",
+ "request_quota": {"quota": 20000, "used": 5391, "remaining": 14609},
+ "windows": {
+   "5h":    {"amount_yuan": 204.48, "limit_yuan": 5000.0, "remaining_yuan": 4795.52, "credits": 12677.76},
+   "24h":   {"amount_yuan": 418.34, "limit_yuan": 8000.0, "remaining_yuan": 7581.66, "credits": ...},
+   "total": {"amount_yuan": 447.68, "limit_yuan": 20000.0, "remaining_yuan": 19552.32, "credits": ...}},
+ "top_up": "调高这个 Key 的 limit_5h / limit_24h / limit_total 即可..."}
+```
+
+**这里没有预付费钱包**，所以不会出现「余额不足、去充值」的分支。客户侧的「余额」就是这三条滚动窗口的上限，`remaining_yuan` 就是还能花多少。限额是**滚动窗口**：5 小时窗口看的是最近 5 小时花掉的钱，时间一过自动回补。
+
+`request_quota.quota` 是**请求次数**额度（与金额无关的硬上限），不是积分余额，别把 `used` 当成「花了 5391 积分」。
+
+超限时提交会被 `429` 拦下，`detail` 里写明是哪一条：`[key_5h]` / `[key_24h]` / `[key_total]` / `[platform_5h]` 等。要扩容联系管理员调高对应上限即可，不用换 Key。
+
+## 13. HTTP 状态码与排错
 
 | HTTP状态码 | 含义 | 建议 |
 |---:|---|---|
@@ -1564,7 +1691,7 @@ done
 | 413 | 文件过大 | 压缩素材或缩短视频 |
 | 415 | 文件类型、扩展名或文件头不支持 | 转为受支持格式 |
 | 422 | JSON字段或取值不符合约束 | 查看响应 `detail` |
-| 429 | 请求过多 | 指数退避后重试 |
+| 429 | 请求过多，或已超出额度 | 退避重试；额度类的看 `detail` 里的 `[key_5h]` / `[key_24h]` / `[key_total]` / `[platform_*]` |
 | 502/503 | 上游或Worker暂不可用 | 延迟重试并保留业务单号 |
 | 504 | 超时 | 查询任务状态，不要立即重复提交 |
 
@@ -1576,14 +1703,14 @@ done
 4. JSON 中字段名被转义成 `voice\_profile\_id`。
 5. 用 `curl` 访问同步音频接口却没有 `--output`，导致二进制内容打印到终端。
 
-## 13. 在线资源
+## 14. 在线资源
 
 - 本文档：`https://aicentre2.sligenai.cn:8443/api-docs.md`
 - Swagger：`https://aicentre2.sligenai.cn:8443/docs`
 - OpenAPI JSON：`https://aicentre2.sligenai.cn:8443/openapi.json`
 - 管理后台中文说明：`https://aicentre2.sligenai.cn:8443/admin/external-api.html`
 
-## 14. 安全说明
+## 15. 安全说明
 
 - API Key 泄露后应立即停用并重新签发。
 - 不要在工单、群聊或公开文档中粘贴完整 API Key 和 OSS 签名 URL。
