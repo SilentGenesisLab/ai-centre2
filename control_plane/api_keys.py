@@ -613,7 +613,10 @@ class ApiKeyStore:
             total_amount, count = db.execute(
                 f"SELECT COALESCE(SUM(c.amount_micro),0), COUNT(*) {base}", params
             ).fetchone()
-            by_model = self._group(db, base, params, "COALESCE(c.model,'(未知)')", "model")
+            # 有些服务没有「型号」这个概念（超分、切分、去水印……），model 存的是空串。
+            # 那种行按服务名归类，比在用量页上堆一排「(未知)」有用。
+            by_model = self._group(db, base, params,
+                                   "COALESCE(NULLIF(c.model,''), c.service)", "model")
             by_channel = self._group(db, base, params, "COALESCE(c.channel,'(未指定)')", "channel")
             by_service = self._group(db, base, params, "c.service", "service")
             # 删掉的 Key 留下的是历史账，不能混进「服务令牌」（那是内部调用，key_id 为 NULL）。
@@ -676,7 +679,7 @@ class ApiKeyStore:
                 params,
             ).fetchone()
             rows = db.execute(
-                f"""SELECT c.service service, COALESCE(c.model,'(未知)') model,
+                f"""SELECT c.service service, COALESCE(NULLIF(c.model,''), c.service) model,
                            COALESCE(SUM(c.amount_micro),0) amount_micro, COUNT(*) count
                     FROM usage_charges c {where}
                     GROUP BY c.service, c.model ORDER BY amount_micro DESC, count DESC""",

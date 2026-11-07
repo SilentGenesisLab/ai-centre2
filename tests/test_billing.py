@@ -222,6 +222,18 @@ def test_usage_reports_credits_and_calls_per_model(store, monkeypatch) -> None:
     assert body["windows"]["total"]["amount_micro"] == 9_170_970
 
 
+def test_usage_labels_model_less_services_by_service_name(store, monkeypatch) -> None:
+    """超分/切分这类没有型号的服务，用量页按服务名归类，不要出现「(未知)」。"""
+    created = store.create("视频", None, None)
+    store.hold(created["id"], "req-up", "upscale", "", "local",
+               Quote(unit="call", quantity=1, amount_micro=500_000, source="estimated"))
+    store.settle("req-up", "succeeded")
+
+    client = _client(store, monkeypatch)
+    rows = client.get("/v1/usage", params={"window": "total"}).json()["by_model"]
+    assert [(row["service"], row["model"]) for row in rows] == [("upscale", "upscale")]
+
+
 def test_usage_is_scoped_to_the_calling_key(store, monkeypatch) -> None:
     first = store.create("甲", None, None)
     second = store.create("乙", None, None)
