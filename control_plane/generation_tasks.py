@@ -62,6 +62,7 @@ OSS_PERSISTED_MODELS = {
     "midjourney-video", "omnihuman-1.5",
     # 图片
     "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
+    "gpt-image-2.6-sunburst", "gpt-image-2.6-flare",
     "gpt-image-2-4k-upscale",
     "nano-banana-2", "nanobanana-2.1", "midjourney", "moss-image",
 }
@@ -209,7 +210,7 @@ def _payload(
     if binding["adapter"]=="grsai":
         model=binding["upstream_model"]
         aspect=request["aspect_ratio"]
-        if model in {"gpt-image-2.5-sunburst","gpt-image-2.5-flare"}:
+        if model in {"gpt-image-2.5-sunburst","gpt-image-2.5-flare","gpt-image-2.6-sunburst","gpt-image-2.6-flare"}:
             aspect=PIXEL_ASPECTS[request.get("image_size","1K")][aspect]
         payload={"model":model,"prompt":request["prompt"],"aspectRatio":aspect,"urls":request.get("reference_image_urls",[]),"shutProgress":True}
         if binding["upstream_model"]=="nano-banana-2": payload["imageSize"]=request.get("image_size","1K")

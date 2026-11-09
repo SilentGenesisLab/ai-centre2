@@ -79,7 +79,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(channels["ark"]["auth_type"],"bearer")
         self.assertEqual(channels["ark"]["base_url"],"https://ark.cn-beijing.volces.com/api/v3")
         self.assertEqual({x["code"] for x in self.store.models()},{"minimax-h3","minimax-h3-rh-enhanced","seedance-2.0","seedance-2.5",# libtv 的 35 个视频型号（2026-11-06 从上游 /video/models 抄回来）
-"seedance-2.0-fast","seedance-2.0-mini","seedance-1.5-pro","seedance-1.0-pro","seedance-1.0-lite","kling-4.0","kling-4.0-flash","kling-3.0-turbo","kling-o3","kling-3.0","kling-o1","kling-2.6","kling-2.5","kling-2.1","kling-3.0-motion-control","minimax-h3-max","minimax-h3-libtv","minimax-h3-hs","hailuo-2.3","hailuo-2.3-fast","hailuo-o2","wan-2.7","wan-2.6","wan-2.5","wan-2.2","vidu-q3-pro","vidu-q2-pro","vidu-q2","vidu-q2-turbo","happy-horse-1.1","happy-horse-1.0","pixverse-5.5","pixverse-5","midjourney-video","omnihuman-1.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","gpt-image-2-4k-upscale","nano-banana-2","nanobanana-2.1","midjourney","moss-image","deepseek-v4-flash","qwen3.5-omni-plus","qwen3.8-omni-flash","suno-v6","suno-sound","jev","free"})
+"seedance-2.0-fast","seedance-2.0-mini","seedance-1.5-pro","seedance-1.0-pro","seedance-1.0-lite","kling-4.0","kling-4.0-flash","kling-3.0-turbo","kling-o3","kling-3.0","kling-o1","kling-2.6","kling-2.5","kling-2.1","kling-3.0-motion-control","minimax-h3-max","minimax-h3-libtv","minimax-h3-hs","hailuo-2.3","hailuo-2.3-fast","hailuo-o2","wan-2.7","wan-2.6","wan-2.5","wan-2.2","vidu-q3-pro","vidu-q2-pro","vidu-q2","vidu-q2-turbo","happy-horse-1.1","happy-horse-1.0","pixverse-5.5","pixverse-5","midjourney-video","omnihuman-1.5","gpt-image-2","gpt-image-2.5","gpt-image-2.5-sunburst","gpt-image-2.5-flare","gpt-image-2.6-sunburst","gpt-image-2.6-flare","gpt-image-2-4k-upscale","nano-banana-2","nanobanana-2.1","midjourney","moss-image","deepseek-v4-flash","qwen3.5-omni-plus","qwen3.8-omni-flash","suno-v6","suno-sound","jev","free"})
         self.assertFalse(channels["grsai"]["enabled"])
         updated=self.store.save_channel({"credential":"private-value","base_url":"https://example.com"},channels["jmapi"]["id"])
         self.assertEqual(updated["credential_tail"],"alue"); self.assertNotIn("credential",updated)
@@ -486,7 +486,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(_payload(binding,request)["imageSize"],"1K")
     def test_gpt_image_variants_use_pixel_dimensions(self):
         request={"prompt":"test","aspect_ratio":"16:9","image_size":"1K","reference_image_urls":[]}
-        for model in ("gpt-image-2.5-sunburst","gpt-image-2.5-flare"):
+        for model in ("gpt-image-2.5-sunburst","gpt-image-2.5-flare","gpt-image-2.6-sunburst","gpt-image-2.6-flare"):
             self.assertEqual(_payload(self.store.binding(model,"grsai"),request)["aspectRatio"],"1344x768")
 
 
@@ -500,7 +500,7 @@ class TeamORouterTests(unittest.TestCase):
     def setUp(self): self.store=CapabilityStore(Path(tempfile.mkdtemp())/"cap.db","unit-secret")
 
     def test_image_bindings_are_synchronous_and_ranked_after_grsai(self):
-        for model in ("gpt-image-2","gpt-image-2.5-sunburst","gpt-image-2.5-flare"):
+        for model in ("gpt-image-2","gpt-image-2.5-sunburst","gpt-image-2.5-flare","gpt-image-2.6-sunburst","gpt-image-2.6-flare"):
             binding=self.store.binding(model,"teamorouter")
             self.assertEqual(binding["submit_path"],"/v1/images/generations")
             self.assertEqual(binding["upstream_model"],model)

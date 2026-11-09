@@ -107,6 +107,10 @@ _RATE_SEED_YUAN: list[tuple[str, str, str, str, str, str]] = [
     ("image_generation", "nano-banana-2", "*", "image", "0.35", "estimated"),
     ("image_generation", "nanobanana-2.1", "*", "image", "0.35", "estimated"),
     ("image_generation", "gpt-image-2", "*", "image", "0.30", "estimated"),
+    # 2.6 两档是**按次**计价（上游价目表：sunburst ¥0.12/次 = 2,400 积分、flare ¥0.10/次
+    # = 2,000 积分，失败与违规都返还），与分辨率无关，所以只给一行 `*` 变体。
+    ("image_generation", "gpt-image-2.6-sunburst", "*", "image", "0.12", "estimated"),
+    ("image_generation", "gpt-image-2.6-flare", "*", "image", "0.10", "estimated"),
     ("image_generation", "gpt-image-2-4k-upscale", "*", "image", "1.50", "estimated"),
     ("image_generation", "moss-image", "*", "image", "0", "free"),
     ("image_generation", "*", "*", "image", "0.35", "estimated"),

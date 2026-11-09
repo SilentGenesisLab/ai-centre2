@@ -429,7 +429,7 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`gpt-image-2-4k-upscale`、`nano-banana-2`、`nanobanana-2.1`、`midjourney`、`moss-image` | `gpt-image-2` |
+| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`gpt-image-2.6-sunburst`、`gpt-image-2.6-flare`、`gpt-image-2-4k-upscale`、`nano-banana-2`、`nanobanana-2.1`、`midjourney`、`moss-image` | `gpt-image-2` |
 | `channel` | 否 | `grsai`、`teamorouter`、`teamorouter-ads`、`wuyinkeji`、`huanwangai`、`moss-local`、`auto` | `grsai` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
@@ -469,13 +469,15 @@ curl -sS -X POST \
 
 ### 4.3 TeamORouter 渠道
 
-`channel` 传 `teamorouter` 走第三方 TeamORouter 的生图接口，目前接了三个型号：
+`channel` 传 `teamorouter` 走第三方 TeamORouter 的生图接口，目前接了五个型号：
 
 | `model` | 上游型号 | 参考图 | 说明 |
 |---|---|---|---|
 | `gpt-image-2` | `gpt-image-2` | 不支持 | |
 | `gpt-image-2.5-sunburst` | `gpt-image-2.5-sunburst` | 不支持 | 与 `grsai` 的同名型号是不同上游，出图风格不同 |
 | `gpt-image-2.5-flare` | `gpt-image-2.5-flare` | 不支持 | 同上 |
+| `gpt-image-2.6-sunburst` | `gpt-image-2.6-sunburst` | 不支持 | 2.6 档，上游按次计价 ¥0.12/张 |
+| `gpt-image-2.6-flare` | `gpt-image-2.6-flare` | 不支持 | 2.6 档，上游按次计价 ¥0.10/张 |
 
 `channel` 传 `teamorouter-ads` 是 TeamORouter 上的**另一个账户**（独立余额），目前一个型号：
 

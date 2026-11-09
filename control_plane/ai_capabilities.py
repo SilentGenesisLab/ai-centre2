@@ -314,6 +314,11 @@ class CapabilityStore:
             ("gpt-image-2.5", "GPT Image 2.5", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-flare", "GPT Image 2.5 Flare", "image_generation", ["text","image"], "image"),
+            # 2.6 两档：上游按次计价（sunburst ¥0.12/次、flare ¥0.10/次，失败与违规都返还）。
+            # 契约与 2.5 的两个变体一致 —— 1K/2K/4K 三档、low/medium/high 三档质量，
+            # 所以走同一套 pixel-dimension 映射，不加新分支。
+            ("gpt-image-2.6-sunburst", "GPT Image 2.6 Sunburst", "image_generation", ["text","image"], "image"),
+            ("gpt-image-2.6-flare", "GPT Image 2.6 Flare", "image_generation", ["text","image"], "image"),
             # 4K 档：**严格照请求尺寸出图**（2026-11-03 横评 21/21 与请求逐像素一致，
             # 同批的 grsai 与 nano-banana-2.1 都会擅自改尺寸/宽高比）。声明 image ——
             # 它的垫图走 /v1/images/edits，实测能把参考图里的设备造型锁住。
@@ -406,6 +411,8 @@ class CapabilityStore:
           ("gpt-image-2.5","grsai","gpt-image-2.5","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-flare","grsai","gpt-image-2.5-flare","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
+          ("gpt-image-2.6-sunburst","grsai","gpt-image-2.6-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
+          ("gpt-image-2.6-flare","grsai","gpt-image-2.6-flare","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("nano-banana-2","grsai","nano-banana-2","/v1/draw/nano-banana","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           # 速创的查询是 GET + `?id=`，所以 task_id 直接拼进 query_path（中台按
           # `.replace("{task_id}",tid)` 处理），走通用 GET 分支，不需要在轮询里加分支。
@@ -448,6 +455,11 @@ class CapabilityStore:
           ("gpt-image-2","teamorouter","gpt-image-2","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
           ("gpt-image-2.5-sunburst","teamorouter","gpt-image-2.5-sunburst","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
           ("gpt-image-2.5-flare","teamorouter","gpt-image-2.5-flare","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
+          # 2.6 的两个变体在 TeamORouter 上同名存在（2026-11-09 用 /v1/models 实测：
+          # 返回 gpt-image-2.6-sunburst / gpt-image-2.6-flare，另有 -4k-upscale 变体）。
+          # 同样只有文本入口，`images:0` 与上面 2.5 两条一致。
+          ("gpt-image-2.6-sunburst","teamorouter","gpt-image-2.6-sunburst","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
+          ("gpt-image-2.6-flare","teamorouter","gpt-image-2.6-flare","/v1/images/generations","",{"images":0,"videos":0,"audios":0},1,70),
           # gpt-image-2.5 的兜底：grsai 余额打光时自动落到这里（priority 70 > grsai 的 40）。
           # 上游没有纯 gpt-image-2.5 这个型号，只有 -sunburst / -flare 两个变体，
           # 这里选 sunburst（甲方示例用的就是它）。画风与 grsai 的 2.5 不完全一致。
