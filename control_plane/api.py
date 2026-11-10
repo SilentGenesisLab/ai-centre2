@@ -3321,12 +3321,28 @@ async def _segmented_pcm_source(
 @app.post(
     "/v2/tts/speech/stream",
     tags=["语音合成"],
-    summary="实时流式 VoxCPM2 语音合成",
+    summary="实时流式语音合成（仅 VoxCPM2）",
     dependencies=[Depends(require_service_token), Depends(billable("tts"))],
 )
 async def synthesize_v2_stream(request: TTSPublicSpeechRequest) -> StreamingResponse:
     if request.quality_mode == TTSQualityMode.STRICT:
         raise HTTPException(status_code=422, detail="strict quality mode is not available for streaming")
+    # 这条链路走的是 VoxCPM2 的 PCM 分段，别的 provider 在这里只会静默出成
+    # VoxCPM2 的声音——宁可报错，也不要让人以为听到了 ElevenLabs。
+    if request.provider not in (TTSProviderName.AUTO, TTSProviderName.VOXCPM2):
+        raise HTTPException(
+            status_code=422,
+            detail=f"streaming only supports voxcpm2, not {request.provider.value}; use /v2/tts/speech",
+        )
+    try:
+        profile = get_tts_service().registry.get(request.voice_profile_id)
+    except VoiceProfileNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"voice profile {request.voice_profile_id} not found") from exc
+    if TTSProviderName.VOXCPM2.value not in profile.bindings:
+        raise HTTPException(
+            status_code=422,
+            detail=f"voice profile {request.voice_profile_id} has no voxcpm2 binding; use /v2/tts/speech",
+        )
     settings = get_settings()
     directory = settings.tts_reference_dir / f"stream-{uuid4().hex}"
     directory.mkdir(parents=True, exist_ok=False)

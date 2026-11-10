@@ -55,11 +55,44 @@ async def _payload(request: Request) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _tts_model(data: dict[str, Any]) -> str:
+    """TTS 的请求体里没有 model，型号是「provider + 声音档案」共同决定的。
+
+    不在这里定下来，估价就只能落服务级通配价：本地 GPU 上免费跑的 voxcpm2
+    会被按 MiniMax 的价扣，ElevenLabs 则会被少算一个数量级；异步任务更惨，
+    响应头里没有 provider 可补，账上 model 一直是 NULL。
+    """
+    provider = str(data.get("provider") or "auto").lower()
+    if provider != "auto":
+        return provider
+    if data.get("reference_audio_url"):
+        return "voxcpm2"  # 克隆请求在 _candidate_names 里被钉死到 voxcpm2
+    try:
+        from .tts.runtime import get_tts_service
+
+        service = get_tts_service()
+        profile = service.registry.get(str(data.get("voice_profile_id") or "default"))
+        order = [item.value for item in profile.fallback_order] or [
+            item.strip()
+            for item in service.settings.tts_auto_provider_order.split(",")
+            if item.strip()
+        ]
+        for name in order:
+            candidate = service.providers.get(name)
+            if candidate is not None and candidate.enabled and name in profile.bindings:
+                return name
+    except Exception:
+        pass
+    return ""
+
+
 async def _hold(service: str, request: Request, model_hint: str | None) -> tuple[ApiKeyStore, BillingContext]:
     store = _store()
     data = await _payload(request)
     rates = await asyncio.to_thread(store.rates_for_billing)
     model = model_hint or str(data.get("model") or "")
+    if service == "tts" and not model:
+        model = _tts_model(data)
     quote = estimate_request(rates, service, data, model)
     request_id = uuid4().hex
     key_id = current_api_key_id.get()

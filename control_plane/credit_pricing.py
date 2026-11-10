@@ -118,6 +118,9 @@ _RATE_SEED_YUAN: list[tuple[str, str, str, str, str, str]] = [
     ("text_generation", "*", "*", "call", "0.02", "estimated"),
     ("decision_generation", "*", "*", "call", "0.02", "estimated"),
     ("tts", "voxcpm2*", "*", "1000_chars", "0", "free"),
+    # Creator 档 ¥22 / 10 万 credit，1 credit ≈ 1 字符 → ¥0.22 / 1000 字符，
+    # 按 7.1 汇率折人民币。比服务级通配价贵 15 倍多，必须单独成行。
+    ("tts", "elevenlabs", "*", "1000_chars", "1.56", "estimated"),
     ("tts", "*", "*", "1000_chars", "0.10", "estimated"),
     ("asr", "*", "*", "call", "0.02", "estimated"),
     ("ocr", "*", "*", "image", "0.01", "estimated"),
