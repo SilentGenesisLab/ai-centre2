@@ -317,6 +317,10 @@ class CapabilityStore:
             # 2.6 两档：上游按次计价（sunburst ¥0.12/次、flare ¥0.10/次，失败与违规都返还）。
             # 契约与 2.5 的两个变体一致 —— 1K/2K/4K 三档、low/medium/high 三档质量，
             # 所以走同一套 pixel-dimension 映射，不加新分支。
+            # 不带后缀的 gpt-image-2.6 走**另一条契约**：aspectRatio 收裸比例（"1:1"/"16:9"），
+            # 不认 "1024x1024" 那种像素串 —— 与不带后缀的 2.5 同一条分支，别加进
+            # PIXEL_ASPECTS 那个集合（2026-11-14 实测该写法提交即出图）。
+            ("gpt-image-2.6", "GPT Image 2.6", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.6-sunburst", "GPT Image 2.6 Sunburst", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.6-flare", "GPT Image 2.6 Flare", "image_generation", ["text","image"], "image"),
             # 4K 档：**严格照请求尺寸出图**（2026-11-03 横评 21/21 与请求逐像素一致，
@@ -411,6 +415,7 @@ class CapabilityStore:
           ("gpt-image-2.5","grsai","gpt-image-2.5","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-flare","grsai","gpt-image-2.5-flare","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
+          ("gpt-image-2.6","grsai","gpt-image-2.6","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.6-sunburst","grsai","gpt-image-2.6-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.6-flare","grsai","gpt-image-2.6-flare","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("nano-banana-2","grsai","nano-banana-2","/v1/draw/nano-banana","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),

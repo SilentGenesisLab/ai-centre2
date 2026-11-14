@@ -60,6 +60,10 @@ def to_yuan(amount_micro: int | None) -> float | None:
 # (service, model, variant, unit, 积分/单位 或 None=直接用微元, source)
 _RATE_SEED_CREDITS: list[tuple[str, str, str, str, Decimal | None, str]] = [
     ("video_generation", "seedance-2.5", "*", "second", Decimal(110), "measured"),
+    # Seedance 2.5 Flash（2026-11-12 上线）：上游 tool_spec 里没有单价，实测来自流水
+    # transAmount —— 4s 480p 扣 52、4s 720p 扣 112，即 13 / 28 积分每秒。不吃 1080p。
+    # `*` 取 720p 那一档（也是上游默认分辨率），480p 由下面的专门行命中。
+    ("video_generation", "seedance-2.5-flash", "*", "second", Decimal(28), "measured"),
     ("video_generation", "seedance-2.0", "*", "second", Decimal(49), "measured"),
     ("video_generation", "seedance-2.0-fast", "*", "second", Decimal(22), "measured"),
     ("video_generation", "seedance-2.0-mini", "*", "second", Decimal(32), "measured"),
@@ -81,6 +85,9 @@ _RESOLUTION_TIERS: list[tuple[str, Decimal, Decimal]] = [
     ("seedance-2.0-fast", Decimal(22), Decimal(44)),
     ("seedance-2.0-mini", Decimal(32), Decimal(64)),
     ("minimax-h3-rh-enhanced", Decimal(14), Decimal(28)),
+    # Wan 3.0（2026-11-14 接入，实测 5 秒 t2v 的上游 transAmount）：
+    # 720P 扣 40、1080P 扣 80 → 8 / 16 积分每秒。两档都实测过。
+    ("wan-3.0", Decimal(8), Decimal(16)),
 ]
 
 # 没有实测积分、直接按元估的（(service, model, variant, unit, 元/单位, source)）
@@ -96,6 +103,10 @@ _RATE_SEED_YUAN: list[tuple[str, str, str, str, str, str]] = [
     ("video_generation", "kling-4.0-flash", "*", "second", "0.23", "estimated"),
     ("video_generation", "hailuo-*", "*", "second", "0.23", "estimated"),
     ("video_generation", "wan-*", "*", "second", "0.23", "estimated"),
+    # Wan 3.0 没测到的两档：480P 按 720P 的一半估；`2k` 上游按最近高度
+    # 映射到 1080P（lib/models.js::coerceResolution），照 1080P 记。
+    ("video_generation", "wan-3.0", "480p", "second", "0.064516", "estimated"),
+    ("video_generation", "wan-3.0", "2k", "second", "0.258065", "measured"),
     ("video_generation", "vidu-*", "*", "second", "0.23", "estimated"),
     ("video_generation", "pixverse-*", "*", "second", "0.23", "estimated"),
     ("video_generation", "omnihuman-*", "*", "second", "0.23", "estimated"),
@@ -111,6 +122,9 @@ _RATE_SEED_YUAN: list[tuple[str, str, str, str, str, str]] = [
     # = 2,000 积分，失败与违规都返还），与分辨率无关，所以只给一行 `*` 变体。
     ("image_generation", "gpt-image-2.6-sunburst", "*", "image", "0.12", "estimated"),
     ("image_generation", "gpt-image-2.6-flare", "*", "image", "0.10", "estimated"),
+    # gpt-image-2.6 不带后缀：grsai 的余额/价目接口 14 个路径全 404，拿不到上游价，
+    # 只能按同族基础档（gpt-image-2.5 = ¥0.30/张）估。按次计价，与分辨率无关。
+    ("image_generation", "gpt-image-2.6", "*", "image", "0.30", "estimated"),
     ("image_generation", "gpt-image-2-4k-upscale", "*", "image", "1.50", "estimated"),
     ("image_generation", "moss-image", "*", "image", "0", "free"),
     ("image_generation", "*", "*", "image", "0.35", "estimated"),
@@ -143,6 +157,8 @@ def seed_rates() -> list[tuple[str, str, str, str, int, str]]:
     for model, p720, p1080 in _RESOLUTION_TIERS:
         rows.append(("video_generation", model, "720p", "second", credits_to_micro(p720), "measured"))
         rows.append(("video_generation", model, "1080p", "second", credits_to_micro(p1080), "estimated"))
+    # 2.5 Flash 只有 480p/720p 两档，720p 已在上面 `*` 行里，480p 单独一条。
+    rows.append(("video_generation", "seedance-2.5-flash", "480p", "second", credits_to_micro(Decimal(13)), "measured"))
     for service, model, variant, unit, yuan, source in _RATE_SEED_YUAN:
         rows.append((service, model, variant, unit, int(Decimal(yuan) * MICRO), source))
     return rows

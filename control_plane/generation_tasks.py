@@ -48,6 +48,7 @@ OSS_PERSISTED_MODELS = {
     # libtv 走同一套收结果路径（下载 → 打 AI 标识 → 传内核），所以这些型号也必须在这里，
     # 否则「功能都在、就是没标识」。清单与 ai_capabilities.libtv_video_catalog 一一对应。
     "seedance-2.0-fast", "seedance-2.0-mini", "seedance-1.5-pro",
+    "seedance-2.5-flash",
     "seedance-1.0-pro", "seedance-1.0-lite",
     # `free` 畅用池伪型号：结果同样是 libtv-api 给的临时链接，不转存就没有 AI 标识。
     "free",
@@ -55,14 +56,14 @@ OSS_PERSISTED_MODELS = {
     "kling-2.1", "kling-3.0-motion-control", "kling-4.0", "kling-4.0-flash",
     "minimax-h3-max", "minimax-h3-libtv", "minimax-h3-hs",
     "hailuo-2.3", "hailuo-2.3-fast", "hailuo-o2",
-    "wan-2.7", "wan-2.6", "wan-2.5", "wan-2.2",
+    "wan-2.7", "wan-2.6", "wan-2.5", "wan-2.2", "wan-3.0",
     "vidu-q3-pro", "vidu-q2-pro", "vidu-q2", "vidu-q2-turbo",
     "happy-horse-1.1", "happy-horse-1.0",
     "pixverse-5.5", "pixverse-5",
     "midjourney-video", "omnihuman-1.5",
     # 图片
     "gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
-    "gpt-image-2.6-sunburst", "gpt-image-2.6-flare",
+    "gpt-image-2.6", "gpt-image-2.6-sunburst", "gpt-image-2.6-flare",
     "gpt-image-2-4k-upscale",
     "nano-banana-2", "nanobanana-2.1", "midjourney", "moss-image",
 }
