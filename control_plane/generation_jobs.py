@@ -3,7 +3,7 @@ from contextvars import ContextVar
 from typing import Any
 from uuid import uuid4
 from celery.result import AsyncResult
-from .api_keys import ApiKeyStore
+from .api_keys import ApiKeyStore, ConcurrencyLimitExceeded
 from .config import Settings
 from .credit_pricing import estimate_request
 
@@ -63,6 +63,17 @@ class GenerationJobClient:
         if dedupe_key:
             existing=self.store.job_by_idempotency(key_id,dedupe_key)
             if existing: return str(existing["id"]),True
+        # 按 Key 的在途上限：幂等命中可以先返回，新作业不行。拦在这里而不是 worker 里，
+        # 是因为排队中的作业还没占上游槽位——只拦新提交的，才能真的「不把池子占完」。
+        limit=keys.concurrency_limit(key_id)
+        if limit is not None:
+            inflight=self.store.inflight_job_count(key_id)
+            if inflight>=limit:
+                raise ConcurrencyLimitExceeded(
+                    f"api key has {inflight} job(s) in flight (queued/running), limit is {limit}; "
+                    "wait for some to finish or raise max_concurrent_jobs",
+                    reason="key_concurrency",
+                )
         # 先预占额度再建作业：超限时一行都不该留下，调用方拿到的是 429 不是半截作业。
         request_id=uuid4().hex
         held=keys.hold(key_id,request_id,service_name,model or None,channel,

@@ -59,6 +59,44 @@ type HealthNotificationConfig = {
   last_delivery_status?: string | null;
 };
 
+type LlmProbeItem = {
+  model: string;
+  status: string;
+  consecutive_failures: number;
+  last_checked_at?: string | null;
+  next_check_at?: string | null;
+  last_latency_ms?: number | null;
+  last_status_code?: number | null;
+  last_error?: string | null;
+  last_success_at?: string | null;
+  last_failure_at?: string | null;
+  availability?: number | null;
+  p50_ms?: number | null;
+  p95_ms?: number | null;
+  sample_count: number;
+  history: Array<{ at: string; ok: boolean }>;
+};
+
+type LlmProbeStatus = {
+  enabled: boolean;
+  base_url: string;
+  models: string[];
+  webhook_configured: boolean;
+  webhook_host?: string | null;
+  interval_seconds: number;
+  retry_seconds: number;
+  failure_threshold: number;
+  items: LlmProbeItem[];
+  incidents: Array<Record<string, unknown>>;
+  last_delivery?: {
+    created_at?: string;
+    success?: number;
+    kind?: string;
+    error?: string | null;
+  };
+  generated_at: string;
+};
+
 type LipSyncJob = {
   job_id: string;
   state: string;
@@ -505,11 +543,25 @@ type ManagedApiKey = {
   limits_yuan: Record<BillingWindow, number | null>;
   spent: Record<BillingWindow, number>;
   spent_yuan: Record<BillingWindow, number>;
+  allowed_models?: string[];
+  blocked_models?: string[];
+  max_concurrent_jobs?: number | null;
   expires_at: string | null;
   enabled: boolean;
   created_at: string;
   last_used_at: string | null;
   api_key?: string;
+};
+
+type InflightJob = {
+  id: string;
+  api_key_id: string | null;
+  status: string;
+  stage: string;
+  requested_channel: string;
+  model: string;
+  created_at: string;
+  updated_at: string;
 };
 
 const BUSINESS_SECTIONS: Partial<Record<SectionId, string>> = {
@@ -605,10 +657,16 @@ function StatusBadge({ status }: { status: string }) {
     "completed",
     "succeeded",
     "enabled",
+    "operational",
   ].includes(normalized);
-  const bad = ["failed", "error", "degraded", "inactive", "disabled"].includes(
-    normalized,
-  );
+  const bad = [
+    "failed",
+    "error",
+    "degraded",
+    "inactive",
+    "disabled",
+    "major_outage",
+  ].includes(normalized);
   return (
     <span
       className={classNames("status-badge", good && "is-good", bad && "is-bad")}
@@ -3415,6 +3473,107 @@ function limitFields(data: FormData) {
     limit_24h: amount("limit_24h"),
     limit_total: amount("limit_total"),
   };
+}
+
+// 模型白/黑名单从隐藏字段带回：空数组 = 这一档不限制。
+function modelFields(data: FormData) {  const read = (name: string) => {
+    try {
+      const value: unknown = JSON.parse(String(data.get(name) ?? "[]"));
+      return Array.isArray(value) ? value.map(String) : [];
+    } catch {
+      return [];
+    }
+  };
+  return { allowed_models: read("allowed_models"), blocked_models: read("blocked_models") };
+}
+
+// 在途作业上限：留空 = 不限（发 null）。
+function concurrencyFields(data: FormData) {
+  const raw = String(data.get("max_concurrent_jobs") ?? "").trim();
+  return { max_concurrent_jobs: raw === "" ? null : Number(raw) };
+}
+
+function ModelScopeField({
+  name,
+  label,
+  initial,
+  options,
+  hint,
+  placeholder,
+}: {
+  name: string;
+  label: string;
+  initial: string[];
+  options: string[];
+  hint: string;
+  placeholder: string;
+}) {
+  const [values, setValues] = useState<string[]>(initial);
+  const [draft, setDraft] = useState("");
+  const add = (raw: string) => {
+    const next = raw
+      .split(/[\s,，;；]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (next.length === 0) return;
+    setValues((current) => Array.from(new Set([...current, ...next])));
+    setDraft("");
+  };
+  const available = options.filter((option) => !values.includes(option));
+  return (
+    <label>
+      {label}
+      <input type="hidden" name={name} value={JSON.stringify(values)} />
+      <div className="model-scope">
+        {values.length === 0 ? (
+          <small>{hint}</small>
+        ) : (
+          values.map((value) => (
+            <span className="model-scope-item" key={value}>
+              <span className="mono">{value}</span>
+              <button
+                type="button"
+                aria-label={`移除 ${value}`}
+                onClick={() =>
+                  setValues((current) => current.filter((item) => item !== value))
+                }
+              >
+                ×
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+      <div className="model-scope-add">
+        <input
+          value={draft}
+          placeholder={placeholder}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              add(draft);
+            }
+          }}
+        />
+        <button type="button" onClick={() => add(draft)} disabled={!draft.trim()}>
+          添加
+        </button>
+        <Select
+          value=""
+          aria-label={`${label}：从模型列表选择`}
+          onChange={(event) => add(event.target.value)}
+        >
+          <option value="">从模型列表选择…</option>
+          {available.map((option) => (
+            <option value={option} key={option}>
+              {option}
+            </option>
+          ))}
+        </Select>
+      </div>
+    </label>
+  );
 }
 
 type PricingRate = {
@@ -7994,11 +8153,13 @@ function HealthMonitorPanel({
   const [days, setDays] = useState("30"),
     [service, setService] = useState("");
   const [items, setItems] = useState<HealthMonitorItem[]>([]);
+  const [llm, setLlm] = useState<LlmProbeStatus | null>(null);
+  const [llmBusy, setLlmBusy] = useState(false);
   const [config, setConfig] = useState<HealthNotificationConfig | null>(null);
   const [notificationEnabled, setNotificationEnabled] = useState(false);
-  const [reauthAction, setReauthAction] = useState<"save" | "test" | null>(
-    null,
-  );
+  const [reauthAction, setReauthAction] = useState<
+    "save" | "test" | "llm-test" | null
+  >(null);
   const [pendingConfig, setPendingConfig] = useState<{
     enabled: boolean;
     webhook_url: string | null;
@@ -8022,6 +8183,18 @@ function HealthMonitorPanel({
       setNotificationEnabled(cfg.enabled);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "鉴活状态加载失败");
+    }
+    try {
+      setLlm(
+        await apiRequest<LlmProbeStatus>(
+          "control",
+          `/internal/admin/llm-probe/status?days=${days}`,
+        ),
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "外部模型鉴活状态加载失败",
+      );
     }
   }, [days, setError]);
   useEffect(() => {
@@ -8057,6 +8230,14 @@ function HealthMonitorPanel({
         if (!response.ok)
           throw new Error((await response.json()).detail || "测试通知发送失败");
         showNotice("飞书测试通知已发送");
+      } else if (reauthAction === "llm-test") {
+        const response = await fetch(
+          `${BASE_PATH}/api/llm-probe/test-notification`,
+          { method: "POST" },
+        );
+        if (!response.ok)
+          throw new Error((await response.json()).detail || "测试通知发送失败");
+        showNotice("外部模型鉴活测试通知已发送");
       }
       setReauthAction(null);
       setPendingConfig(null);
@@ -8096,6 +8277,39 @@ function HealthMonitorPanel({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "鉴活执行失败");
     }
+  }
+  async function runLlmCheck(model?: string) {
+    setLlmBusy(true);
+    try {
+      const result = await apiRequest<{
+        results: Array<{
+          model: string;
+          success: boolean;
+          latency_ms: number;
+          error?: string | null;
+        }>;
+      }>("control", "/internal/admin/llm-probe/run-check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: model || null }),
+      });
+      const failed = result.results.filter((row) => !row.success);
+      showNotice(
+        failed.length
+          ? `外部模型检测完成：${failed.length} 个失败（${failed.map((row) => row.model).join("、")}）`
+          : `外部模型检测完成：${result.results.length} 个全部正常`,
+      );
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "外部模型检测失败");
+    } finally {
+      setLlmBusy(false);
+    }
+  }
+  function testLlmNotification() {
+    setPendingConfig(null);
+    setReauthError("");
+    setReauthAction("llm-test");
   }
   const shown = service ? items.filter((item) => item.id === service) : items;
   return (
@@ -8204,6 +8418,117 @@ function HealthMonitorPanel({
             </tbody>
           </table>
         </div>
+      </Panel>
+      <Panel title="外部模型接口鉴活" eyebrow="LLM ENDPOINT PROBES">
+        <div className="analytics-toolbar">
+          <span>
+            {llm
+              ? `${llm.base_url} · ${llm.items.length} 个模型 · 每 ${Math.round(llm.interval_seconds / 60)} 分钟`
+              : "加载中…"}
+          </span>
+          <span>
+            飞书：
+            {llm?.webhook_configured ? llm.webhook_host : "未配置"}
+          </span>
+          <button
+            className="secondary-button"
+            disabled={llmBusy}
+            onClick={() => void runLlmCheck()}
+          >
+            {llmBusy ? "检测中…" : "立即检测全部"}
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!llm?.webhook_configured}
+            onClick={testLlmNotification}
+          >
+            测试飞书
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table className="availability-table">
+            <thead>
+              <tr>
+                <th>模型</th>
+                <th>当前状态</th>
+                <th>耗时</th>
+                <th>下次检测</th>
+                <th>{days}天可用率</th>
+                <th>P50 / P95</th>
+                <th>历史状态</th>
+                <th>最近错误</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(llm?.items || []).map((item) => (
+                <tr key={item.model}>
+                  <td>
+                    <strong>{item.model}</strong>
+                    <small>{item.last_status_code ?? "—"}</small>
+                  </td>
+                  <td>
+                    <StatusBadge status={item.status} />
+                    <small>
+                      连续失败 {item.consecutive_failures} /{" "}
+                      {llm?.failure_threshold ?? 3}
+                    </small>
+                  </td>
+                  <td>
+                    {item.last_latency_ms == null
+                      ? "暂无数据"
+                      : `${item.last_latency_ms.toFixed(0)} ms`}
+                  </td>
+                  <td>{formatTime(item.next_check_at)}</td>
+                  <td>
+                    {item.availability == null
+                      ? "暂无数据"
+                      : `${item.availability.toFixed(2)}%`}
+                    <small>样本 {item.sample_count}</small>
+                  </td>
+                  <td>
+                    {item.p50_ms == null
+                      ? "暂无数据"
+                      : `${item.p50_ms.toFixed(0)} / ${item.p95_ms?.toFixed(0)} ms`}
+                  </td>
+                  <td>
+                    <div className="status-history">
+                      {item.history.length ? (
+                        item.history
+                          .slice(-24)
+                          .map((point, index) => (
+                            <i
+                              key={`${point.at}-${index}`}
+                              className={point.ok ? "is-up" : "is-down"}
+                            />
+                          ))
+                      ) : (
+                        <span>暂无数据</span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <small>{item.last_error || "—"}</small>
+                  </td>
+                  <td>
+                    <button
+                      disabled={llmBusy}
+                      onClick={() => void runLlmCheck(item.model)}
+                    >
+                      检测
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="empty-note">
+          每 {Math.round((llm?.interval_seconds ?? 900) / 60)} 分钟发一次
+          “hi”；失败后 {Math.round((llm?.retry_seconds ?? 60) / 60)}{" "}
+          分钟重试，连续 {llm?.failure_threshold ?? 3} 次失败告警并回到正常节奏，
+          恢复后自动发恢复通知。
+        </p>
       </Panel>
       <div className="two-column">
         <Panel title="飞书Bot" eyebrow="ENCRYPTED CONFIG">
@@ -9318,9 +9643,12 @@ function ApiKeyManagement({
 }) {
   const [items, setItems] = useState<ManagedApiKey[]>([]);
   const [createdKey, setCreatedKey] = useState("");
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<ManagedApiKey | null>(null);
   const [editBusy, setEditBusy] = useState(false);
+  const [inflight, setInflight] = useState<InflightJob[]>([]);
+  const [inflightBusy, setInflightBusy] = useState(false);
   const load = useCallback(async () => {
     try {
       setItems(
@@ -9339,6 +9667,62 @@ function ApiKeyManagement({
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+  const loadInflight = useCallback(async () => {
+    try {
+      setInflight(
+        (
+          await apiRequest<{ items: InflightJob[] }>(
+            "control",
+            "/internal/admin/generation-jobs/inflight",
+          )
+        ).items,
+      );
+    } catch {
+      setInflight([]);
+    }
+  }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadInflight(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadInflight]);
+  async function cancelInflight(keyId?: string) {
+    const scope = keyId
+      ? items.find((item) => item.id === keyId)?.name || keyId.slice(0, 8)
+      : "全部 Key";
+    if (
+      !window.confirm(
+        `停掉 ${scope} 的在途作业？排队中的立即取消，跑着的会在几秒内退出。上游那边的账号槽位要等它自己跑完才释放。`,
+      )
+    )
+      return;
+    setInflightBusy(true);
+    try {
+      const result = await apiRequest<{ cancelled: number }>(
+        "control",
+        "/internal/admin/generation-jobs/cancel-inflight",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key_id: keyId ?? null }),
+        },
+      );
+      showNotice(`已停掉 ${result.cancelled} 个在途作业`);
+      await Promise.all([load(), loadInflight()]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "停用在途作业失败");
+    } finally {
+      setInflightBusy(false);
+    }
+  }
+  useEffect(() => {
+    apiRequest<{ items: AiModel[] }>("control", "/internal/admin/ai-capabilities/models")
+      .then((result) =>
+        setModelOptions(
+          Array.from(new Set(result.items.map((model) => model.code).filter(Boolean))).sort(),
+        ),
+      )
+      .catch(() => setModelOptions([]));
+  }, []);
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -9358,6 +9742,8 @@ function ApiKeyManagement({
             name: data.get("name"),
             quota: quota ? Number(quota) : null,
             ...limitFields(data),
+            ...modelFields(data),
+            ...concurrencyFields(data),
             expires_at: expires ? new Date(expires).toISOString() : null,
           }),
         },
@@ -9399,6 +9785,8 @@ function ApiKeyManagement({
           name: String(data.get("name") || "").trim(),
           quota: quota ? Number(quota) : null,
           ...limitFields(data),
+          ...modelFields(data),
+          ...concurrencyFields(data),
           expires_at: expires ? new Date(expires).toISOString() : null,
         }),
       });
@@ -9503,6 +9891,42 @@ function ApiKeyManagement({
               </label>
             </div>
             <small>按预估金额在提交前预占，失败或取消会退回。</small>
+            <label>
+              在途作业上限
+              <input
+                name="max_concurrent_jobs"
+                type="number"
+                min="1"
+                max="1000"
+                step="1"
+                defaultValue={8}
+                placeholder="留空表示不限"
+              />
+              <small>
+                同时排队 + 跑着的作业数上限，默认 8。防止一把 Key 把上游账号池占满。
+              </small>
+            </label>
+            <div className="field-row">
+              <ModelScopeField
+                name="blocked_models"
+                label="不可用模型"
+                initial={[]}
+                options={modelOptions}
+                hint="留空 = 都可以（不屏蔽任何模型）"
+                placeholder="型号或通配，如 gpt-image-*"
+              />
+              <ModelScopeField
+                name="allowed_models"
+                label="可用模型"
+                initial={[]}
+                options={modelOptions}
+                hint="留空 = 全部可用"
+                placeholder="型号或通配，如 seedance-*"
+              />
+            </div>
+            <small>
+              两档共同约束：不可用优先；可用模型留空表示全部可用，填了则只放行命中的那些（支持 * 通配）。
+            </small>
             <button className="primary-button" disabled={busy}>
               {busy ? "创建中…" : "创建 API Key"}
             </button>
@@ -9533,6 +9957,71 @@ function ApiKeyManagement({
           )}
         </Panel>
       </div>
+      <Panel title={`在途作业${inflight.length ? `（${inflight.length}）` : ""}`} eyebrow="QUEUE">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>在途</th>
+                <th>状态</th>
+                <th>模型</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inflight.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="empty-cell">
+                    没有排队或运行中的作业
+                  </td>
+                </tr>
+              )}
+              {Array.from(new Set(inflight.map((job) => job.api_key_id ?? "")))
+                .sort()
+                .map((keyId) => {
+                  const rows = inflight.filter((job) => (job.api_key_id ?? "") === keyId);
+                  const name = keyId
+                    ? items.find((item) => item.id === keyId)?.name || keyId.slice(0, 8)
+                    : "服务令牌";
+                  const statuses = Array.from(new Set(rows.map((job) => job.status))).join("/");
+                  const models = Array.from(new Set(rows.map((job) => job.model))).join(", ");
+                  return (
+                    <tr key={keyId || "service"}>
+                      <td>{name}</td>
+                      <td>{rows.length}</td>
+                      <td>{statuses}</td>
+                      <td>
+                        <small>{models}</small>
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            disabled={inflightBusy}
+                            onClick={() => void cancelInflight(keyId || undefined)}
+                          >
+                            停掉
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+            </tbody>
+          </table>
+        </div>
+        <p className="empty-note">
+          停掉只会结束我们这一侧的轮询与占用：排队中的立即取消，跑着的在几秒内退出。
+          上游（libtv）的账号槽位不受影响，得等它自己跑完或超时才释放。
+        </p>
+        <button
+          className="secondary-button"
+          disabled={inflightBusy || inflight.length === 0}
+          onClick={() => void cancelInflight()}
+        >
+          {inflightBusy ? "处理中…" : "全部停掉"}
+        </button>
+      </Panel>
       <Panel title="已创建的 API Key" eyebrow="KEYS">
         <div className="table-wrap">
           <table>
@@ -9562,6 +10051,17 @@ function ApiKeyManagement({
                   <td>
                     <strong>{item.name}</strong>
                     <small className="mono">{item.prefix}…</small>
+                    {(() => {
+                      const allowed = item.allowed_models?.length ?? 0;
+                      const blocked = item.blocked_models?.length ?? 0;
+                      if (!allowed && !blocked) return null;
+                      return (
+                        <small>
+                          {allowed ? `仅 ${allowed} 个模型可用` : "模型不限"}
+                          {blocked ? `，禁用 ${blocked} 个` : ""}
+                        </small>
+                      );
+                    })()}
                   </td>
                   <td>
                     <StatusBadge
@@ -9629,6 +10129,27 @@ function ApiKeyManagement({
             <label>24 小时限额（元）<input name="limit_24h" type="number" min="0" step="0.01" defaultValue={editing.limits_yuan?.["24h"]??""} placeholder="留空表示不限"/><small>近 24 小时已用 {billingMoney(editing.spent_yuan?.["24h"])}。</small></label>
             <label>总额度（元）<input name="limit_total" type="number" min="0" step="0.01" defaultValue={editing.limits_yuan?.["total"]??""} placeholder="留空表示不限"/><small>累计已用 {billingMoney(editing.spent_yuan?.["total"])}；失败的作业会退回。</small></label>
             <label>过期时间（可选）<input name="expires_at" type="datetime-local" defaultValue={editing.expires_at?new Date(new Date(editing.expires_at).getTime()-new Date(editing.expires_at).getTimezoneOffset()*60000).toISOString().slice(0,16):""}/><small>留空表示永不过期，只能设置未来时间。</small></label>
+            <label>在途作业上限<input name="max_concurrent_jobs" type="number" min="1" max="1000" step="1" defaultValue={editing.max_concurrent_jobs??""} placeholder="留空表示不限"/><small>同时排队 + 跑着的作业数上限；改小只影响新提交，已在途的不会被踢。</small></label>
+            <fieldset className="model-scope-group">
+              <legend>模型范围</legend>
+              <ModelScopeField
+                name="blocked_models"
+                label="不可用模型"
+                initial={editing.blocked_models ?? []}
+                options={modelOptions}
+                hint="留空 = 都可以（不屏蔽任何模型）"
+                placeholder="型号或通配，如 gpt-image-*"
+              />
+              <ModelScopeField
+                name="allowed_models"
+                label="可用模型"
+                initial={editing.allowed_models ?? []}
+                options={modelOptions}
+                hint="留空 = 全部可用"
+                placeholder="型号或通配，如 seedance-*"
+              />
+              <small>两档共同约束：不可用优先于可用；都留空即不限制模型。</small>
+            </fieldset>
             <div className="note-card"><b>安全说明</b><p>只修改名称、额度和有效期，不会更换API Key明文或前缀，调用方无需修改配置。</p></div>
           </form>
         </Modal>

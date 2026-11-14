@@ -99,6 +99,11 @@ class CapabilityStore:
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_generation_jobs_idem "
                 "ON generation_jobs(api_key_id,idempotency_key) WHERE idempotency_key IS NOT NULL"
             )
+            # 每次提交都要按 Key 数一次在途作业，没有这个索引就是全表扫。
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_generation_jobs_key_status "
+                "ON generation_jobs(api_key_id,status)"
+            )
             self._seed(db)
 
     def _seed(self, db: sqlite3.Connection) -> None:
@@ -127,6 +132,13 @@ class CapabilityStore:
             ("star-video2-mini","seedance-2.0-mini","Seedance 2.0 Mini",
              "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
              ["16:9","4:3","1:1","3:4","9:16"],["480p","720p"],(4,15,None),(9,3,3),True,None,None),
+            # 2026-11-12 上游新增。契约取自 api.liblib.tv/api/tool_spec/list（无需鉴权）：
+            # 只有 480p/720p、4~30s；mixed 上限 5视频+10图+5音频；videoEdit 只收 1 视频
+            # 且 ratio/duration 都跟随输入（config.settings 里是 ratio_auto/duration_auto）。
+            # videoExtend2video 上游也开了，但 `_libtv_mode` 从不选它，所以不声明。
+            ("star-video2.5-flash","seedance-2.5-flash","Seedance 2.5 Flash",
+             "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video|videoEdit2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p"],(4,30,None),(10,5,5),True,None,None),
             ("seedance-1.5-pro","seedance-1.5-pro","Seedance 1.5 Pro",
              "text2video|singleImage2video|frames2video|image2video|mixed2video|audio2video",
              ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(4,12,None),(30,10,10),True,None,None),
@@ -206,6 +218,14 @@ class CapabilityStore:
             ("wanxiang-plus","wan-2.2","Wan 2.2",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
+            # 2026-11-14 接入。契约取自 api.liblib.tv/api/tool_spec/list（无需鉴权，实测返回）：
+            # 480P/720P/1080P、2~30s；mixed 上限 5视频+10图+5音频（可仅音频）。上游**没有
+            # singleImage2video** —— 单张/多张参考图都走 mixed2video，`_libtv_mode` 正好优先它。
+            # videoExtend2video 上游也开了，但 `_libtv_mode` 从不选它，所以不声明（同 2.5 Flash）。
+            # `adaptive` 比例中台不收（只在上游直连时生效），这里照中台取值域列。
+            ("wanx3.0","wan-3.0","Wan 3.0",
+             "text2video|mixed2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["480p","720p","1080p"],(2,30,None),(10,5,5),True,None,None),
             ("viduq3-pro","vidu-q3-pro","Vidu Q3 Pro",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(1,16,None),(1,0,0),True,None,None),
@@ -359,7 +379,7 @@ class CapabilityStore:
         for code,name,capability_type,inputs,output in models:
             db.execute("INSERT OR IGNORE INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                        (str(uuid4()),name,code,capability_type,json.dumps(inputs),output,json.dumps(schema),1,None,stamp,stamp))
-        # libtv 的 37 个视频型号：型号行由上面的 catalog 派生，不重复抄一遍上游事实。
+        # libtv 的 39 个视频型号：型号行由上面的 catalog 派生，不重复抄一遍上游事实。
         for _key, _code, _name, _modes, _ratios, _res, _dur, _media, _sound, _dres, _dratio in libtv_video_catalog:
             _m = set(_modes.split("|"))
             _inputs = ["text"] if "text2video" in _m else []
@@ -485,7 +505,7 @@ class CapabilityStore:
         for model,channel,upstream,submit,query,caps,enabled,priority in bindings:
             db.execute("INSERT OR IGNORE INTO model_channels VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (str(uuid4()),mids[model],ids[channel],upstream,submit,query,None,json.dumps(caps),"{}",enabled,priority,stamp,stamp))
-        # libtv 的 35 条新绑定（上游 37 条减去 Seedance 2.0/2.5 那两条）。capabilities 里多出来的几个键都是上游**真的会校验**的闸门：
+        # libtv 的 37 条新绑定（上游 39 条减去 Seedance 2.0/2.5 那两条）。capabilities 里多出来的几个键都是上游**真的会校验**的闸门：
         #   modes           —— 该型号接受哪些模式；发包时按素材挑一个（_libtv_mode），
         #                      接不了的模式在本地就判掉，不白跑一趟上游。
         #   ratios / resolutions —— 上游白名单 ∩ 中台取值。中台没有 540p，Vidu/Pixverse
@@ -505,7 +525,7 @@ class CapabilityStore:
                      # 字段 —— 别的型号会直接 `校验失败: params 顶层不允许设置未知字段
                      # 「enableSound」`，节点都建不出来。目前只有 Seedance 那两个验证过，
                      # 其余型号一律发包时置 null（null 不是 undefined，上游就不会补默认值）。
-                     "sound_param": _key in {"star-video2", "star-video2.5"}}
+                     "sound_param": _key in {"star-video2", "star-video2.5", "star-video2.5-flash", "wanx3.0"}}
             if _res is not None:
                 _caps["resolutions"] = _res + (["2k"] if "1080p" in _res else [])
             if _vals is not None:
@@ -898,6 +918,35 @@ class CapabilityStore:
     def list_jobs(self,limit:int=100)->list[dict[str,Any]]:
         with self._db() as db: ids=[r[0] for r in db.execute("SELECT id FROM generation_jobs ORDER BY created_at DESC LIMIT ?",(limit,))]
         return [self.job(i) for i in ids]
+
+    INFLIGHT_STATUSES=("queued","running","cancel_requested")
+
+    def inflight_job_count(self,key_id:str|None)->int:
+        """这个 Key 还没终结的作业数（排队中 + 跑着 + 已请求取消）。
+
+        按 Key 并发上限就是拿它比：一把 Key 投几百条长视频会把上游账号池占满，
+        别人付钱也排不进去。`api_key_id` 存 NULL 的是服务令牌内部调用，按空串归一组。
+        """
+        marks=",".join("?"*len(self.INFLIGHT_STATUSES))
+        with self._db() as db:
+            row=db.execute(f"SELECT COUNT(*) FROM generation_jobs WHERE coalesce(api_key_id,'')=? AND status IN ({marks})",
+                           (key_id or "",*self.INFLIGHT_STATUSES)).fetchone()
+        return int(row[0] or 0)
+
+    def inflight_jobs(self,key_id:str|None=None,limit:int=200)->list[dict[str,Any]]:
+        """在途作业清单，给「清空队列」用：先看清楚是谁在占，再决定停哪些。"""
+        marks=",".join("?"*len(self.INFLIGHT_STATUSES))
+        clause=f"status IN ({marks})"
+        params:list[Any]=list(self.INFLIGHT_STATUSES)
+        if key_id is not None:
+            clause+=" AND coalesce(api_key_id,'')=?"
+            params.append(key_id)
+        with self._db() as db:
+            rows=db.execute(
+                "SELECT j.id,j.api_key_id,j.status,j.stage,j.requested_channel,j.created_at,j.updated_at,m.code model "
+                "FROM generation_jobs j JOIN models m ON m.id=j.model_id "
+                f"WHERE {clause} ORDER BY j.created_at LIMIT ?",(*params,limit)).fetchall()
+        return [dict(row) for row in rows]
 
     @staticmethod
     def _job_log_filters(*, capability_type:str|None=None, model:str|None=None, channel:str|None=None,

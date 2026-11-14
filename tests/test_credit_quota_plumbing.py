@@ -120,6 +120,25 @@ def test_billable_refunds_when_the_body_is_rejected(monkeypatch) -> None:
         assert store.charges()["items"][0]["state"] == "refunded"
 
 
+def test_billable_rejects_blocked_model_with_403(monkeypatch) -> None:
+    """Key 的不可用模型清单：403 而不是 429，且一行都不记账；服务令牌不受限制。"""
+    with TemporaryDirectory() as directory:
+        store = ApiKeyStore(Path(directory) / "keys.db")
+        created = store.create("语音", None, None, blocked_models=["some-cloud-tts"])
+        monkeypatch.setattr(api, "get_settings", lambda: SimpleNamespace(service_token="service-secret"))
+        monkeypatch.setattr(api, "get_api_key_store", lambda: store)
+
+        client = TestClient(_app(store))
+        body = {"text": "一" * 2000, "model": "some-cloud-tts"}
+        blocked = client.post("/bill", json=body, headers={"Authorization": f"Bearer {created['api_key']}"})
+        assert blocked.status_code == 403
+        assert "blocked" in blocked.json()["detail"]
+        assert store.charges()["total"] == 0
+
+        service = client.post("/bill", json=body, headers={"Authorization": "Bearer service-secret"})
+        assert service.status_code == 200
+
+
 def test_billable_rejects_over_limit_with_429(monkeypatch) -> None:
     with TemporaryDirectory() as directory:
         store = ApiKeyStore(Path(directory) / "keys.db")

@@ -8,6 +8,7 @@ import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -20,6 +21,8 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 WINDOWS = {"5h": timedelta(hours=5), "24h": timedelta(hours=24), "total": None}
 LIMIT_COLUMNS = {"5h": "limit_5h_micro", "24h": "limit_24h_micro", "total": "limit_total_micro"}
+# 模型白/黑名单，存 JSON 数组串；NULL 或空数组都表示「没有这一档限制」。
+MODEL_COLUMNS = ("allowed_models", "blocked_models")
 SETTING_KEYS = {
     "platform_limit_5h_micro",
     "platform_limit_24h_micro",
@@ -38,6 +41,30 @@ class CreditQuotaExceeded(Exception):
     """
 
     def __init__(self, message: str, reason: str = "limit"):
+        super().__init__(message)
+        self.reason = reason
+
+
+class ModelNotAllowed(Exception):
+    """这个 Key 的模型白/黑名单不允许这一单（与钱无关，报 403）。
+
+    `reason`：`blocked` = 命中黑名单；`not_allowed` = 不在白名单里。
+    """
+
+    def __init__(self, message: str, reason: str = "blocked"):
+        super().__init__(message)
+        self.reason = reason
+
+
+class ConcurrencyLimitExceeded(Exception):
+    """这个 Key 在途的作业已经到上限了（与钱无关，报 429——等一会儿就能再提）。
+
+    存在的理由：`max_concurrent_jobs` 是按 Key 的在途作业数（queued/running/cancel_requested），
+    不是金额额度。没有它，一把 Key 投几百条长视频就能把整个上游账号池占满，
+    别人的请求既付钱也排不进去。
+    """
+
+    def __init__(self, message: str, reason: str = "key_concurrency"):
         super().__init__(message)
         self.reason = reason
 
@@ -69,6 +96,35 @@ def _promo_items(raw: str | None) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict) and item.get("service") and item.get("model")]
+
+
+def _model_list(raw: Any) -> list[str]:
+    """白/黑名单存成 JSON 数组串（也可能已经是 list），坏数据当空。"""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return []
+    if not isinstance(raw, list):
+        return []
+    result: list[str] = []
+    for item in raw:
+        text = str(item).strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _matches(patterns: list[str], model: str) -> str | None:
+    """命中就返回命中的那条规则，没命中返回 None。支持 `*`/`?` 通配，大小写不敏感。"""
+    target = model.strip().lower()
+    for pattern in patterns:
+        try:
+            if fnmatchcase(target, pattern.lower()):
+                return pattern
+        except Exception:
+            continue
+    return None
 
 
 class ApiKeyStore:
@@ -124,6 +180,13 @@ class ApiKeyStore:
             for column in ("daily_credit_quota", *LIMIT_COLUMNS.values()):
                 if column not in columns:
                     db.execute(f"ALTER TABLE api_keys ADD COLUMN {column} INTEGER")
+            for column in MODEL_COLUMNS:
+                if column not in columns:
+                    db.execute(f"ALTER TABLE api_keys ADD COLUMN {column} TEXT")
+            # 按 Key 的在途作业数上限。DEFAULT 8 让存量 Key 一并拿到 8（用户选的默认值），
+            # 之后显式改成 NULL 就是「不限」，不会被迁移再改回去——列已存在就不再 ADD。
+            if "max_concurrent_jobs" not in columns:
+                db.execute("ALTER TABLE api_keys ADD COLUMN max_concurrent_jobs INTEGER DEFAULT 8")
             db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS usage_charges (
@@ -214,7 +277,47 @@ class ApiKeyStore:
     def _hash(value: str) -> str:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _dump_models(value: Any) -> str | None:
+        """list → JSON 串；None/空表 → NULL（两种空法都表示「没有这一档限制」）。"""
+        if value is None:
+            return None
+        items = _model_list(value)
+        return json.dumps(items, ensure_ascii=False) if items else None
+
+    @staticmethod
+    def _check_models(row: sqlite3.Row, model: str | None) -> None:
+        """白/黑名单共同约束：黑名单优先，白名单为空即全部可用。
+
+        型号缺失（有些端点把型号放在别的字段、要到运行时才定）时跳过——判不了就不拦。
+        """
+        if not model or not str(model).strip():
+            return
+        blocked = _model_list(row["blocked_models"])
+        hit = _matches(blocked, str(model))
+        if hit:
+            raise ModelNotAllowed(
+                f"model '{model}' is blocked for this api key (rule '{hit}')", reason="blocked"
+            )
+        allowed = _model_list(row["allowed_models"])
+        if allowed and not _matches(allowed, str(model)):
+            raise ModelNotAllowed(
+                f"model '{model}' is not allowed for this api key; allowed: {', '.join(allowed[:10])}"
+                + (" …" if len(allowed) > 10 else ""),
+                reason="not_allowed",
+            )
+
     # ---- 额度 ----
+
+    def concurrency_limit(self, key_id: str | None) -> int | None:
+        """这个 Key 允许的在途作业数；None = 不限（服务令牌内部调用也不限）。"""
+        if key_id is None:
+            return None
+        with self._connect() as db:
+            row = db.execute("SELECT max_concurrent_jobs FROM api_keys WHERE id=?", (key_id,)).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return int(row[0])
 
     @staticmethod
     def _sum(db: sqlite3.Connection, since: str, key_id: str | None) -> int:
@@ -253,6 +356,9 @@ class ApiKeyStore:
             "expires_at": row["expires_at"], "enabled": bool(row["enabled"]),
             "created_at": row["created_at"], "last_used_at": row["last_used_at"],
             "limits": limits,
+            "max_concurrent_jobs": row["max_concurrent_jobs"] if "max_concurrent_jobs" in row.keys() else None,
+            "allowed_models": _model_list(row["allowed_models"]),
+            "blocked_models": _model_list(row["blocked_models"]),
         }
         if db is not None:
             spent = self._spent(db, row["id"])
@@ -265,16 +371,21 @@ class ApiKeyStore:
 
     def create(self, name: str, quota: int | None, expires_at: str | None,
                limit_5h_micro: int | None = None, limit_24h_micro: int | None = None,
-               limit_total_micro: int | None = None) -> dict[str, Any]:
+               limit_total_micro: int | None = None,
+               allowed_models: list[str] | None = None, blocked_models: list[str] | None = None,
+               max_concurrent_jobs: int | None = 8) -> dict[str, Any]:
         plaintext = "aic_" + secrets.token_urlsafe(32)
         prefix = plaintext[:12]
         identifier = str(uuid4())
         with self._lock, self._connect() as db:
             db.execute(
-                """INSERT INTO api_keys(id,name,key_prefix,key_hash,quota,limit_5h_micro,limit_24h_micro,limit_total_micro,expires_at,created_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                """INSERT INTO api_keys(id,name,key_prefix,key_hash,quota,limit_5h_micro,limit_24h_micro,limit_total_micro,
+                                        allowed_models,blocked_models,max_concurrent_jobs,expires_at,created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (identifier, name.strip(), prefix, self._hash(plaintext), quota,
-                 limit_5h_micro, limit_24h_micro, limit_total_micro, expires_at, _now()),
+                 limit_5h_micro, limit_24h_micro, limit_total_micro,
+                 self._dump_models(allowed_models), self._dump_models(blocked_models),
+                 max_concurrent_jobs, expires_at, _now()),
             )
             row = db.execute("SELECT * FROM api_keys WHERE id=?", (identifier,)).fetchone()
             result = self._public(row, db)
@@ -293,10 +404,14 @@ class ApiKeyStore:
             return self._public(row, db) if row else None
 
     def update(self, identifier: str, **changes: Any) -> dict[str, Any] | None:
-        allowed = {"name", "quota", "expires_at", "enabled", *LIMIT_COLUMNS.values()}
+        allowed = {"name", "quota", "expires_at", "enabled", "max_concurrent_jobs",
+                   *LIMIT_COLUMNS.values(), *MODEL_COLUMNS}
         values = {key: value for key, value in changes.items() if key in allowed}
         if "name" in values:
             values["name"] = str(values["name"]).strip()
+        for column in MODEL_COLUMNS:
+            if column in values:
+                values[column] = self._dump_models(values[column])
         with self._lock, self._connect() as db:
             if values:
                 fields = ",".join(f"{key}=?" for key in values)
@@ -331,7 +446,7 @@ class ApiKeyStore:
 
     def hold(self, key_id: str | None, request_id: str, service: str, model: str | None,
              channel: str | None, quote: Quote) -> dict[str, Any]:
-        """预占一单的额度。超限抛 CreditQuotaExceeded，此时一行都不写。
+        """预占一单的额度。超限抛 CreditQuotaExceeded、型号被 Key 限制抛 ModelNotAllowed，此时一行都不写。
 
         预扣而不是事后结算：预扣才能在上游真正花钱之前挡住；作业失败或取消时由
         settle() 退掉，所以窗口里的金额只包含还没结束的和成功的。
@@ -343,6 +458,8 @@ class ApiKeyStore:
                 row = db.execute("SELECT * FROM api_keys WHERE id=?", (key_id,)).fetchone()
                 if row is None:
                     return {"charged": 0, "spent": {}, "limits": {}}
+                # 型号限制先判：这个模型压根不给用，就不用去看还剩多少钱了。
+                self._check_models(row, model)
                 limits = self._limits(db, row)
                 spent = self._spent(db, key_id)
                 for window in ("5h", "24h", "total"):
@@ -468,12 +585,16 @@ class ApiKeyStore:
     def rates_for_billing(self) -> list[dict[str, Any]]:
         """估价用的费率：原价行 + 活动促销行。
 
-        促销行放在最后：lookup() 同分取后写入的那条，所以精确型号的 0 元促销会盖住
-        同模型的原价行；通配行（`kling-*`）本来分数就低，也盖得住。
+        促销是**整型号覆盖**：被促销的型号，它的原价行（含按分辨率细分的行）必须整条
+        剔除，否则 `seedance-2.0-fast/720p` 这种精确变体行在打分上会压过 `variant='*'`
+        的促销行（2*3+2 > 2*3+0），结果是促销看着生效、实际照原价扣。
         """
         rates = self.rates_cached()
         promo = self._active_promo()
-        return rates + promo if promo else rates
+        if not promo:
+            return rates
+        covered = {(row["service"], row["model"]) for row in promo}
+        return [row for row in rates if (row["service"], row["model"]) not in covered] + promo
 
     def _active_promo(self) -> list[dict[str, Any]]:
         settings = self.settings()

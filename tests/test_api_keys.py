@@ -3,7 +3,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from control_plane.api_keys import ApiKeyStore, CreditQuotaExceeded
+from control_plane.api_keys import ApiKeyStore, CreditQuotaExceeded, ModelNotAllowed
 from control_plane.credit_pricing import Quote, estimate_request, from_yuan
 
 
@@ -105,6 +105,51 @@ def test_yuan_micro_round_trip() -> None:
     assert from_yuan(0) == 0
     with pytest.raises(ValueError):
         from_yuan("-1")
+
+
+def test_model_allowlist_only_permits_listed_models() -> None:
+    with TemporaryDirectory() as directory:
+        store = ApiKeyStore(Path(directory) / "keys.db")
+        created = store.create("受限", None, None, allowed_models=["seedance-2.5", "seedance-2.0"])
+        assert created["allowed_models"] == ["seedance-2.5", "seedance-2.0"]
+        store.hold(created["id"], "req-a", "video_generation", "seedance-2.5", "jmapi", quote(100))
+        with pytest.raises(ModelNotAllowed) as caught:
+            store.hold(created["id"], "req-b", "video_generation", "kling-4.0", "jmapi", quote(100))
+        assert caught.value.reason == "not_allowed"
+        assert store.charges()["total"] == 1
+
+
+def test_blocked_models_win_over_allowlist_and_support_globs() -> None:
+    with TemporaryDirectory() as directory:
+        store = ApiKeyStore(Path(directory) / "keys.db")
+        created = store.create("受限", None, None,
+                               allowed_models=["gpt-image-*"], blocked_models=["gpt-image-2-4k-upscale"])
+        store.hold(created["id"], "req-a", "image_generation", "gpt-image-2.5", "grsai", quote(100))
+        with pytest.raises(ModelNotAllowed) as caught:
+            store.hold(created["id"], "req-b", "image_generation", "gpt-image-2-4k-upscale", "grsai", quote(100))
+        assert caught.value.reason == "blocked"
+
+
+def test_empty_model_lists_mean_unrestricted() -> None:
+    with TemporaryDirectory() as directory:
+        store = ApiKeyStore(Path(directory) / "keys.db")
+        created = store.create("不限", None, None)
+        store.hold(created["id"], "req-a", "video_generation", "any-model", "jmapi", quote(100))
+        # 清空白名单后重新放开
+        store.update(created["id"], allowed_models=["seedance-2.5"])
+        with pytest.raises(ModelNotAllowed):
+            store.hold(created["id"], "req-b", "video_generation", "kling-4.0", "jmapi", quote(100))
+        cleared = store.update(created["id"], allowed_models=[])
+        assert cleared is not None and cleared["allowed_models"] == []
+        store.hold(created["id"], "req-c", "video_generation", "kling-4.0", "jmapi", quote(100))
+
+
+def test_missing_model_is_not_restricted() -> None:
+    """有些端点把型号放在别的字段、运行时才定，判不了就不拦。"""
+    with TemporaryDirectory() as directory:
+        store = ApiKeyStore(Path(directory) / "keys.db")
+        created = store.create("受限", None, None, allowed_models=["seedance-2.5"])
+        store.hold(created["id"], "req-a", "tts", None, None, quote(100))
 
 
 def test_charges_filters_and_summary() -> None:

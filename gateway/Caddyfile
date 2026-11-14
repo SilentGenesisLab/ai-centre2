@@ -2,6 +2,9 @@
 	admin 127.0.0.1:2019
 	http_port 18080
 	https_port 18443
+	# TLS 握手失败只在 debug 级别记录（logger=http.stdlib）。
+	# 2026-11-07 临时开启以取证「4090 连不上」；演示后（2026-11-11 起）可移除本行。
+	debug
 	servers {
 		protocols h1 h2
 	}

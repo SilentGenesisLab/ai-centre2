@@ -305,6 +305,24 @@ def test_promo_rates_zero_out_only_the_named_models_until_the_deadline(store, mo
     assert estimate_request(store.rates_for_billing(), "video_generation", {}, "kling-4.0-flash").amount_micro > 0
 
 
+def test_promo_overrides_the_resolution_specific_rows(store, monkeypatch) -> None:
+    """促销是整型号覆盖：按分辨率细分的原价行必须让位，否则促销看着生效、实际照扣。"""
+    from control_plane.credit_pricing import estimate_request
+
+    store.set_settings({
+        "promo_free_items": [{"service": "video_generation", "model": "seedance-2.0-fast", "unit": "second"}],
+        "promo_free_until": "2099-01-01T00:00:00+08:00",
+    })
+
+    rates = store.rates_for_billing()
+    for resolution in ("720p", "1080p", "480p"):
+        quote = estimate_request(rates, "video_generation", {"resolution": resolution}, "seedance-2.0-fast")
+        assert (quote.amount_micro, quote.source) == (0, "promo"), resolution
+
+    # 没进促销的型号仍按原价，促销不能连带降价。
+    assert estimate_request(rates, "video_generation", {"resolution": "720p"}, "seedance-2.5").amount_micro > 0
+
+
 def test_pricing_table_shows_the_promo_price_and_the_original(store, monkeypatch) -> None:
     """客户看的是这张表：活动期挂牌价必须并行显示 0，否则会以为没生效。"""
     monkeypatch.setattr(api, "get_capability_store", lambda: _WildcardCatalog())

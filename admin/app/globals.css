@@ -339,6 +339,16 @@ td.wrap { max-width: 380px; overflow-wrap: anywhere; }
 .check-list li::before { align-items: center; background: var(--mint-soft); border-radius: 50%; color: var(--mint); content: "✓"; display: flex; font-size: 8px; height: 15px; justify-content: center; left: 0; position: absolute; top: 0; width: 15px; }
 .check-list.warning li::before { background: var(--amber-soft); color: var(--amber); content: "!"; }
 .note-card { background: var(--amber-soft); border-radius: 11px; color: #805111; margin-top: 22px; padding: 14px; }
+.model-scope-group { border: 1px solid var(--line); border-radius: 11px; display: grid; gap: 14px; padding: 13px; }
+.model-scope-group legend { color: var(--ink); font-size: 11px; font-weight: 750; padding: 0 6px; }
+.model-scope { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; }
+.model-scope small { color: var(--muted); font-size: 9px; }
+.model-scope-item { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 99px; display: inline-flex; font-size: 9px; gap: 6px; padding: 4px 6px 4px 10px; }
+.model-scope-item button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 12px; line-height: 1; padding: 0 2px; }
+.model-scope-item button:hover { color: var(--red); }
+.model-scope-add { align-items: center; display: flex; gap: 8px; }
+.model-scope-add input { flex: 1; min-width: 0; }
+.model-scope-add .app-select { flex: 1; min-width: 0; }
 .note-card b { font-size: 10px; }
 .note-card p { font-size: 9px; line-height: 1.6; margin: 5px 0 0; }
 .result-box, .terminal-output { background: #17191d; border-radius: 10px; color: #cfd4dc; font-size: 9px; line-height: 1.65; margin: 20px 0 0; max-height: 520px; overflow: auto; padding: 18px; white-space: pre-wrap; word-break: break-word; }

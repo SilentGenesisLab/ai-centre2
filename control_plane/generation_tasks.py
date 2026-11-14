@@ -112,6 +112,30 @@ def _headers(binding:dict[str,Any])->dict[str,str]:
     return {}
 
 
+def _libtv_cancel(binding:dict[str,Any],tid:str)->None:
+    """告诉 libtv-api 别再跑了，把账号槽位还回去。
+
+    我们放弃一单（手动取消 / 我们这边超时）时，libtv-api 那边的畅用轮询循环**不会**
+    自己知道：槽位要等它 90 分钟自超时才释放，期间整个池子的产能都被占着。
+    这个接口是它唯一会把槽位立刻还回去的路径。
+
+    失败一律吞掉：取消是尽力而为，不能因为释放失败把已经结束的作业再改一次状态。
+    """
+    if not tid or binding.get("adapter")!="libtv":return
+    token=get_settings().libtv_admin_token
+    if not token:return
+    path=binding["query_path"].split("/query/")[0]+"/tasks/cancel"
+    try:
+        with httpx.Client(timeout=15,follow_redirects=False) as client:
+            client.post(
+                urljoin(binding["base_url"].rstrip("/")+"/",path.lstrip("/")),
+                headers={"x-libtv-admin-token":token.get_secret_value()},
+                json={"taskIds":[tid]},
+            )
+    except Exception:
+        pass
+
+
 def _effective_resolution(binding:dict[str,Any],r:dict[str,Any])->Any:
     """该绑定实际会用到的分辨率。
 
@@ -925,6 +949,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
             while time.monotonic()<deadline:
                 time.sleep(5)
                 if _cancel_requested(store, job_id):
+                    _libtv_cancel(binding,tid)
                     store.update_job(
                         job_id,
                         status="cancelled",
@@ -962,6 +987,8 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     raise UpstreamTerminalError(
                         f"upstream generation failed: {detail[:160]}"
                     )
+            # 我们放弃了这一单：上游可能还在跑，顺手叫停，别让它继续占着账号槽位。
+            _libtv_cancel(binding,tid)
             raise TimeoutError("upstream generation timed out")
         except (httpx.TimeoutException,httpx.NetworkError) as exc:
             # 提交成功之后的超时/断连不再换渠道：上游那一单可能还在跑，重投就是再买一份。

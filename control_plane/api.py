@@ -24,8 +24,8 @@ from uuid import UUID, uuid4
 
 import httpx
 from celery.exceptions import TimeoutError as CeleryTimeoutError
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pypinyin import Style, lazy_pinyin
 from pykakasi import kakasi
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -64,8 +64,9 @@ from .h3_workflow import resolve_dimensions
 from .observability import ObservabilityMiddleware
 from .observability_api import get_observability_store, router as observability_router
 from .health_monitor_api import get_health_monitor, router as health_monitor_router
+from .llm_monitor_api import get_llm_monitor, router as llm_monitor_router
 from .concurrency_api import router as concurrency_router
-from .api_keys import ApiKeyStore, CreditQuotaExceeded
+from .api_keys import ApiKeyStore, ConcurrencyLimitExceeded, CreditQuotaExceeded, ModelNotAllowed
 from .billing_api import public_router as pricing_router
 from .billing_api import router as billing_router
 from .billing_hook import BillingRoute, billable, link_current
@@ -176,8 +177,16 @@ app = FastAPI(
 app.add_middleware(ObservabilityMiddleware, store_factory=get_observability_store)
 # 计费按最终响应码结算（见 billing_hook.BillingRoute）；不挂 billable 的路由也不受影响。
 app.router.route_class = BillingRoute
+
+
+@app.exception_handler(ModelNotAllowed)
+async def model_not_allowed_handler(request: Request, exc: ModelNotAllowed) -> JSONResponse:
+    """Key 的模型白/黑名单拦下的请求：403，不是 429——重试和等额度都没用。"""
+    return JSONResponse(status_code=403, content={"detail": str(exc), "reason": exc.reason})
+
 app.include_router(observability_router)
 app.include_router(health_monitor_router)
+app.include_router(llm_monitor_router)
 app.include_router(concurrency_router)
 app.openapi_tags.append(
     {
@@ -1028,6 +1037,11 @@ class ApiKeyCreateRequest(BaseModel):
     limit_5h: float | None = Field(default=None, ge=0)
     limit_24h: float | None = Field(default=None, ge=0)
     limit_total: float | None = Field(default=None, ge=0)
+    # 可用 / 不可用模型：两边都留空 = 全部可用；不可用优先。
+    allowed_models: list[str] | None = None
+    blocked_models: list[str] | None = None
+    # 在途作业数上限（排队 + 跑着都算）；留空 = 不限。默认 8，别让一把 Key 占满账号池。
+    max_concurrent_jobs: int | None = Field(default=8, ge=1, le=1000)
     expires_at: datetime | None = None
 
     @field_validator("expires_at")
@@ -1049,6 +1063,9 @@ class ApiKeyUpdateRequest(BaseModel):
     limit_5h: float | None = Field(default=None, ge=0)
     limit_24h: float | None = Field(default=None, ge=0)
     limit_total: float | None = Field(default=None, ge=0)
+    allowed_models: list[str] | None = None
+    blocked_models: list[str] | None = None
+    max_concurrent_jobs: int | None = Field(default=None, ge=1, le=1000)
     expires_at: datetime | None = None
     enabled: bool | None = None
 
@@ -1406,6 +1423,7 @@ async def start_observability_reconciler() -> None:
     _run_background(_observability_reconcile_loop())
     _run_background(_h3_health_loop())
     _run_background(_health_monitor_loop())
+    _run_background(get_llm_monitor().run_forever())
     _run_background(_h3_pool_loop())
     _run_background(_billing_reconcile_loop())
 
@@ -4945,7 +4963,9 @@ async def create_video_generation_job(request:VideoGenerationRequest,idempotency
     try: jid,deduplicated=await asyncio.to_thread(
         get_generation_jobs().submit,request.model_dump(),None,idempotency_key)
     except CapabilityNotFound as exc: raise HTTPException(404,"model not found") from exc
+    except ConcurrencyLimitExceeded as exc: raise HTTPException(429,f"concurrency limit [{exc.reason}]: {exc}") from exc
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
+    except ModelNotAllowed as exc: raise HTTPException(403,f"model not allowed [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue video generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/video-generations/jobs/{jid}"}
 
@@ -4974,7 +4994,9 @@ async def create_image_generation_job(request:ImageGenerationRequest,idempotency
     await _validate_image_generation_request(request)
     data=request.model_dump(); data["reference_video_urls"]=[]; data["reference_audio_urls"]=[]
     try: jid,deduplicated=await asyncio.to_thread(get_generation_jobs().submit,data,"image_generation",idempotency_key)
+    except ConcurrencyLimitExceeded as exc: raise HTTPException(429,f"concurrency limit [{exc.reason}]: {exc}") from exc
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
+    except ModelNotAllowed as exc: raise HTTPException(403,f"model not allowed [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue image generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/image-generations/jobs/{jid}"}
 
@@ -5016,7 +5038,9 @@ async def _validate_audio_generation_request(request:AudioGenerationRequest)->No
 async def create_audio_generation_job(request:AudioGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_audio_generation_request(request)
     try: jid,deduplicated=await asyncio.to_thread(get_audio_generation_jobs().submit,request.model_dump(),None,idempotency_key)
+    except ConcurrencyLimitExceeded as exc: raise HTTPException(429,f"concurrency limit [{exc.reason}]: {exc}") from exc
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
+    except ModelNotAllowed as exc: raise HTTPException(403,f"model not allowed [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue audio generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/audio-generations/jobs/{jid}"}
 
@@ -5057,6 +5081,8 @@ async def _validate_decision_generation_request(request:DecisionGenerationReques
 async def create_decision_generation_job(request:DecisionGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_decision_generation_request(request)
     try: jid,deduplicated=await asyncio.to_thread(get_decision_generation_jobs().submit,request.model_dump(),None,idempotency_key)
+    except ConcurrencyLimitExceeded as exc: raise HTTPException(429,f"concurrency limit [{exc.reason}]: {exc}") from exc
+    except ModelNotAllowed as exc: raise HTTPException(403,f"model not allowed [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue decision generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/decision-generations/jobs/{jid}"}
 
@@ -5087,7 +5113,9 @@ async def _validate_text_generation_request(request:TextGenerationRequest)->None
 async def create_text_generation_job(request:TextGenerationRequest,idempotency_key:str|None=Header(None,alias="Idempotency-Key"))->dict[str,Any]:
     await _validate_text_generation_request(request)
     try: jid,deduplicated=await asyncio.to_thread(get_text_generation_jobs().submit,request.model_dump(),None,idempotency_key)
+    except ConcurrencyLimitExceeded as exc: raise HTTPException(429,f"concurrency limit [{exc.reason}]: {exc}") from exc
     except CreditQuotaExceeded as exc: raise HTTPException(429,f"billing limit [{exc.reason}]: {exc}") from exc
+    except ModelNotAllowed as exc: raise HTTPException(403,f"model not allowed [{exc.reason}]: {exc}") from exc
     except Exception as exc: raise HTTPException(503,"unable to enqueue text generation job") from exc
     return {"job_id":jid,"status":"queued","model":request.model,"requested_channel":request.channel,"deduplicated":deduplicated,"status_url":f"/v1/text-generations/jobs/{jid}"}
 
@@ -5641,6 +5669,9 @@ async def admin_create_api_key(request: ApiKeyCreateRequest) -> dict[str, Any]:
         from_yuan(request.limit_5h),
         from_yuan(request.limit_24h),
         from_yuan(request.limit_total),
+        allowed_models=request.allowed_models,
+        blocked_models=request.blocked_models,
+        max_concurrent_jobs=request.max_concurrent_jobs,
     )
 
 
@@ -5663,4 +5694,50 @@ async def admin_delete_api_key(key_id: UUID) -> dict[str, Any]:
     if not await asyncio.to_thread(get_api_key_store().delete, str(key_id)):
         raise HTTPException(status_code=404, detail="api key not found")
     return {"deleted": True, "id": str(key_id)}
+
+
+@app.get("/internal/admin/generation-jobs/inflight", include_in_schema=False, dependencies=[Depends(require_service_token)])
+async def admin_inflight_jobs(key_id: UUID | None = Query(default=None), limit: int = Query(default=200, ge=1, le=1000)) -> dict[str, Any]:
+    """谁在占着队列：按 Key 汇总在途作业，给控制台的「清空队列」页用。"""
+    store = get_capability_store()
+    items = await asyncio.to_thread(store.inflight_jobs, str(key_id) if key_id else None, limit)
+    grouped: dict[str, int] = {}
+    for item in items:
+        owner = item.get("api_key_id") or ""
+        grouped[owner] = grouped.get(owner, 0) + 1
+    return {"items": items, "total": len(items), "by_key": grouped}
+
+
+class CancelInflightRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key_id: UUID | None = None
+    model: str | None = None
+    dry_run: bool = False
+
+
+@app.post("/internal/admin/generation-jobs/cancel-inflight", include_in_schema=False, dependencies=[Depends(require_service_token)])
+async def admin_cancel_inflight(request: CancelInflightRequest) -> dict[str, Any]:
+    """停掉在途作业，并把上游占着的账号槽位要回来。
+
+    排队中的立刻变 cancelled；跑着的转 cancel_requested，worker 在下一个 5 秒检查点退出。
+    libtv 那一单会在退出前调 libtv-api 的 /tasks/cancel（见 generation_tasks._libtv_cancel），
+    否则它的畅用槽位要等 90 分钟自超时才放，期间整个池子的产能都压在这里。
+    """
+    store = get_capability_store()
+    jobs = await asyncio.to_thread(store.inflight_jobs, str(request.key_id) if request.key_id else None, 1000)
+    if request.model:
+        jobs = [job for job in jobs if job.get("model") == request.model]
+    if request.dry_run:
+        return {"dry_run": True, "would_cancel": len(jobs), "items": jobs}
+    client = get_generation_jobs()
+    results = []
+    for job in jobs:
+        try:
+            results.append(await asyncio.to_thread(client.cancel, str(job["id"])))
+        except Exception as exc:
+            results.append({"job_id": str(job["id"]), "status": "error", "error": str(exc)[:200]})
+    by_status: dict[str, int] = {}
+    for item in results:
+        by_status[item["status"]] = by_status.get(item["status"], 0) + 1
+    return {"cancelled": len(results), "by_status": by_status, "items": results}
 

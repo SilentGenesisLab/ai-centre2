@@ -716,8 +716,10 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 
 | `model` | 上游型号 | 模式 | 时长 | 分辨率 | 画幅 |
 |---|---|---|---|---|---|
+| `free` | 畅用池自动挑（可灵 4.0 / Kling 4.0 Flash / Seedance 2.0 Fast / Minimax H3 / H3 Highspeed / Seedance 2.0 Mini） | 文/单图/首尾帧/多图/混合/视频编辑 | 3～30 | 480p/720p/768p/1080p/2K | 五种 |
 | `seedance-2.0-fast` | `star-video2-fast` | 文/首帧/尾帧/多图/混合/音频 | 4～15 | 480p/720p | 五种 |
 | `seedance-2.0-mini` | `star-video2-mini` | 同上 | 4～15 | 480p/720p | 五种 |
+| `seedance-2.5-flash` | `star-video2.5-flash` | 文/单图/首尾帧/多图/混合/音频/视频编辑 | 4～30 | 480p/720p | 五种 |
 | `seedance-1.5-pro` | `seedance-1.5-pro` | 同上 | 4～12 | 480p/720p/1080p | 五种 |
 | `seedance-1.0-pro` | `doubao-seedance-pro` | 文生/单图 | 3～10 | 480p/720p/1080p | 16:9 / 1:1 / 9:16 |
 | `seedance-1.0-lite` | `doubao-seedance-lite` | 文生/单图 | 3～10 | 480p/720p/1080p | 16:9 / 1:1 / 9:16 |
@@ -763,6 +765,7 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
   （720p/1080p × 2s/5s 三种组合都在 ~10s 内回「视频生成失败」），所以只开放单图模式。
 - **「固定 `auto`」的分辨率/画幅**表示该型号没有可选档，中台按型号自己那一档发包，
   `resolution`/`aspect_ratio` 传什么都会被忽略（不是报错）。
+- **`free` 是伪型号，不是上游型号**：它按表里那个顺序挑第一个「持畅用卡且有空位」的账号下单，全程 0 积分，失败也不会退回付费型号（详见 §5.1.4）。表里那一行是六个候选的并集，只用来放行参数，真正能不能接由 LibTV 逐个候选校验。
 - **`2K` 只在型号本身有 1080p 时接受**：上游把 2K 映射成 1080p，所以表里写 1080p 的都能收；
   `minimax-h3-max` 只有 480p/768p，传 `2K` 会 422。例外是 `minimax-h3-libtv`：它的 2K 是上游
   自带的原生档（不是别名映射），所以表里直接写了 `2K`。
@@ -793,6 +796,34 @@ curl -sS -X POST \
 候选渠道不兼容（提交前判定）、提交被上游拒绝、以及上游明确进入失败终态，都会尝试下一可用渠道；超时或结果转存失败不会自动重复生成，以免产生两个远端成片和重复费用。这条规则对点名渠道与 `auto` 一视同仁，详见 §1.5。
 
 排队中的任务取消后立即变为 `cancelled`。已经提交给上游的任务会先返回 `cancel_requested`，AI Centre 停止轮询和发布结果后再变为 `cancelled`；由于 jmapi/libtv 当前没有可靠的上游取消接口，已经开始的上游生成仍可能继续消耗资源。
+
+### 5.1.4 畅用池：`free` 型号（0 积分）
+
+`model` 传 `free`（模型名「Free 畅用池」）时，中台把请求交给 LibTV 的**畅用池**：
+LibTV 侧按 可灵 4.0 → Kling 4.0 Flash → Seedance 2.0 Fast → Minimax H3 → H3 Highspeed → Seedance 2.0 Mini
+的顺序，挑第一个「持畅用卡且有空位」的账号下单，全程 0 积分。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"model": "free", "prompt": "一朵白花在晨光中缓缓绽放，镜头稳定", "duration_seconds": 4, "aspect_ratio": "16:9"}'
+```
+
+- **计费**：价目表里它是一条 `amount_yuan: 0`、`source: "free"` 的常驻零价行，**不依赖任何活动**；
+  调用方的 API Key 不扣钱，`/v1/usage` 照常记一行（金额 0）。
+- **实际落到哪个型号由 LibTV 决定**：它按你传的素材与参数逐个候选校验，模式/画幅/时长/素材数量
+  不匹配的候选会被跳过。想钉死型号就别用 `free`，直接传具体 `model`。
+- **慢**：这是 0 积分慢队列。2026-11-12 实测 4 秒 720p 的单约 **2.5 分钟**出片；排队拥挤时会明显更慢，
+  请按「分钟级到十分钟级」预留。
+- **不保证有号**：持卡账号全排满或都没卡时返回 **503**（`账号池繁忙`），不会自动改走付费型号。
+  需要确定性就用具体型号并走付费渠道。
+- 参数闸门按六个候选的并集放行（`480p`/`720p`/`768p`/`1080p`/`2K`；3～30 秒；五种画幅），
+  单条候选接不住是跳过而不是报错。
+- 结果同样先转存 OSS 再返回 `result_urls`，并打 AI 标识。
+
+2026-11-12 验收：4 秒 720p 文生视频，中台 `usage_charges` 一笔 `amount_micro=0`、`source=free`，
+账号侧上游流水 `transAmount=0`（未扣积分），产出 1280×720 / 24fps / 4.04 秒成片。
 
 ### 5.3 MiniMax H3 视频生成
 
@@ -1636,7 +1667,11 @@ GET /v1/pricing/models?service=video_generation&model=seedance-2.0
 | `channels` / `available` | 这个价格当前能走哪些渠道；`available=false` 说明所有绑定渠道都不可用 |
 | `original_amount_yuan` | **仅活动期出现**：原价，方便看出折了多少 |
 
-活动期（`promo_active: true`、`promo_until` 给出截止时间）某些型号挂牌价是 `0`，**实际扣款也是 0**，用量照常记录。
+两种「0 元」要分开看：
+
+- **常驻零价（`source: "free"`）**：本地模型与畅用池型号，单价恒为 `0`，不扣钱、用量照常记。
+  目前是视频的 `free`（Free 畅用池，见 §5.1.4）、生图的 `moss-image`、配音的 `voxcpm2`。**它们不依赖活动，一直可用。**
+- **活动价（`source: "promo"`）**：仅在 `promo_active: true` 时出现，挂牌价临时改 `0`，同时用 `original_amount_yuan` 给出原价，`promo_until` 是截止时间；活动结束自动恢复原价。
 
 ### 12.2 用量
 

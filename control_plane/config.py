@@ -61,6 +61,26 @@ class Settings(BaseSettings):
     health_monitor_probe_video_url: str | None = "https://oss-imgai.sligenai.cn/ai-video-kernel/20260908/d545a39f58ad4462991180b9d38765f8.mp4"
     health_monitor_probe_face_video_url: str | None = "https://oss-imgai.sligenai.cn/ai-video-kernel/20260908/dc8c09c0bc244f1f8f38dcba8cb97fb8.mp4"
     health_monitor_public_admin_url: str = "https://aicentre2.sligenai.cn:8443/admin/resources"
+
+    # 外部大模型接口鉴活（api.sligenai.cn 这类 OpenAI 兼容网关）。
+    # 与 health_monitor 的区别：这里真的发一次 chat/completions，而不是 GET /health。
+    llm_probe_enabled: bool = True
+    llm_probe_base_url: str = "https://api.sligenai.cn/v1"
+    llm_probe_api_key: SecretStr | None = None
+    llm_probe_models: str = "gemini-4-argon,gpt-6.1-sol,grok-4.7,claude-opus-5-5"
+    llm_probe_prompt: str = "hi"
+    llm_probe_max_tokens: int = 32
+    llm_probe_timeout_seconds: float = 120
+    llm_probe_interval_seconds: int = 900
+    llm_probe_retry_seconds: int = 60
+    llm_probe_failure_threshold: int = 3
+    llm_probe_webhook_url: SecretStr | None = None
+    llm_probe_webhook_secret: SecretStr | None = None
+    llm_probe_webhook_timeout_seconds: float = 5.0
+    llm_probe_db_path: Path = Path(
+        "/home/donxu/ai-centre/runtime/llm-probe/llm-probe.db"
+    )
+
     asr_backend_url: str = "http://127.0.0.1:9001"
     tts_backend_url: str = "http://127.0.0.1:8193"
     speaker_verify_url: str = "http://127.0.0.1:8195"
@@ -159,6 +179,9 @@ class Settings(BaseSettings):
     color_grade_video_bitrate: str = "14M"
     runninghub_base_url: str = "https://www.runninghub.cn"
     runninghub_api_token: SecretStr | None = None
+    # libtv-api 的管理令牌：只用于「取消上游任务、把账号槽位还回去」。
+    # libtv 渠道本身 auth_type=none（publish/query 不要凭据），所以不放进渠道凭据里。
+    libtv_admin_token: SecretStr | None = None
     video_upscale_auto_provider_order: str = "flashvsr_v2,flashvsr,seedvr2"
     video_upscale_wait_timeout_seconds: float = 14400
     video_upscale_provider_timeout_seconds: float = 7200
@@ -324,6 +347,7 @@ def get_settings() -> Settings:
     settings.audio_generation_work_dir.mkdir(parents=True, exist_ok=True)
     settings.observability_db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.health_monitor_db_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.llm_probe_db_path.parent.mkdir(parents=True, exist_ok=True)
     settings.tts_voice_registry_path.parent.mkdir(parents=True, exist_ok=True)
     settings.tts_output_dir.mkdir(parents=True, exist_ok=True)
     settings.tts_reference_dir.mkdir(parents=True, exist_ok=True)

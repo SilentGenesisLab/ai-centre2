@@ -18,7 +18,7 @@ from uuid import uuid4
 from fastapi import HTTPException, Request, Response, status
 from fastapi.routing import APIRoute
 
-from .api_keys import ApiKeyStore, CreditQuotaExceeded
+from .api_keys import ApiKeyStore, CreditQuotaExceeded, ModelNotAllowed
 from .credit_pricing import estimate_request
 from .generation_jobs import current_api_key_id
 
@@ -104,6 +104,11 @@ async def _hold(service: str, request: Request, model_hint: str | None) -> tuple
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"billing limit [{exc.reason}]: {exc}",
+        ) from exc
+    except ModelNotAllowed as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"model not allowed [{exc.reason}]: {exc}",
         ) from exc
     ctx = BillingContext(
         request_id=request_id,
