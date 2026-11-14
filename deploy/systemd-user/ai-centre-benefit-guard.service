@@ -1,0 +1,9 @@
+[Unit]
+Description=Keep at least one libtv account on paid (yong jifen) mode
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/credit-sync/env
+ExecStart=/usr/bin/python3 %h/services/libtv-proxy/benefit_guard.py
+NoNewPrivileges=true

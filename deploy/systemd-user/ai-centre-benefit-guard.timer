@@ -1,0 +1,10 @@
+[Unit]
+Description=Check libtv free-card switch every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+Unit=ai-centre-benefit-guard.service
+
+[Install]
+WantedBy=timers.target
