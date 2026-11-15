@@ -190,6 +190,17 @@ def _libtv_mode(modes: list[str] | None, images: int, videos: int, audios: int) 
     return "text2video" if "text2video" in modes else None
 
 
+# 有些型号的**模式**各有各的比例白名单，型号级那一栏装不下：MiniMax H3 Max 的「图生视频」
+# 只收 adaptive（出片比例直接跟参考图走），传 9:16 会被上游在校验阶段拒掉 ——
+# 而同一型号的 text2video 仍按型号白名单收 16:9 等。只在这里补模式级的例外。
+_LIBTV_MODE_RATIO = {
+    ("MiniMax-Hailuo-H3-Max", "singleImage2video"): "adaptive",
+    # 同一套规则：上游 tool_spec 里 frames2video / singleImage2video 的 settings 是
+    # `ratio_auto`（比例跟素材走），传具体比例会被判越界，只能给 adaptive。
+    ("wanxiang-v2-6", "frames2video"): "adaptive",
+}
+
+
 def _submit_path(binding: dict[str, Any], request: dict[str, Any]) -> str:
     # TeamORouter 的垫图不在 /v1/images/generations 上：带参考图要改走 /v1/images/edits
     # （JSON 里单个 `image` 字段，2026-11-03 横评实测的契约）。其余绑定原样返回 submit_path。
@@ -224,7 +235,8 @@ def _payload(
                 # default_resolution / default_ratio：少数型号没有分辨率/比例可选
                 # （Kling 只有 auto，Turbo 是 std/pro，Hailuo 2.3 只有 auto），
                 # 传调用方的值会被上游判 INVALID_*，所以固定成型号自己的那一档。
-                "ratio":caps.get("default_ratio") or request["aspect_ratio"],
+                "ratio":_LIBTV_MODE_RATIO.get((binding["upstream_model"],mode))
+                        or caps.get("default_ratio") or request["aspect_ratio"],
                 "resolution":caps.get("default_resolution") or request["resolution"]}
         # `enableSound` 必须是**显式的 null**、不能省略：省略（undefined）时上游
         # normalizeParams 会给所有 sound:true 的型号补 'on'，而 CLI 只认自己 schema
@@ -384,7 +396,10 @@ def _result(body:dict[str,Any])->list[str]:
 # 轮询会一直拿到 "2"、既不成功也不失败，白白等到超时。0（排队）与 2（成功）是实测到的；
 # 1 按同族接口的惯例记为处理中；其余值一律当失败 —— 上游用 message 说明原因，
 # 宁可如实失败，也不要挂到超时。
-_WUYINKEJI_STATES = {"0": "running", "1": "running", "2": "succeeded"}
+# 2026-11-15：上游偶尔把 status 直接写成中文（实测 `成功`）。不映射的话图都出了还会被判
+# 失败，错误串就是那句「upstream generation failed: 成功」。
+_WUYINKEJI_STATES = {"0": "running", "1": "running", "2": "succeeded",
+                     "成功": "succeeded", "失败": "failed"}
 
 
 def _normalize_state(state: str, adapter: str | None = None) -> str:
@@ -433,11 +448,42 @@ def _error_detail(body: dict[str, Any], default: str) -> str:
             # （TeamORouter 的生图与 /v1/systemone 都是这个形状）。不往下钻的话
             # 每条上游报错都只剩 "request rejected"，白丢最要紧的那句话。
             if isinstance(value, dict):
-                for nested in ("message", "msg", "detail"):
+                # jmapi 的池耗尽回的是 {"error":"所有账号均不可用","tried_count":N,...}，
+                # 顶层只有 `error` 这个键。不认它的话，"request rejected" 会把
+                # 「到底是没有账号还是在排队」这一句唯一的线索盖掉。
+                for nested in ("message", "msg", "detail", "error", "reason"):
                     inner = value.get(nested)
                     if isinstance(inner, str) and inner.strip():
                         return inner.strip()
     return default
+
+
+# 提交阶段的重试：下面这两类失败**都不扣费**，且反映的是「此刻没余量 / 账号侧瞬时状态」，
+# 不是请求本身有问题 —— 直接放弃就会把几秒钟的抖动变成一条失败作业。
+# 2026-11-15 那批 16 起失败里 15 起走的就是这条路：jmapi 池瞬时满载回 429，紧接着 libtv 的
+# CLI 校验报「需要连接图片/视频节点」，而同一个账号、同一份参数在前后两分钟里又有成功记录。
+_SUBMIT_RETRY_DELAYS = (5, 15, 45)
+
+
+def _submit_retryable(status: int, text: str) -> bool:
+    if status in (408, 429, 502, 503, 504):
+        return True
+    # libtv 的 CLI 在校验阶段退出时回 5xx。素材节点没挂上（1~15 个）是瞬时状态，值得重投；
+    # 参数越界（ratio/duration 不在允许范围）同样是 5xx，但重投一百次也一样，不在此列。
+    return status >= 500 and "需要连接图片/视频节点" in text
+
+
+def _submit_with_retry(
+    client: httpx.Client, url: str, headers: dict[str, str], payload: dict[str, Any]
+) -> tuple[httpx.Response, int]:
+    retries = 0
+    for delay in _SUBMIT_RETRY_DELAYS:
+        response = client.post(url, headers=headers, json=payload)
+        if not _submit_retryable(response.status_code, response.text[:400]):
+            return response, retries
+        retries += 1
+        time.sleep(delay)
+    return client.post(url, headers=headers, json=payload), retries
 
 
 def _accepted(body: dict[str, Any]) -> bool:
@@ -900,7 +946,13 @@ def _generate(self,job_id:str)->dict[str,Any]:
             timeout=httpx.Timeout(binding["timeout_seconds"],connect=20)
             with httpx.Client(timeout=timeout,follow_redirects=False) as client:
                 submit_path=_submit_path(binding,req)
-                response=client.post(urljoin(binding["base_url"].rstrip("/")+"/",submit_path.lstrip("/")),headers=_headers(binding),json=_payload(binding,req,settings.video_generation_blank_image_url))
+                response, submit_retries=_submit_with_retry(
+                    client,
+                    urljoin(binding["base_url"].rstrip("/")+"/",submit_path.lstrip("/")),
+                    _headers(binding),
+                    _payload(binding,req,settings.video_generation_blank_image_url),
+                )
+            retried = f"（重投 {submit_retries} 次）" if submit_retries else ""
             if response.status_code>=400:
                 try:
                     error_body = _response_body(response)
@@ -908,7 +960,7 @@ def _generate(self,job_id:str)->dict[str,Any]:
                     error_body = {}
                 raise RuntimeError(
                     f"upstream HTTP {response.status_code}: "
-                    f"{_error_detail(error_body, 'request rejected')[:160]}"
+                    f"{_error_detail(error_body, 'request rejected')[:160]}{retried}"
                 )
             body=_response_body(response); tid=_task_id(body); inline_urls=_result(body)
             if not _accepted(body):

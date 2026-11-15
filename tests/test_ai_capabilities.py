@@ -19,12 +19,14 @@ from control_plane.generation_tasks import (
     _compatible,
     _error_detail,
     _headers,
+    _normalize_state,
     _payload,
     _prepare_video_for_upload,
     _response_body,
     _result,
     _state,
     _submit_path,
+    _submit_retryable,
     _sync_image_results,
     _task_id,
     _urls_from_container,
@@ -769,12 +771,37 @@ class GenerationFallbackTests(unittest.TestCase):
             # 测试里那个假的 https://o/a.png 而失败（2026-10-16 生图加入转存表后暴露）。
             patch("control_plane.generation_tasks.get_settings",
                   return_value=Mock(video_generation_blank_image_url="", kernel_upload_url=None, kernel_api_token=None)),
+            # 429 属于「此刻没余量」，提交阶段会重投（等待时间在这里压成 0）。
+            patch("control_plane.generation_tasks._SUBMIT_RETRY_DELAYS", (0, 0, 0)),
         ):
             _generate(None, "job-1")
 
         self.assertEqual(store.record["status"], "failed")
         self.assertIn("quota exhausted", store.record["error"])
-        self.assertEqual(len(client.urls), 1)
+        self.assertEqual(len(client.urls), 4)
+
+    def test_only_transient_submit_failures_are_retried(self):
+        # 池满载（429/5xx 网关）与 libtv 的「素材节点没挂上」值得重投；
+        # 参数越界是同一条请求必中的失败，重投一百次也一样，不能白等。
+        self.assertTrue(_submit_retryable(429, ""))
+        self.assertTrue(_submit_retryable(503, ""))
+        self.assertTrue(_submit_retryable(500, "校验失败: - 需要连接图片/视频节点（1~15个）"))
+        self.assertFalse(_submit_retryable(500, "校验失败: - params.settings.duration=12 不在允许范围"))
+        self.assertFalse(_submit_retryable(200, "insufficient credits"))
+
+    def test_wuyinkeji_chinese_success_is_not_a_failure(self):
+        # 速创偶尔把 status 直接写成中文「成功」。不认识它就会把已经出图的任务判成失败，
+        # 报出「upstream generation failed: 成功」这种自相矛盾的错误。
+        self.assertEqual(_normalize_state("成功", "wuyinkeji"), "succeeded")
+        self.assertEqual(_normalize_state("2", "wuyinkeji"), "succeeded")
+        self.assertEqual(_normalize_state("失败", "wuyinkeji"), "failed")
+
+    def test_a_nested_error_object_still_yields_its_reason(self):
+        # jmapi 的池耗尽把话放在 `detail.error` 里；读不到就只剩 "request rejected"。
+        self.assertEqual(
+            _error_detail({"detail": {"error": "V2 池所有账号不可用", "tried_count": 4}}, "request rejected"),
+            "V2 池所有账号不可用",
+        )
 
     def test_a_failure_after_the_image_was_paid_for_does_not_re_buy_it(self):
         # teamorouter 已经出图、转存才炸：换渠道重来等于再买一张，所以只记失败、不再 POST。

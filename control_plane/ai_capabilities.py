@@ -209,9 +209,14 @@ class CapabilityStore:
             ("wanx2.7-video","wan-2.7","Wan 2.7",
              "frames2video|video2video|mixed2video|audio2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(30,10,10),True,None,None),
+            # 2026-11-15 照 api.liblib.tv/api/tool_spec/list 修正：这个型号**只有**
+            # text2video / frames2video / video2video 三个模式，没有 singleImage2video
+            # （所以单图请求一直被上游判「当前模型未开放模式」），时长是离散的 5/10s
+            # 而不是 2~15 的滑块。frames2video 的 settings 是 ratio_auto，发包时比例
+            # 由 generation_tasks._LIBTV_MODE_RATIO 固定成 adaptive。
             ("wanxiang-v2-6","wan-2.6","Wan 2.6",
-             "text2video|singleImage2video",
-             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,15,None),(1,0,0),True,None,None),
+             "text2video|frames2video",
+             ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(5,10,[5,10]),(1,0,0),True,None,None),
             ("wanxiang-preview","wan-2.5","Wan 2.5",
              "text2video|singleImage2video",
              ["16:9","4:3","1:1","3:4","9:16"],["720p","1080p"],(2,10,None),(1,0,0),True,None,None),
@@ -678,6 +683,24 @@ class CapabilityStore:
             _caps["libtv_sync"] = "2026-11-06"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
+        # 2026-11-15：wan-2.6 照 api.liblib.tv/api/tool_spec/list 修正 —— 上游只有
+        # text2video / frames2video（没有 singleImage2video），时长是离散的 5/10s。
+        # 种子里改过的行不会因为 INSERT OR IGNORE 落进已建好的库，这里覆盖一次。
+        _row = db.execute(
+            "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+            (mids["wan-2.6"], ids["libtv"]),
+        ).fetchone()
+        if _row is not None:
+            _caps = json.loads(_row[1] or "{}")
+            if _caps.get("libtv_sync") != "2026-11-15":
+                _c = _sync["wan-2.6"]
+                _caps["modes"] = _c[3].split("|")
+                _caps["duration_values"] = _c[6][2]
+                _caps.pop("duration_min", None)
+                _caps.pop("duration_max", None)
+                _caps["libtv_sync"] = "2026-11-15"
+                db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                           (json.dumps(_caps), stamp, _row[0]))
         # 2026-11-06 第二轮：上游把参数校验换成按模式的白名单（modeSettings / paramCapability，
         # commit e56fab3），几个型号的 `default_ratio="auto"` 反而成了必拒 —— validateParams
         # 现在会拿它与型号自己的比例白名单逐字比对，而那几家早就写的是 16:9/1:1/9:16。
