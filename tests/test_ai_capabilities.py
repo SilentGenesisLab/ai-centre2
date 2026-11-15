@@ -141,6 +141,25 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(_compatible(tv, request))
         self.assertEqual(_payload(tv, request)["params"]["resolution"], "480p")
 
+    def test_h3_max_single_image_is_sent_with_adaptive_ratio(self):
+        # 上游对 H3 Max 的图生视频只收 adaptive（比例跟参考图走），传 9:16 会被判
+        # 「params.settings.ratio 不在允许范围。可选: adaptive」。型号级的比例白名单
+        # 装不下这条例外，只能按模式覆盖。
+        request = {
+            "model": "minimax-h3-max",
+            "prompt": "a cat walking",
+            "reference_image_urls": ["https://example.com/a.png"],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "duration_seconds": 5,
+            "aspect_ratio": "9:16",
+            "resolution": "768p",
+            "sound": False,
+        }
+        binding = self.store.binding("minimax-h3-max", "libtv")
+        self.assertTrue(_compatible(binding, request))
+        self.assertEqual(_payload(binding, request)["params"]["ratio"], "adaptive")
+
     def test_seedance_20_keeps_the_requested_resolution_when_jmapi_can_serve_it(self):
         # 升分辨率的适配只针对 480p —— 720p/1080p 必须原样转发，
         # 别让这段逻辑顺手改掉本来就没问题的请求。

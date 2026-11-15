@@ -195,9 +195,6 @@ def _libtv_mode(modes: list[str] | None, images: int, videos: int, audios: int) 
 # 而同一型号的 text2video 仍按型号白名单收 16:9 等。只在这里补模式级的例外。
 _LIBTV_MODE_RATIO = {
     ("MiniMax-Hailuo-H3-Max", "singleImage2video"): "adaptive",
-    # 同一套规则：上游 tool_spec 里 frames2video / singleImage2video 的 settings 是
-    # `ratio_auto`（比例跟素材走），传具体比例会被判越界，只能给 adaptive。
-    ("wanxiang-v2-6", "frames2video"): "adaptive",
 }
 
 
