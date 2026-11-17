@@ -800,7 +800,7 @@ curl -sS -X POST \
 ### 5.1.4 畅用池：`free` 型号（0 积分）
 
 `model` 传 `free`（模型名「Free 畅用池」）时，中台把请求交给 LibTV 的**畅用池**：
-LibTV 侧按 可灵 4.0 → Kling 4.0 Flash → Seedance 2.0 Fast → Minimax H3 → H3 Highspeed → Seedance 2.0 Mini
+LibTV 侧按 可灵 4.0 → Kling 4.0 Flash → Seedance 2.0 Fast → Minimax H3 → H3 Highspeed → Seedance 2.0 Mini → Wan 3.0
 的顺序，挑第一个「持畅用卡且有空位」的账号下单，全程 0 积分。
 
 ```bash
@@ -813,17 +813,50 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 - **计费**：价目表里它是一条 `amount_yuan: 0`、`source: "free"` 的常驻零价行，**不依赖任何活动**；
   调用方的 API Key 不扣钱，`/v1/usage` 照常记一行（金额 0）。
 - **实际落到哪个型号由 LibTV 决定**：它按你传的素材与参数逐个候选校验，模式/画幅/时长/素材数量
-  不匹配的候选会被跳过。想钉死型号就别用 `free`，直接传具体 `model`。
+  不匹配的候选会被跳过。要做受控实验（同一请求固定落在同一个型号）就传 `free_model`，见下。
 - **慢**：这是 0 积分慢队列。2026-11-12 实测 4 秒 720p 的单约 **2.5 分钟**出片；排队拥挤时会明显更慢，
   请按「分钟级到十分钟级」预留。
 - **不保证有号**：持卡账号全排满或都没卡时返回 **503**（`账号池繁忙`），不会自动改走付费型号。
   需要确定性就用具体型号并走付费渠道。
-- 参数闸门按六个候选的并集放行（`480p`/`720p`/`768p`/`1080p`/`2K`；3～30 秒；五种画幅），
+- 参数闸门按七个候选的并集放行（`480p`/`720p`/`768p`/`1080p`/`2K`；3～30 秒；五种画幅），
   单条候选接不住是跳过而不是报错。
 - 结果同样先转存 OSS 再返回 `result_urls`，并打 AI 标识。
 
 2026-11-12 验收：4 秒 720p 文生视频，中台 `usage_charges` 一笔 `amount_micro=0`、`source=free`，
 账号侧上游流水 `transAmount=0`（未扣积分），产出 1280×720 / 24fps / 4.04 秒成片。
+
+#### `free_model`：把畅用池钉死到一个候选型号
+
+不传 `free_model` 时按上面的顺序自动挑；传了它就**只在指名的那一个型号上找畅用空位**，
+找不到直接报错，**不会换型号**。计费仍是 0，轮询与取消不变。
+
+可选值（必须与 `model="free"` 一起用，否则 422）：
+
+| `free_model` | 上游型号 | 画幅（中台允许的取值） | 分辨率 | 时长 |
+|---|---|---|---|---|
+| `kling-4.0` | 可灵 4.0 | 16:9 / 9:16 / 1:1 | 720p / 1080p | 3～30 秒 |
+| `kling-4.0-flash` | Kling 4.0 Flash | 16:9 / 9:16 / 1:1 | 720p | 3～20 秒 |
+| `seedance-2.0-fast` | Seedance 2.0 Fast | 16:9 / 9:16 / 1:1 / 4:3 / 3:4 | 480p / 720p | 4～15 秒 |
+| `minimax-h3-libtv` | Minimax H3 | 16:9 / 9:16 / 1:1 / 4:3 / 3:4 | 768P / 2K | 5～15 秒 |
+| `minimax-h3-hs` | H3 Highspeed | 16:9 / 9:16 / 1:1 / 4:3 / 3:4 | 768P | 4～15 秒 |
+| `seedance-2.0-mini` | Seedance 2.0 Mini | 16:9 / 9:16 / 1:1 / 4:3 / 3:4 | 480p / 720p | 4～15 秒 |
+| `wan-3.0` | Wan 3.0 | 16:9 / 9:16 / 1:1 / 4:3 / 3:4 | 480P / 720P / 1080P | 2～30 秒 |
+
+钉死之后**只按这一条型号的规格收敛参数**：超出它能力的画幅或时长会被下游拒绝，而不是被放宽或截短。
+两条 Kling 没有 `4:3` / `3:4`；`minimax-h3-hs` 只有 768P（传 `2K` 会被对齐回 768P）；
+H3 两条最短 5 秒 / 4 秒。
+
+```bash
+curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-raw '{"model": "free", "free_model": "minimax-h3-hs", "prompt": "一朵白花在晨光中缓缓绽放，镜头稳定", "duration_seconds": 4, "aspect_ratio": "16:9", "resolution": "768p"}'
+```
+
+- 那个型号没有空位、或接不住这组参数时返回 **503**，错误信息里写明是哪个型号、试了哪些参数；
+  可以按 `retryAfterSec` 重试，但**中台不会替你换型号**。
+- 分辨率按目标型号就近对齐（例如 `720p` 在 H3 上会落到 `768p`），`result_urls` 出来的就是那一条的规格。
+- 请求指纹包含 `free_model`：一个型号上的确定性失败不会连坐另一个型号的实验。
 
 ### 5.3 MiniMax H3 视频生成
 

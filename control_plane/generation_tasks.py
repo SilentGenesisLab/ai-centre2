@@ -13,7 +13,7 @@ from urllib.parse import urljoin
 import httpx
 import imageio_ffmpeg
 
-from .ai_capabilities import CapabilityStore
+from .ai_capabilities import FREE_POOL_MODELS, CapabilityStore
 from .celery_app import celery_app
 from .concurrency import job_slot
 from .config import get_settings
@@ -240,7 +240,13 @@ def _payload(
         # 里的字段，别的型号直接「校验失败: params 顶层不允许设置未知字段「enableSound」」。
         # 只有 sound_param 标记过的型号（目前只有 Seedance 两个）真收这个字段。
         params["enableSound"]=("on" if request.get("sound") else "off") if caps.get("sound_param") else None
-        return {"model":binding["upstream_model"],"prompt":request["prompt"],"params":params,"imageUrls":real,"videoUrls":videos,"audioUrls":audios}
+        payload={"model":binding["upstream_model"],"prompt":request["prompt"],"params":params,"imageUrls":real,"videoUrls":videos,"audioUrls":audios}
+        # 畅用池钉死型号：上游只在这一个候选上找空位。字段名是上游 /publish 的顶层
+        # `freeModel`，不能塞进 params —— 那会被当成生成参数一路传进 CLI 的校验。
+        free_model=request.get("free_model")
+        if binding["upstream_model"]=="free" and free_model:
+            payload["freeModel"]=FREE_POOL_MODELS[free_model]
+        return payload
     if binding["adapter"]=="grsai":
         model=binding["upstream_model"]
         aspect=request["aspect_ratio"]
