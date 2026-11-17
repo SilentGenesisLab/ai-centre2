@@ -72,7 +72,7 @@ from .billing_api import router as billing_router
 from .billing_hook import BillingRoute, billable, link_current
 from .billing_reconcile import reconcile_held
 from .credit_pricing import from_yuan
-from .ai_capabilities import CapabilityStore, CapabilityNotFound
+from .ai_capabilities import FREE_POOL_MODELS, CapabilityStore, CapabilityNotFound
 from .generation_jobs import GenerationJobClient, current_api_key_id
 from .audio_generation_jobs import AudioGenerationJobClient
 from .text_generation_jobs import TextGenerationJobClient
@@ -736,6 +736,13 @@ class VideoGenerationRequest(BaseModel):
     )
     aspect_ratio: Literal["9:16", "16:9", "1:1", "4:3", "3:4"] = "9:16"
     sound: bool = False
+    # 只在 `model="free"` 时有意义：把畅用池钉死到某一个候选型号，上游只在这个型号上找
+    # 空位，找不到就报错，**不会悄悄换成别的候选**。不传则保持原来的自动挑选顺序。
+    free_model: str | None = Field(
+        default=None, max_length=64,
+        description="畅用池候选型号（仅 model=free 时有效）：kling-4.0 / kling-4.0-flash / "
+                    "seedance-2.0-fast / minimax-h3-libtv / minimax-h3-hs / seedance-2.0-mini / wan-3.0",
+    )
     # AI 生成显式标识（算法备案）：转 true 才在画面上叠「AI生成」角标（左上角）。
     # **默认关**是按用户的要求 —— 存量调用方不该突然多一个角标。
     # 隐式标识（写进文件元数据）不受这个开关影响，恒开。
@@ -4915,6 +4922,14 @@ async def enable_gpu(gpu_id: int) -> dict[str, Any]:
 
 
 async def _validate_generation_request(request: VideoGenerationRequest) -> None:
+    # 钉死畅用池型号的两种错法都在本地挡掉（零花费）：配错了型号名、或者不配 free 却带了它。
+    # 放过去最坏的后果不是报错，而是上游按自动顺序落到别的型号 —— 那正是调用方要避免的。
+    if request.free_model:
+        if request.model != "free":
+            raise HTTPException(422, "free_model 只能与 model=free 一起用")
+        if request.free_model not in FREE_POOL_MODELS:
+            raise HTTPException(
+                422, "free_model 必须是畅用池候选之一：" + " / ".join(FREE_POOL_MODELS))
     try:
         for value in (*request.reference_image_urls,*request.reference_video_urls,*request.reference_audio_urls):
             await asyncio.to_thread(validate_public_https_url,value)

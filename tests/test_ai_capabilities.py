@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("SERVICE_TOKEN", "test")
 
-from control_plane.ai_capabilities import CapabilityStore
+from control_plane.ai_capabilities import FREE_POOL_MODELS, CapabilityStore
 import httpx
 from fastapi import HTTPException
 from control_plane.generation_tasks import (
@@ -159,6 +159,47 @@ class CapabilityTests(unittest.TestCase):
         binding = self.store.binding("minimax-h3-max", "libtv")
         self.assertTrue(_compatible(binding, request))
         self.assertEqual(_payload(binding, request)["params"]["ratio"], "adaptive")
+
+    def test_free_pool_can_be_pinned_to_one_candidate(self):
+        # 畅用池默认按上游顺序自动挑型号，调用方做不了受控实验；free_model 把候选收窄成一个。
+        # 字段必须落在 /publish 的顶层 `freeModel`（上游按它过滤候选），不能进 params ——
+        # 那里会当成生成参数一路传给 CLI 的校验层。
+        binding = self.store.binding("free", "libtv")
+        base = {
+            "model": "free",
+            "prompt": "a cat walking",
+            "reference_image_urls": [],
+            "reference_video_urls": [],
+            "reference_audio_urls": [],
+            "duration_seconds": 5,
+            "aspect_ratio": "16:9",
+            "resolution": "768p",
+            "sound": False,
+        }
+        pinned = _payload(binding, {**base, "free_model": "minimax-h3-hs"})
+        self.assertEqual(pinned["model"], "free")
+        self.assertEqual(pinned["freeModel"], "minimax-h3-hs")
+        self.assertNotIn("freeModel", pinned["params"])
+
+        # 不钉死时不能把这个键塞给上游（None 会被当成「指定了空型号」）。
+        self.assertNotIn("freeModel", _payload(binding, base))
+
+    def test_every_free_candidate_is_a_real_libtv_model(self):
+        # FREE_POOL_MODELS 是上游 autoModels 的镜像。候选写错的表现是「422 说没有这个型号」，
+        # 而真实原因是中台自己的表过期了 —— 所以每个候选都必须是能力库里存在的 libtv 型号。
+        for code in FREE_POOL_MODELS:
+            self.assertEqual(self.store.binding(code, "libtv")["adapter"], "libtv")
+
+    def test_free_model_is_rejected_before_it_can_mean_something_else(self):
+        # 这两种错法放过去都不会报错，只会让上游按自动顺序落到别的型号 ——
+        # 正是调用方钉死型号要避免的那件事，所以必须在中台本地 422。
+        from control_plane.api import VideoGenerationRequest, _validate_generation_request
+
+        for model, free_model in (("seedance-2.0", "minimax-h3-hs"), ("free", "sora-3")):
+            request = VideoGenerationRequest(model=model, prompt="x", free_model=free_model)
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(_validate_generation_request(request))
+            self.assertEqual(ctx.exception.status_code, 422)
 
     def test_seedance_20_keeps_the_requested_resolution_when_jmapi_can_serve_it(self):
         # 升分辨率的适配只针对 480p —— 720p/1080p 必须原样转发，

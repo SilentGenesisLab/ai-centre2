@@ -19,6 +19,21 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 # 作业时间按 UTC 落库，页面上的日期筛选却是按北京时间输入的，比较前必须换算。
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
+# `free` 畅用池的候选：中台型号 code ←→ libtv 上游 key，顺序就是 libtv-api 的挑选顺序。
+# 调用方用请求里的 `free_model` 钉住其中一个时，中台只把这一个候选转给上游，
+# 上游也只在这一个型号上找空位——找不到就报错，**不会换型号**。
+# 这里是上游候选表的镜像：libtv-api 的 `MODELS` 里 free 条目改动的 autoModels 必须同步过来，
+# 漏了的表现是调用方传了新候选却被 422 挡下（宁可挡下，也不能静默落到别的型号）。
+FREE_POOL_MODELS = {
+    "kling-4.0": "kling-v4",
+    "kling-4.0-flash": "kling-v4-flash",
+    "seedance-2.0-fast": "star-video2-fast",
+    "minimax-h3-libtv": "MiniMax-Hailuo-H3",
+    "minimax-h3-hs": "minimax-h3-hs",
+    "seedance-2.0-mini": "star-video2-mini",
+    "wan-3.0": "wanx3.0",
+}
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
