@@ -350,7 +350,6 @@ class CapabilityStore:
         db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='dashscope' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
-            ("minimax-h3-rh-enhanced", "MiniMax H3 RunningHub 增强版", "video_generation", ["text","image","video","audio"], "video"),
             ("seedance-2.0", "Seedance 2.0", "video_generation", ["text","image","video"], "video"),
             ("seedance-2.5", "Seedance 2.5", "video_generation", ["text","image","video"], "video"),
             ("gpt-image-2", "GPT Image 2", "image_generation", ["text","image"], "image"),
@@ -453,7 +452,6 @@ class CapabilityStore:
           # 不会建任务）：resolution 白名单是 480p/768p/1080p（**没有 720p**，但有 768p，
           # 正是 H3 的原生档）；duration 是 4～15 的整数；aspectRatio 白名单比我们开放的宽
           # （多 2:3/3:2/21:9），我们这边的五个值全在它白名单里，所以不构成缺口。
-          ("minimax-h3-rh-enhanced","runninghub","minimax-h3-rh-enhanced","/openapi/v2/rhart-video/minimax-h3-rh-enhanced/ref2va","/openapi/v2/query",{"images":9,"videos":3,"audios":3,"duration_min":4,"duration_max":15,"resolutions":["480p","768p","1080p"]},1,60),
           ("gpt-image-2","grsai","gpt-image-2","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5","grsai","gpt-image-2.5","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),
           ("gpt-image-2.5-sunburst","grsai","gpt-image-2.5-sunburst","/v1/draw/completions","/v1/draw/result",{"images":9,"videos":0,"audios":0},1,40),

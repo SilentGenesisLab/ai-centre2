@@ -67,8 +67,7 @@ _RATE_SEED_CREDITS: list[tuple[str, str, str, str, Decimal | None, str]] = [
     ("video_generation", "seedance-2.0", "*", "second", Decimal(49), "measured"),
     ("video_generation", "seedance-2.0-fast", "*", "second", Decimal(22), "measured"),
     ("video_generation", "seedance-2.0-mini", "*", "second", Decimal(32), "measured"),
-    ("video_generation", "minimax-h3-rh-enhanced", "*", "second", Decimal(14), "measured"),
-    # 只有上面这些型号有实测锚点；`minimax-h3-max` 没对过账，先按增强版同价估，
+    # 只有上面这些型号有实测锚点；`minimax-h3-max` 没对过账，先按已下架的 rh-enhanced 同价（14 积分/秒）估，
     # 至少不会掉进 0.23 元/秒的服务级通配里冒充一款已知型号。
     ("video_generation", "minimax-h3-max", "*", "second", Decimal(14), "estimated"),
     ("audio_generation", "suno-v6", "*", "track", Decimal(186), "estimated"),
@@ -84,7 +83,6 @@ _RESOLUTION_TIERS: list[tuple[str, Decimal, Decimal]] = [
     ("seedance-2.0", Decimal(49), Decimal(98)),
     ("seedance-2.0-fast", Decimal(22), Decimal(44)),
     ("seedance-2.0-mini", Decimal(32), Decimal(64)),
-    ("minimax-h3-rh-enhanced", Decimal(14), Decimal(28)),
     # Wan 3.0（2026-11-14 接入，实测 5 秒 t2v 的上游 transAmount）：
     # 720P 扣 40、1080P 扣 80 → 8 / 16 积分每秒。两档都实测过。
     ("wan-3.0", Decimal(8), Decimal(16)),

@@ -429,7 +429,7 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`gpt-image-2.6-sunburst`、`gpt-image-2.6-flare`、`gpt-image-2-4k-upscale`、`nano-banana-2`、`nanobanana-2.1`、`midjourney`、`moss-image` | `gpt-image-2` |
+| `model` | 否 | `gpt-image-2`、`gpt-image-2.5`、`gpt-image-2.5-sunburst`、`gpt-image-2.5-flare`、`gpt-image-2.6`、`gpt-image-2.6-sunburst`、`gpt-image-2.6-flare`、`gpt-image-2-4k-upscale`、`nano-banana-2`、`nanobanana-2.1`、`midjourney`、`moss-image` | `gpt-image-2` |
 | `channel` | 否 | `grsai`、`teamorouter`、`teamorouter-ads`、`wuyinkeji`、`huanwangai`、`moss-local`、`auto` | `grsai` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 最多9张公网 HTTPS 图片 | `[]` |
@@ -438,6 +438,25 @@ curl -sS -X POST "$BASE_URL/v1/image-generations/jobs" \
 | `explicit_label` | 否 | 是否在左上角叠加「AI生成」角标（见第 10 节） | `false` |
 | `external_ref` | 否 | 最多256字符 | `null` |
 | `metadata` | 否 | JSON对象 | `{}` |
+
+**参考图是渠道的能力，不是模型的能力** —— 同一个模型换一家渠道，可能就不收参考图。下表是当前生产的实际绑定（渠道按优先级排序）：
+
+| `model` | 绑定渠道（按优先级） | 参考图上限 |
+|---|---|---|
+| `gpt-image-2` | `grsai` → `teamorouter` | `grsai` 9 张；`teamorouter` 不支持 |
+| `gpt-image-2.5` | `grsai` → `teamorouter` | 同上 |
+| `gpt-image-2.5-sunburst` | `grsai` → `teamorouter` | 同上 |
+| `gpt-image-2.5-flare` | `grsai` → `teamorouter` | 同上 |
+| `gpt-image-2.6` | **只有 `grsai`** | 9 张 |
+| `gpt-image-2.6-sunburst` | `grsai` → `teamorouter` | `grsai` 9 张；`teamorouter` 不支持 |
+| `gpt-image-2.6-flare` | `grsai` → `teamorouter` | `grsai` 9 张；`teamorouter` 不支持 |
+| `gpt-image-2-4k-upscale` | **只有 `teamorouter-ads`** | 1 张 |
+| `nano-banana-2` | **只有 `grsai`** | 9 张 |
+| `nanobanana-2.1` | **只有 `wuyinkeji`** | 9 张 |
+| `midjourney` | **只有 `huanwangai`** | 不支持 |
+| `moss-image` | **只有 `moss-local`** | 不支持 |
+
+带参考图却点名了一个不收图的渠道（例如 `gpt-image-2.6-sunburst` + `channel: "teamorouter"`）**不会报错**：该绑定在提交前就被判定不兼容而跳过，请求按优先级落到 `grsai`。任务的 `channel` 是实际出片的那一家，`fallback_count` 记为换过的次数（这里是 1），`requested_channel` 保留你点名的那个，见 §1.5。
 
 提交成功返回 HTTP 202：
 
@@ -469,15 +488,17 @@ curl -sS -X POST \
 
 ### 4.3 TeamORouter 渠道
 
-`channel` 传 `teamorouter` 走第三方 TeamORouter 的生图接口，目前接了五个型号：
+`channel` 传 `teamorouter` 走第三方 TeamORouter 的生图接口，目前接了五个型号。下表「参考图」一列说的是**这家渠道**收不收，不是模型本身的能力 —— 例如 `gpt-image-2.6-sunburst` 在这里不收参考图，走 `grsai` 就收 9 张（见 §4.1 的对照表）：
 
-| `model` | 上游型号 | 参考图 | 说明 |
+| `model` | 上游型号 | 参考图（本渠道） | 说明 |
 |---|---|---|---|
 | `gpt-image-2` | `gpt-image-2` | 不支持 | |
 | `gpt-image-2.5-sunburst` | `gpt-image-2.5-sunburst` | 不支持 | 与 `grsai` 的同名型号是不同上游，出图风格不同 |
 | `gpt-image-2.5-flare` | `gpt-image-2.5-flare` | 不支持 | 同上 |
 | `gpt-image-2.6-sunburst` | `gpt-image-2.6-sunburst` | 不支持 | 2.6 档，上游按次计价 ¥0.12/张 |
 | `gpt-image-2.6-flare` | `gpt-image-2.6-flare` | 不支持 | 2.6 档，上游按次计价 ¥0.10/张 |
+
+注意 `gpt-image-2.6`（不带后缀）**没有**在这条渠道上：它只绑了 `grsai`。
 
 `channel` 传 `teamorouter-ads` 是 TeamORouter 上的**另一个账户**（独立余额），目前一个型号：
 
@@ -486,7 +507,7 @@ curl -sS -X POST \
 | `gpt-image-2-4k-upscale` | `gpt-image-2-4k-upscale` | 最多 1 张 | **严格照请求尺寸出图**；4K 档唯一可用的型号 |
 
 - **只有 `gpt-image-2-4k-upscale` 收参考图**：带 `reference_image_urls` 时改走 `/v1/images/edits`，`image` 是**单个**公网 URL（JSON 字段，不是 multipart 数组）。多给会被本地拦成「该渠道不支持」，不会悄悄只用第一张。
-- **只吃纯文本（`gpt-image-2` / `-sunburst` / `-flare`）**：`/v1/images/generations` 不接收参考图。带 `reference_image_urls` 的请求会落到 `grsai`，点名 `teamorouter` 也一样（见 §1.5）。
+- **除 `-4k-upscale` 之外，这条渠道只吃纯文本**：`/v1/images/generations` 不接收参考图。带 `reference_image_urls` 的请求会被判定为不兼容而落到 `grsai`，点名 `teamorouter` 也一样（见 §1.5）。这不是失败，只是换了一家出图。
 - **同步返回**：上游一次调用直接给成品，没有任务号。所以作业的 `upstream_task_id` 恒为空、`result_urls` 由中台把上游返回的内联图片转存到对象存储后给出，其余字段与 `grsai` 一致。
 - **尺寸由中台按 `aspect_ratio` + `image_size` 计算**：上游不校验尺寸，传错不会报错、只会静默给一张默认尺寸的图，所以不要指望上游纠正。
 - 候选顺序是 `grsai` → `teamorouter`（后者登记为兜底，优先级更低）。`channel` 传 `teamorouter` 只是把它挪到排头，`grsai` 仍跟在后面。
@@ -552,7 +573,7 @@ MOSS-Image-SFT（OpenMOSS，Apache-2.0）。它不消耗第三方额度，也不
 
 `POST /v1/video-generations/jobs`
 
-可同时传多张图片、多个视频和多段音频。具体支持数量取决于渠道与模型：`seedance-2.0` 是 `jmapi` 最多9图、3视频、3音频，`libtv` 最多9图、3视频且不接收独立音频；`seedance-2.5` 是两个渠道都最多30图、10视频（参考视频/音频总时长上限 30 秒），独立音频只有 `jmapi` 接收；`minimax-h3-rh-enhanced` 走 `runninghub`，最多9图、3视频、3音频（见 5.1.2）。
+可同时传多张图片、多个视频和多段音频。具体支持数量取决于渠道与模型：`seedance-2.0` 是 `jmapi` 最多9图、3视频、3音频，`libtv` 最多9图、3视频且不接收独立音频；`seedance-2.5` 是两个渠道都最多30图、10视频（参考视频/音频总时长上限 30 秒），独立音频只有 `jmapi` 接收。（`minimax-h3-rh-enhanced` 已于 2026-11-19 下架，见 5.1.2）
 
 纯文本请求可以不传任何参考素材。由于上游 Seedance 渠道要求至少存在一个媒体节点，AI Centre 会在服务端自动注入一张中性空白参考图；调用方不需要准备空白图，任务记录也仍按“纯文本生成”统计。只要显式提供了任一图片、视频或音频，系统就不会注入空白图。
 
@@ -597,7 +618,7 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 
 | 字段 | 必填 | 可选值/限制 | 默认 |
 |---|---:|---|---|
-| `model` | 否 | `seedance-2.0`、`seedance-2.5`、`minimax-h3-rh-enhanced`，以及 §5.1.3 里 libtv 的 31 个型号 | `seedance-2.0` |
+| `model` | 否 | `seedance-2.0`、`seedance-2.5`，以及 §5.1.3 里 libtv 的 31 个型号 | `seedance-2.0` |
 | `channel` | 否 | `jmapi`、`libtv`、`runninghub`、`auto` | `jmapi` |
 | `prompt` | 是 | 1～10000字符 | — |
 | `reference_image_urls` | 否 | 2.0最多9张；2.5最多30张；H3最多9张 | `[]` |
@@ -610,7 +631,7 @@ curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
 | `external_ref` | 否 | 最多256字符 | `null` |
 | `metadata` | 否 | JSON对象 | `{}` |
 
-`channel` 省略时默认 `jmapi`，但点名只是「先用它」：候选列表是点名的那家排头、同型号其余渠道按绑定优先级跟在后面（`seedance-2.0`/`seedance-2.5` 是 `jmapi` + `libtv`，`minimax-h3-rh-enhanced` 只有 `runninghub` 一条）。接不了这单或提交报错就换下一家，换过几家看任务的 `fallback_count`；上游一旦接单就不再换，详见 §1.5。
+`channel` 省略时默认 `jmapi`，但点名只是「先用它」：候选列表是点名的那家排头、同型号其余渠道按绑定优先级跟在后面（`seedance-2.0`/`seedance-2.5` 是 `jmapi` + `libtv`）。接不了这单或提交报错就换下一家，换过几家看任务的 `fallback_count`；上游一旦接单就不再换，详见 §1.5。
 
 渠道分辨率说明：当前 jmapi 的 `seedance2.0_vip` 不接受 `480p`，所以请求 480P 时这家会被跳过、由 libtv 接单——传 `channel: "jmapi"` 也一样，不会返回 422；720P 已在两个渠道完成生产验证。
 
@@ -677,37 +698,25 @@ GET /v1/video-generations/jobs?external_ref=video-order-001
 - 上游还支持 `21:9` 和 `adaptive` 画幅，当前接口的 `aspect_ratio` 尚未开放这两个值。
 - 结果与 2.0 一样先转存到 AI Centre 的 OSS 再返回 `result_urls`。
 
-### 5.1.2 MiniMax H3（RunningHub 增强版）
+### 5.1.2 MiniMax H3（原 RunningHub 增强版，已下架）
 
-`model` 传 `minimax-h3-rh-enhanced`，走 `runninghub` 渠道：
+`minimax-h3-rh-enhanced` 已于 **2026-11-19 下架**，请求会在提交前返回 422
+（`no enabled, healthy channel supports this model and input combination`），不会产生费用。
 
-| 渠道 | 上游模型 | 时长 | 分辨率 | 参考素材 |
-|---|---|---|---|---|
-| `runninghub` | `minimax-h3-rh-enhanced` | 4～15秒（整数） | `480p`、`768p`、`1080p` | 最多9图、3视频、3音频 |
+下架原因：上游 RunningHub 的 `ref2va` 工作流返回体里没有 `task id`，中台拿不到任务号就无法轮询；
+2026-11-15～18 的 69 单里 46 单是这个原因，成功率只有 33%。该型号也只有 runninghub 一条绑定，
+没有可切换的备份渠道。
 
-```bash
-curl -sS -X POST "$BASE_URL/v1/video-generations/jobs" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H 'Content-Type: application/json' \
-  --data-raw '{
-    "model": "minimax-h3-rh-enhanced",
-    "channel": "runninghub",
-    "prompt": "故事主题:甜酷女团主题，节奏明快，自信飒爽，舞台感强……",
-    "reference_image_urls": ["https://storage.example.com/images/ref1.png"],
-    "duration_seconds": 10,
-    "resolution": "768p",
-    "aspect_ratio": "9:16",
-    "sound": false
-  }'
-```
+**请改用：**
 
-- **`768p` 只有这个模型接受**，它正是 H3 的原生档；`720p` 反过来只有 Seedance 接。两者配错组合会在提交前返回422，不会把必然被上游拒的请求发出去。
-- 时长是 **4～15 秒的整数**，2～3 秒会在提交前返回422。
-- 画幅只开放 `9:16`、`16:9`、`1:1`、`4:3`、`3:4` 五个值；上游白名单比这更宽（另有 `2:3`、`3:2`、`21:9`），当前接口未开放。
-- 上游的 `audioMode` 固定用 `native`（模型自己生成音轨）。上游另有 `lock_source`、`remix_source`、`reference_only` 三档，语义没有实测过，因此没有开放。`sound: false` 仍然被尊重：它由转存那一步确定性摘掉音轨（和 Seedance 同一条路径），不是靠上游静音。
-- 结果同样先转存到 AI Centre 的 OSS 再返回 `result_urls`。
-- 渠道密钥走部署级环境变量 `RUNNINGHUB_API_TOKEN`（与视频超分共用一份），不落能力库；需要覆盖时在管理端给该渠道单独填一次凭据。
-- **上游的查询接口只校验 `Authorization` 头在不在，不校验它对不对**（2026-09-29 实测：错的 token 与对的 token 返回逐字相同）。所以「连接测试通过」只说明网关通、头带了，不代表密钥有效；密钥错了会在真正提交生成时才暴露。
+| 需求 | 用哪个 | 说明 |
+|---|---|---|
+| 一般 H3 生成（推荐） | `minimax-h3-hs` | H3-Highspeed，768p，4～15 秒，走 libtv；见 §5.1.3 |
+| 需要 2K / 更长参考 | `minimax-h3-libtv` | 768p / 2K，5～15 秒，走 libtv；见 §5.1.3 |
+| 需要 1080p | `seedance-2.5` | libtv 侧有 1080p；见 §5.1.1 |
+
+参数对照：`768p` 是 H3 的原生档，只有 H3 系接；`720p` 只有 Seedance 接；两者配错会在提交前返回 422。
+原型号的 `480p` / `1080p` 两档在替代型号上不通用，迁参数时一并改。
 
 ### 5.1.3 libtv 的其它视频型号（2026-11-04 起）
 

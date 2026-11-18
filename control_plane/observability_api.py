@@ -81,6 +81,27 @@ async def observability_analytics_summary(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/analytics/service-health", dependencies=[Depends(verify_internal_token)])
+async def observability_service_health(
+    hours: int = Query(default=24, ge=1, le=720),
+) -> dict[str, Any]:
+    return get_observability_store().analytics_service_health(hours)
+
+
+@router.get("/analytics/dashboard", dependencies=[Depends(verify_internal_token)])
+async def observability_analytics_dashboard(
+    from_date: str | None = Query(default=None, alias="from"),
+    to_date: str | None = Query(default=None, alias="to"),
+) -> dict[str, Any]:
+    settings = get_settings()
+    try:
+        return get_observability_store().analytics_dashboard(
+            from_date, to_date, settings.api_keys_db_path
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/analytics/timeseries", dependencies=[Depends(verify_internal_token)])
 async def observability_analytics_timeseries(
     from_date: str | None = Query(default=None, alias="from"),

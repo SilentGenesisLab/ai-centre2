@@ -681,3 +681,27 @@ table { border-collapse:separate; border-spacing:0; }thead th { background:var(-
 .pricing-note { color: var(--muted); font-size: 9px; margin-left: auto; }
 @media (max-width: 1180px) { .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .pricing-grid { grid-template-columns: 1fr; } .pricing-note { margin-left: 0; } }
+
+/* 经营看板（2026-11-19） */
+.dash-stats { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; }
+.dash-stats > div { background: var(--surface); border-radius: 10px; padding: 14px 16px; }
+.dash-stats span { color: var(--muted); display: block; font-size: 9px; font-weight: 700; margin-bottom: 4px; }
+.dash-stats strong { font-size: 22px; letter-spacing: -.03em; }
+.funnel { display: grid; gap: 14px; }
+.funnel-row { display: grid; gap: 6px; }
+.funnel-row header { align-items: baseline; display: flex; justify-content: space-between; }
+.funnel-row header strong { font-size: 11px; }
+.funnel-row header small { color: var(--muted); font-size: 9px; }
+.funnel-track { background: var(--surface); border-radius: 7px; height: 26px; overflow: hidden; }
+.funnel-fill { background: linear-gradient(90deg, var(--accent), #5aa9e6); border-radius: 7px; height: 100%; min-width: 4px; }
+@media (max-width: 1180px) { .dash-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* 侧边栏成功率角标（2026-11-19） */
+.nav-health { border-radius: 99px; flex: 0 0 auto; font-size: 8.5px; font-variant-numeric: tabular-nums; font-weight: 700; line-height: 1; margin-left: auto; padding: 4px 6px; }
+.nav-health.is-good { background: rgba(40,168,120,.13); color: #1d8a62; }
+.nav-health.is-warn { background: rgba(214,146,26,.16); color: #9c6410; }
+.nav-health.is-bad { background: rgba(239,106,106,.16); color: #c04545; }
+:root[data-theme="dark"] .nav-health.is-good { background: rgba(40,168,120,.22); color: #57d3a4; }
+:root[data-theme="dark"] .nav-health.is-warn { background: rgba(214,146,26,.24); color: #e0a844; }
+:root[data-theme="dark"] .nav-health.is-bad { background: rgba(239,106,106,.24); color: #f08b8b; }
+.sidebar-collapsed .nav-health { display: none; }

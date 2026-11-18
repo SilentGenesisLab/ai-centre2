@@ -720,7 +720,7 @@ POST /v1/video-upscale/jobs/wait
 
 ## 十二、通用原子视频生成（Seedance 2.0）
 
-Seedance 2.0是一个逻辑模型，可由后台绑定jmapi和libtv渠道。单次请求只生成一个片段，不负责分段或Agent编排。同一套请求体也承载RunningHub渠道的`minimax-h3-rh-enhanced`（MiniMax H3增强版，见本节末）。
+Seedance 2.0是一个逻辑模型，可由后台绑定jmapi和libtv渠道。单次请求只生成一个片段，不负责分段或Agent编排。
 
 ```bash
 curl -X POST "$BASE/v1/video-generations/jobs" \
@@ -740,24 +740,20 @@ curl -X POST "$BASE/v1/video-generations/jobs" \
   }'
 ```
 
-- `channel`省略时默认`jmapi`；取值为`jmapi | libtv | runninghub`。**点名的渠道只是候选列表的排头，不是唯一候选**：后面自动跟上后台为该`model`登记的其余绑定（`seedance-2.0`/`seedance-2.5`依优先级为jmapi、libtv；`minimax-h3-rh-enhanced`只有runninghub）。
+- `channel`省略时默认`jmapi`；取值为`jmapi | libtv | runninghub`。**点名的渠道只是候选列表的排头，不是唯一候选**：后面自动跟上后台为该`model`登记的其余绑定（`seedance-2.0`/`seedance-2.5`依优先级为jmapi、libtv）。
 - 某一家不可用（未登记、被停用、健康检查未通过）或不支持这次的时长/分辨率/参考素材数量，或提交时报错，都会换下一家；换过几家看任务的`fallback_count`（`0`就是第一顺位）。候选全部不可用时才返回`422`。
 - **上游一旦接单就不再换渠道**：提交之后才发生的超时、轮询途中的网络抖动、结果转存失败都不会重投，作业直接判失败——上游那一单已经产生费用，重投就是再买一份。所以「作业失败」不等于「没花钱」，重投前先看`channel`、`stage`与`error`。
 - jmapi首版支持图片参考；libtv首版支持视频参考。
 - `model`也接受`seedance-2.5`：时长4～30秒（超过15秒只有它接），参考素材上限30图/10视频且参考视频音频合计≤30秒；分辨率上jmapi只有480p/720p（1080p会落到libtv，点名`jmapi`时也一样，不返回422），480p只有2.5能做。
-- `model`还接受`minimax-h3-rh-enhanced`（RunningHub渠道的MiniMax H3增强版），约束与Seedance不同，见下。
+- `minimax-h3-rh-enhanced`（RunningHub渠道增强版）已于2026-11-19下架，改用`minimax-h3-hs`，见下。
 
-### minimax-h3-rh-enhanced（RunningHub渠道）
+### minimax-h3-rh-enhanced（已下架）
 
-同一套请求体，走RunningHub的`ref2va`工作流，一次生成带音轨的片段。
+`minimax-h3-rh-enhanced` 已于2026-11-19下架，提交会返回422，不产生费用。上游RunningHub的`ref2va`
+返回体里没有task id，2026-11-15～18的69单中46单因此失败（成功率33%），且该型号只有runninghub一条绑定。
 
-- `resolution`只支持`480p | 768p | 1080p`：**上游没有720p**，但有`768p`（H3的原生档）。`768p`不对Seedance开放，传给它会被拒。
-- `duration_seconds`为4～15的整数（Seedance是2～30，下界更松）。
-- `aspect_ratio`沿用同一组取值，上游白名单比本接口更宽。
-- 参考素材上限9图/3视频/3音频（上游字段是逐张编号的`refImage1..9`、`refVideo1..3`、`refAudio1..3`，中台按顺序铺开，空槽位不占位）。
-- 音轨由上游按`native`模式生成，本接口不开放该档位。`sound:false`仍照常生效，但走的是"结果转存OSS时确定性摘掉音轨"，不是让上游静音生成。
-- 结果会先转存到本中台的OSS再返回，因此`result_url`不会过期。
-- 该渠道的调用凭据走部署级环境变量，不在后台渠道配置里保存；未配置该变量的部署上该渠道不可用。
+请改用`minimax-h3-hs`（768p，4～15秒，走libtv）或`minimax-h3-libtv`（768p/2K）；需要1080p时用`seedance-2.5`。
+注意`768p`是H3原生档、`720p`只有Seedance接，迁参数时要一并改。
 
 ```http
 GET  /v1/video-generations/jobs/{job_id}
