@@ -410,6 +410,51 @@ class PayloadCipher:
         return self._cipher.decrypt(base64.b64decode(nonce), base64.b64decode(ciphertext), None)
 
 
+# 失败口径分类。调用方在「受理前」就被拒（并发超限、参数校验、型号被禁）不是一次作业，
+# 不该混进任务失败率；上游账号没钱/没号是预期内的额度问题，单独计数；其余才算任务失败。
+_REQUEST_MARKERS = (
+    "concurrency limit [key_concurrency]",
+    "billing limit [",
+    "model not allowed",
+    "no enabled, healthy channel supports this model",
+    "api key invalid",
+    "api key quota_exceeded",
+    "authorization must use bearer",
+    "free_model",
+    "media url must use https",
+    "http_422",
+    "error parsing the body",
+    "instrumental music cannot carry lyrics",
+    "suno-sound requires a title",
+)
+_QUOTA_MARKERS = (
+    "积分不足",
+    "没有可用的付费账号",
+    "所有账号均不可用",
+    "账号池繁忙",
+    "rate limit exceeded(rpm)",
+)
+_TIMEOUT_MARKERS = ("仍未完成", "timed out", "timeout")
+_INTERNAL_MARKERS = ("stale:", "unable to enqueue")
+
+
+def failure_class(error: str | None) -> str:
+    """把失败原因归到 request / quota / timeout / internal / upstream / unknown。"""
+    text = (error or "").strip().lower()
+    if not text:
+        return "unknown"
+    for group, name in (
+        (_REQUEST_MARKERS, "request"),
+        (_QUOTA_MARKERS, "quota"),
+        (_TIMEOUT_MARKERS, "timeout"),
+        (_INTERNAL_MARKERS, "internal"),
+    ):
+        if any(marker in text for marker in group):
+            return name
+    return "upstream"
+
+
+
 class ObservabilityStore:
     def __init__(
         self,
@@ -989,18 +1034,25 @@ class ObservabilityStore:
                 GROUP BY day""",
             (start, end),
         ).fetchall())
+        reason_expr = "lower(COALESCE(NULLIF(error_code,''), json_extract(result_summary,'$.error'), ''))"
+        req_pred = " OR ".join(f"{reason_expr} LIKE ?" for _ in _REQUEST_MARKERS)
+        req_args = [f"%{marker}%" for marker in _REQUEST_MARKERS]
         tasks = self._rows(connection.execute(
-            """SELECT strftime('%Y-%m-%d', created_at, '+8 hours') AS day,
+            f"""SELECT strftime('%Y-%m-%d', created_at, '+8 hours') AS day,
                       COUNT(*) AS n,
                       SUM(CASE WHEN status IN ('succeeded','completed','success','ok') THEN 1 ELSE 0 END) AS okn,
-                      SUM(CASE WHEN status IN ('failed','failure','error','timeout') THEN 1 ELSE 0 END) AS failn,
+                      SUM(CASE WHEN status IN ('failed','failure','error','timeout')
+                                AND NOT ({req_pred}) THEN 1 ELSE 0 END) AS failn,
+                      SUM(CASE WHEN status IN ('failed','failure','error','timeout')
+                                AND ({req_pred}) THEN 1 ELSE 0 END) AS reqn,
                       SUM(CASE WHEN status IN ('cancelled','canceled') THEN 1 ELSE 0 END) AS canceln
                  FROM tasks WHERE created_at>=? AND created_at<?
                    AND operation NOT IN ('status','cancel')
                 GROUP BY day""",
-            (start, end),
+            (*req_args, *req_args, start, end),
         ).fetchall())
         return {"calls": calls, "tasks": tasks}
+
 
     @staticmethod
     def _dashboard_charges(path: Path | None, start: str, end: str) -> tuple[list[dict[str, Any]], dict[str, str], float, int]:
@@ -1076,56 +1128,67 @@ class ObservabilityStore:
     def analytics_service_health(self, hours: int = 24) -> dict[str, Any]:
         """每个服务最近 N 小时的终态成败，给侧边栏做健康角标。
 
-        只按「生成类」任务算：轮询（operation='status'）和取消（'cancel'）不是一次
-        独立作业，算进来会把失败率整体拉偏——看板那边踩过同一个坑。
-        样本少于 5 条不给结论（success_rate=None），避免一条失败就显示 0%。
+        口径分四类，彼此不混：
+          request  请求在受理前被拒（并发超限、参数校验、型号禁用）—— 不是一次作业
+          quota    上游账号没额度/没可用号码 —— 预期内，单独计数
+          其余     真正的任务失败（upstream / timeout / internal / unknown）
+        成功率只按真正的任务失败算，样本少于 5 条不给结论。
         """
         hours = max(1, min(int(hours), 24 * 30))
         end = datetime.now(UTC)
         start = end - timedelta(hours=hours)
-        # 这些不是「服务坏了」：清扫器打的 stale 标记、按 key 规则主动拒绝的型号、
-        # 账号额度不足。它们计入会让角标长期发红，把真正的故障淹掉。
-        excluded_patterns = (
-            "stale:%",
-            "%blocked for this api key%",
-            "%no enabled, healthy channel supports this model%",
-            "%积分不足%",
-            "%没有可用的付费账号%",
-            "%所有账号均不可用%",
-            "%账号池繁忙%",
-            # 调用方自己超过并发上限被拒（429 类），不是服务端故障。
-            "%concurrency limit [key_concurrency]%",
-        )
-        excluded = " AND ".join("COALESCE(error_code,'') NOT LIKE ?" for _ in excluded_patterns)
         marks = ",".join("?" * len(TERMINAL_FAILURE))
         with self._lock, self._connection() as connection:
             rows = self._rows(connection.execute(
-                f"""SELECT service,
-                           SUM(CASE WHEN status IN ('succeeded','completed','success','ok') THEN 1 ELSE 0 END) AS okn,
-                           SUM(CASE WHEN status IN ({marks}) THEN 1 ELSE 0 END) AS failn
+                f"""SELECT service, status,
+                           COALESCE(NULLIF(error_code,''), json_extract(result_summary,'$.error'), '') AS err,
+                           COUNT(*) AS n
                       FROM tasks
                      WHERE created_at>=? AND created_at<?
                        AND operation NOT IN ('status','cancel')
-                       AND {excluded}
-                     GROUP BY service""",
-                (*sorted(TERMINAL_FAILURE), iso_utc(start), iso_utc(end), *excluded_patterns),
+                     GROUP BY service, status, err""",
+                (iso_utc(start), iso_utc(end)),
             ).fetchall())
-        services = {}
+        success_states = {"succeeded", "completed", "success", "ok"}
+        failed_states = set(TERMINAL_FAILURE)
+        acc: dict[str, dict[str, Any]] = {}
         for row in rows:
-            ok = int(row["okn"] or 0)
-            bad = int(row["failn"] or 0)
-            terminal = ok + bad
-            services[str(row["service"])] = {
-                "succeeded": ok,
-                "failed": bad,
+            service = str(row["service"])
+            item = acc.setdefault(service, {
+                "succeeded": 0, "task_failed": 0, "request_error": 0, "excluded_quota": 0,
+                "reasons": {},
+            })
+            n = int(row["n"] or 0)
+            state = str(row["status"] or "").lower()
+            if state in success_states:
+                item["succeeded"] += n
+            elif state in failed_states:
+                kind = failure_class(row["err"])
+                item["reasons"][kind] = item["reasons"].get(kind, 0) + n
+                if kind == "request":
+                    item["request_error"] += n
+                elif kind == "quota":
+                    item["excluded_quota"] += n
+                else:
+                    item["task_failed"] += n
+        services = {}
+        for service, item in acc.items():
+            terminal = item["succeeded"] + item["task_failed"]
+            services[service] = {
+                "succeeded": item["succeeded"],
+                "failed": item["task_failed"],
                 "terminal": terminal,
-                "success_rate": (ok / terminal) if terminal >= 5 else None,
+                "request_error": item["request_error"],
+                "excluded_quota": item["excluded_quota"],
+                "reasons": item["reasons"],
+                "success_rate": (item["succeeded"] / terminal) if terminal >= 5 else None,
             }
         return {
             "window_hours": hours,
             "generated_at": iso_utc(end),
             "services": services,
         }
+
 
     def analytics_dashboard(
         self,
@@ -1158,7 +1221,8 @@ class ObservabilityStore:
         def bucket(day: str) -> dict[str, Any]:
             return daily.setdefault(day, {
                 "day": day, "calls": 0, "tasks": 0, "succeeded": 0, "failed": 0,
-                "cancelled": 0, "active_keys": 0, "spend_yuan": 0.0, "credits": 0.0,
+                "request_error": 0, "cancelled": 0, "active_keys": 0,
+                "spend_yuan": 0.0, "credits": 0.0,
             })
 
         day_keys: dict[str, set[str]] = {}
@@ -1171,6 +1235,7 @@ class ObservabilityStore:
                 target["tasks"] += int(row["n"] or 0)
                 target["succeeded"] += int(row["okn"] or 0)
                 target["failed"] += int(row["failn"] or 0)
+                target["request_error"] += int(row["reqn"] or 0)
                 target["cancelled"] += int(row["canceln"] or 0)
         for row in charges:
             if row["day"]:
@@ -1192,12 +1257,14 @@ class ObservabilityStore:
         def totals(observed: dict[str, Any], changed: list[dict[str, Any]]) -> dict[str, Any]:
             ok = sum(int(row["okn"] or 0) for row in observed["tasks"])
             bad = sum(int(row["failn"] or 0) for row in observed["tasks"])
+            rejected = sum(int(row["reqn"] or 0) for row in observed["tasks"])
             return {
                 "active_keys": len({str(row["key_id"]) for row in changed if row["key_id"]}),
                 "calls": sum(int(row["calls"] or 0) for row in observed["calls"]),
                 "tasks": sum(int(row["n"] or 0) for row in observed["tasks"]),
                 "succeeded": ok,
                 "failed": bad,
+                "request_error": rejected,
                 "success_rate": (ok / (ok + bad)) if (ok + bad) else None,
                 "spend_yuan": round(spent(changed), 4),
             }
@@ -1222,6 +1289,7 @@ class ObservabilityStore:
         funnel = {
             "calls": now_total["calls"],
             "tasks": now_total["tasks"],
+            "request_error": now_total["request_error"],
             "succeeded": now_total["succeeded"],
             "task_rate": (now_total["tasks"] / now_total["calls"]) if now_total["calls"] else None,
             "success_rate": now_total["success_rate"],

@@ -278,6 +278,7 @@ type AnalyticsDashboard = {
     calls: number;
     tasks: number;
     succeeded: number;
+    request_error: number;
     task_rate: number | null;
     success_rate: number | null;
   };
@@ -287,6 +288,7 @@ type AnalyticsDashboard = {
     tasks: number;
     succeeded: number;
     failed: number;
+    request_error: number;
     cancelled: number;
     active_keys: number;
     spend_yuan: number;
@@ -299,6 +301,7 @@ type AnalyticsDashboard = {
   by_channel: DashboardRow[];
   totals: {
     active_keys: number;
+    request_error: number;
     calls: number;
     tasks: number;
     succeeded: number;
@@ -934,6 +937,9 @@ type ServiceHealthRow = {
   succeeded: number;
   failed: number;
   terminal: number;
+  request_error: number;
+  excluded_quota: number;
+  reasons?: Record<string, number>;
   success_rate: number | null;
 };
 type ServiceHealth = {
@@ -970,10 +976,16 @@ function navHealth(
   if (!row || row.success_rate === null) return null;
   const pct = row.success_rate * 100;
   const tone = pct >= 95 ? "is-good" : pct >= 85 ? "is-warn" : "is-bad";
+  const extras: string[] = [];
+  if (row.request_error) extras.push(`${row.request_error} 次请求被拒（并发/校验，不计入）`);
+  if (row.excluded_quota) extras.push(`${row.excluded_quota} 次上游额度不足（不计入）`);
   return {
     rate: pct,
     tone,
-    title: `近 ${health.window_hours} 小时：成功 ${row.succeeded} / 失败 ${row.failed}，成功率 ${pct.toFixed(1)}%`,
+    title: [
+      `近 ${health.window_hours} 小时：成功 ${row.succeeded} / 失败 ${row.failed}，成功率 ${pct.toFixed(1)}%`,
+      ...extras,
+    ].join("；"),
   };
 }
 
@@ -2494,6 +2506,10 @@ function Analytics({
                 <strong>
                   {dash.totals.succeeded} / {dash.totals.failed}
                 </strong>
+              </div>
+              <div>
+                <span>请求被拒</span>
+                <strong>{dash.totals.request_error.toLocaleString()}</strong>
               </div>
             </div>
             <MetricLineChart
