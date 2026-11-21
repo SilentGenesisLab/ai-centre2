@@ -439,14 +439,15 @@ class CapabilityStore:
         bindings = [
           ("minimax-h3","local","minimax-h3","/v1/video-generations/minimax-h3/jobs","/v1/video-generations/minimax-h3/jobs/{task_id}",{"images":9,"videos":3,"audios":3},1,10),
           ("seedance-2.0","jmapi","seedance2.0_vip","/jmapi/v1/multimodal2video","/jmapi/v1/query",{"images":9,"videos":3,"audios":3,"duration_max":15},1,20),
-          ("seedance-2.0","libtv","Seedance 2.0 VIP","/libtv/api/v1/video/publish","/api/v1/video/query/{task_id}",{"images":9,"videos":3,"audios":0,"duration_max":15},1,30),
+          ("seedance-2.0","libtv","Seedance 2.0 VIP","/libtv/api/v1/video/publish","/api/v1/video/query/{task_id}",{"images":9,"videos":3,"audios":3,"duration_max":15},1,30),
           # Seedance 2.5 的 model_version 是 seedance2.5（不是 seedance2.5_vip），2026-09-22 实测自上游返回的
           # 版本白名单。上游另有两条硬约束在 generation_tasks._compatible 里拦：jmapi 只有 480p/720p。
           # 参考素材上限：jmapi 30 图实测（image_resource_id_list ≤ 30）；视频/音频取自渠道文档的 10，
-          # 上游真正的闸门是「参考视频/音频总时长 ≤30s」（实测 11×4.9s 被拒）。libtv 侧不声明参考音频，
-          # 沿用 2.0 的实测结论；需要参考音频时走 jmapi。
+          # 上游真正的闸门是「参考视频/音频总时长 ≤30s」（实测 11×4.9s 被拒）。
+          # libtv 侧 2026-11-22 起也声明参考音频：上游 catalog 的 mixed 上限就是 10音频+30图+10视频，
+          # 且这两档都开放了 audio2video（没有音频入口的模式不会开放）。
           ("seedance-2.5","jmapi","seedance2.5","/jmapi/v1/multimodal2video","/jmapi/v1/query",{"images":30,"videos":10,"audios":10,"duration_max":30},1,20),
-          ("seedance-2.5","libtv","star-video2.5","/libtv/api/v1/video/publish","/libtv/api/v1/video/query/{task_id}",{"images":30,"videos":10,"audios":0,"duration_max":30},1,30),
+          ("seedance-2.5","libtv","star-video2.5","/libtv/api/v1/video/publish","/libtv/api/v1/video/query/{task_id}",{"images":30,"videos":10,"audios":10,"duration_max":30},1,30),
           # RunningHub 的 MiniMax H3 增强版（ref2va = 参考素材 → 视频 + 音频）。上游字段是
           # 逐张编号的 refImage1..9 / refVideo1..3 / refAudio1..3，不是数组，映射在 _payload。
           # 三条硬约束都是 2026-09-29 用**空转探针**问上游要出来的（提交必被参数校验拒、
@@ -614,6 +615,23 @@ class CapabilityStore:
             if "sound_param" in _caps:
                 continue
             _caps["sound_param"] = True
+            db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(_caps), stamp, _row[0]))
+        # 2026-11-22：seedance 的 libtv 绑定原本把 audios 写死成 0（当时只有 jmapi 侧验过）。
+        # 上游 catalog 明写 star-video2.5 mixed 收 10 音频、star-video2 也开放 audio2video，
+        # 不声明的话带音色参考的请求会被 _compatible 直接筛掉、静默落到 H3。补一次；打过标记就不再动。
+        for _code, _audios in (("seedance-2.0", 3), ("seedance-2.5", 10)):
+            _row = db.execute(
+                "SELECT id,capabilities_json FROM model_channels WHERE model_id=? AND channel_id=?",
+                (mids[_code], ids["libtv"]),
+            ).fetchone()
+            if _row is None:
+                continue
+            _caps = json.loads(_row[1] or "{}")
+            if _caps.get("libtv_sync") == "2026-11-22":
+                continue
+            _caps["audios"] = _audios
+            _caps["libtv_sync"] = "2026-11-22"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
         # 2026-11-04：libtv-api 的型号目录是写死的，ratios / durations 两栏和 CLI 实际的
