@@ -39,7 +39,7 @@ const POLICIES: Record<BackendName, Array<{ methods: string[]; pattern: RegExp }
     { methods: ["PUT"], pattern: /^\/v2\/tts\/voices\/[A-Za-z0-9_-]+$/ },
     { methods: ["POST"], pattern: /^\/internal\/admin\/subtitle\/detect$/ },
     { methods: ["POST"], pattern: /^\/internal\/admin\/ocr\/batch$/ },
-    { methods: ["GET", "POST"], pattern: /^\/internal\/admin\/observability\/(?:health|overview|analytics\/(?:summary|timeseries|stages|h3-duration)|calls(?:\/[0-9a-f-]+)?|tasks(?:\/[A-Za-z0-9_-]+)?|pricing-rules|export\.csv|maintenance\/cleanup)$/ },
+    { methods: ["GET", "POST"], pattern: /^\/internal\/admin\/observability\/(?:health|overview|analytics\/(?:summary|timeseries|stages|h3-duration|dashboard|service-health)|calls(?:\/[0-9a-f-]+)?|tasks(?:\/[A-Za-z0-9_-]+)?|pricing-rules|export\.csv|maintenance\/cleanup)$/ },
     { methods: ["GET"], pattern: /^\/internal\/admin\/health-monitor\/(?:targets|status|history|incidents|config)$/ },
     { methods: ["POST"], pattern: /^\/internal\/admin\/health-monitor\/run-check$/ },
     { methods: ["GET"], pattern: /^\/internal\/admin\/llm-probe\/status$/ },

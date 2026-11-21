@@ -401,8 +401,15 @@ def _result(body:dict[str,Any])->list[str]:
 # 宁可如实失败，也不要挂到超时。
 # 2026-11-15：上游偶尔把 status 直接写成中文（实测 `成功`）。不映射的话图都出了还会被判
 # 失败，错误串就是那句「upstream generation failed: 成功」。
+# 2026-11-19：除数字与中文外，上游还会回英文词（大小写不定，_state 已先 lower）。
+# 只认数字/中文时，`SUCCESS` 会被判成失败——图已经出了却记一笔失败，这类单子
+# 在 11-18 一小时里出现过 19 次。别名按常见写法补齐，未知值仍然如实判失败。
 _WUYINKEJI_STATES = {"0": "running", "1": "running", "2": "succeeded",
-                     "成功": "succeeded", "失败": "failed"}
+                     "成功": "succeeded", "失败": "failed",
+                     "success": "succeeded", "succeeded": "succeeded",
+                     "completed": "succeeded", "complete": "succeeded",
+                     "done": "succeeded", "ok": "succeeded",
+                     "fail": "failed", "failed": "failed", "error": "failed"}
 
 
 def _normalize_state(state: str, adapter: str | None = None) -> str:

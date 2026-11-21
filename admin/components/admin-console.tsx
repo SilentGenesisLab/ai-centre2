@@ -245,6 +245,74 @@ type AnalyticsTimeseries = {
   }>;
 };
 
+type DashboardRow = {
+  name: string;
+  charges: number;
+  succeeded: number;
+  failed: number;
+  success_rate: number | null;
+  spend_yuan: number;
+  credits: number;
+};
+
+type AnalyticsKpi = {
+  value: number | null;
+  prev: number | null;
+  delta: number | null;
+};
+
+type AnalyticsDashboard = {
+  range: { from: string; to: string; timezone: string };
+  prev_range: { from: string; to: string };
+  kpis: Record<
+    | "active_keys"
+    | "new_keys"
+    | "calls"
+    | "tasks"
+    | "task_success_rate"
+    | "spend_yuan"
+    | "credits",
+    AnalyticsKpi
+  >;
+  funnel: {
+    calls: number;
+    tasks: number;
+    succeeded: number;
+    request_error: number;
+    task_rate: number | null;
+    success_rate: number | null;
+  };
+  daily: Array<{
+    day: string;
+    calls: number;
+    tasks: number;
+    succeeded: number;
+    failed: number;
+    request_error: number;
+    cancelled: number;
+    active_keys: number;
+    spend_yuan: number;
+    credits: number;
+    success_rate: number | null;
+    fail_rate: number | null;
+  }>;
+  by_key: DashboardRow[];
+  by_model: DashboardRow[];
+  by_channel: DashboardRow[];
+  totals: {
+    active_keys: number;
+    request_error: number;
+    calls: number;
+    tasks: number;
+    succeeded: number;
+    failed: number;
+    success_rate: number | null;
+    spend_yuan: number;
+    credits: number;
+    new_keys: number;
+  };
+};
+
 type AnalyticsStages = {
   stages: Array<{
     service: string;
@@ -586,6 +654,17 @@ const UI_TODAY = dateInput(new Date());
 const UI_SEVEN_DAYS_AGO = dateInput(new Date(Date.now() - 6 * 86_400_000));
 const UI_THIRTY_DAYS_AGO = dateInput(new Date(Date.now() - 29 * 86_400_000));
 
+function kpiDelta(kpi: AnalyticsKpi | undefined, points = false): string {
+  if (!kpi) return "环比 —";
+  if (kpi.prev === null || kpi.prev === undefined || kpi.delta === null || kpi.delta === undefined)
+    return "上期无数据";
+  const arrow = kpi.delta > 0 ? "↑" : kpi.delta < 0 ? "↓" : "→";
+  const text = points
+    ? `${Math.abs(kpi.delta).toFixed(2)} 个百分点`
+    : `${(Math.abs(kpi.delta) * 100).toFixed(1)}%`;
+  return `环比 ${arrow} ${text}`;
+}
+
 function percent(value: number | null | undefined): string {
   return value === null || value === undefined
     ? "—"
@@ -854,6 +933,62 @@ function UrlListInput({
   );
 }
 
+type ServiceHealthRow = {
+  succeeded: number;
+  failed: number;
+  terminal: number;
+  request_error: number;
+  excluded_quota: number;
+  reasons?: Record<string, number>;
+  success_rate: number | null;
+};
+type ServiceHealth = {
+  window_hours: number;
+  generated_at: string;
+  services: Record<string, ServiceHealthRow>;
+};
+
+// 侧边栏叶子项 → 后端 service 名。没有对应作业服务的项（存储、标识核验等）不显示角标。
+const SECTION_SERVICE: Record<string, string> = {
+  "text-gen": "text_generation",
+  asr: "asr",
+  ocr: "ocr",
+  tts: "tts",
+  separation: "separation",
+  music: "audio_generation",
+  lipsync: "lipsync",
+  face: "face",
+  scene: "scene",
+  depth: "depth",
+  upscale: "upscale",
+  h3: "h3",
+  image: "image_generation",
+  "image-upscale": "image_upscale",
+};
+
+function navHealth(
+  health: ServiceHealth | null,
+  href: string | undefined,
+): { rate: number; title: string; tone: string } | null {
+  const service = href ? SECTION_SERVICE[href] : undefined;
+  if (!service || !health) return null;
+  const row = health.services[service];
+  if (!row || row.success_rate === null) return null;
+  const pct = row.success_rate * 100;
+  const tone = pct >= 95 ? "is-good" : pct >= 85 ? "is-warn" : "is-bad";
+  const extras: string[] = [];
+  if (row.request_error) extras.push(`${row.request_error} 次请求被拒（并发/校验，不计入）`);
+  if (row.excluded_quota) extras.push(`${row.excluded_quota} 次上游额度不足（不计入）`);
+  return {
+    rate: pct,
+    tone,
+    title: [
+      `近 ${health.window_hours} 小时：成功 ${row.succeeded} / 失败 ${row.failed}，成功率 ${pct.toFixed(1)}%`,
+      ...extras,
+    ].join("；"),
+  };
+}
+
 function NavIcon({ name }: { name: string }) {
   const paths: Record<string, ReactNode> = {
     dashboard: (
@@ -956,6 +1091,7 @@ function SidebarItem({
   open,
   toggle,
   closeMobile,
+  health,
 }: {
   item: NavigationItem;
   section: SectionId;
@@ -963,6 +1099,7 @@ function SidebarItem({
   open: Set<string>;
   toggle: (id: string) => void;
   closeMobile: () => void;
+  health?: ServiceHealth | null;
 }) {
   const active = containsSection(item, section);
   const expanded = open.has(item.id);
@@ -989,6 +1126,7 @@ function SidebarItem({
                 open={open}
                 toggle={toggle}
                 closeMobile={closeMobile}
+                health={health}
               />
             ))}
           </div>
@@ -1003,6 +1141,14 @@ function SidebarItem({
     >
       <NavIcon name={item.icon} />
       <span>{item.label}</span>
+      {(() => {
+        const badge = navHealth(health ?? null, item.href);
+        return badge ? (
+          <b className={`nav-health ${badge.tone}`} title={badge.title}>
+            {badge.rate.toFixed(0)}%
+          </b>
+        ) : null;
+      })()}
       {item.disabled && <small>规划中</small>}
     </Link>
   );
@@ -1057,6 +1203,7 @@ export function AdminConsole({
   const [refreshing, setRefreshing] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealth | null>(null);
   const [openNav, setOpenNav] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     NAVIGATION.forEach((item) => {
@@ -1069,6 +1216,28 @@ export function AdminConsole({
     });
     return initial;
   });
+
+  useEffect(() => {
+    let stopped = false;
+    const load = () => {
+      apiRequest<ServiceHealth>(
+        "control",
+        "/internal/admin/observability/analytics/service-health?hours=24",
+      )
+        .then((value) => {
+          if (!stopped) setServiceHealth(value);
+        })
+        .catch(() => {
+          // 侧边栏角标是辅助信息，取不到就静默留空，不要弹错打断操作
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -1231,6 +1400,7 @@ export function AdminConsole({
               open={openNav}
               toggle={toggleNav}
               closeMobile={() => setMobileNav(false)}
+              health={serviceHealth}
             />
           ))}
         </nav>
@@ -1980,6 +2150,7 @@ function Analytics({
     null,
   );
   const [stages, setStages] = useState<AnalyticsStages | null>(null);
+  const [dash, setDash] = useState<AnalyticsDashboard | null>(null);
   const [h3, setH3] = useState<H3DurationAnalytics | null>(null);
   const [machineType, setMachineType] = useState("");
   const [resolution, setResolution] = useState("");
@@ -2005,7 +2176,7 @@ function Analytics({
       if (resolution) h3Query.set("resolution", resolution);
       if (inputMode) h3Query.set("input_mode", inputMode);
       if (segmentMode) h3Query.set("segment_mode", segmentMode);
-      const [summaryResult, trendResult, stageResult, h3Result, failures] =
+      const [summaryResult, trendResult, stageResult, h3Result, failures, dashResult] =
         await Promise.all([
           apiRequest<AnalyticsSummary>(
             "control",
@@ -2029,12 +2200,17 @@ function Analytics({
             "control",
             `/internal/admin/observability/tasks?${new URLSearchParams({ from, to, status: "failed", page_size: "8", ...(service ? { service } : {}) })}`,
           ),
+          apiRequest<AnalyticsDashboard>(
+            "control",
+            `/internal/admin/observability/analytics/dashboard?${new URLSearchParams({ from, to })}`,
+          ),
         ]);
       setData(summaryResult);
       setTimeseries(trendResult);
       setStages(stageResult);
       setH3(h3Result);
       setFailedTasks(failures.items);
+      setDash(dashResult);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "统计数据加载失败");
     } finally {
@@ -2071,6 +2247,14 @@ function Analytics({
   }
 
   const trendPoints = calendarSeries(from, to, timeseries?.points || []);
+  const dashPoints: ChartPoint[] = (dash?.daily || []).map((item) => ({
+    label: item.day.slice(5),
+    success_rate:
+      item.success_rate === null ? null : item.success_rate * 100,
+    fail_rate: item.fail_rate === null ? null : item.fail_rate * 100,
+    spend: item.spend_yuan,
+    credits: item.credits,
+  }));
   const activeTasks = Object.entries(data?.tasks.statuses || {})
     .filter(([status]) =>
       ["queued", "running", "retrying", "pending"].includes(status),
@@ -2261,6 +2445,187 @@ function Analytics({
           </small>
         </article>
       </div>
+      {dash && (
+        <>
+          <div className="metric-grid metrics-six">
+            <article className="metric-card accent">
+              <span>活跃 API Key</span>
+              <strong>{dash.kpis.active_keys.value ?? "—"}</strong>
+              <small>{kpiDelta(dash.kpis.active_keys)}</small>
+            </article>
+            <article className="metric-card">
+              <span>新增 API Key</span>
+              <strong>{dash.kpis.new_keys.value ?? "—"}</strong>
+              <small>{kpiDelta(dash.kpis.new_keys)}</small>
+            </article>
+            <article className="metric-card">
+              <span>生成任务</span>
+              <strong>{dash.kpis.tasks.value ?? "—"}</strong>
+              <small>{kpiDelta(dash.kpis.tasks)}</small>
+            </article>
+            <article className="metric-card">
+              <span>任务成功率</span>
+              <strong>{percent(dash.kpis.task_success_rate.value)}</strong>
+              <small>{kpiDelta(dash.kpis.task_success_rate, true)}</small>
+            </article>
+            <article className="metric-card">
+              <span>消耗金额</span>
+              <strong>{money(dash.kpis.spend_yuan.value ?? 0)}</strong>
+              <small>{kpiDelta(dash.kpis.spend_yuan)}</small>
+            </article>
+            <article className="metric-card">
+              <span>积分消耗</span>
+              <strong>
+                {Math.round(dash.kpis.credits.value ?? 0).toLocaleString()}
+              </strong>
+              <small>{kpiDelta(dash.kpis.credits)}</small>
+            </article>
+          </div>
+          <Panel title="任务质量 · 每日成功率 / 失败率" eyebrow="DAILY QUALITY">
+            <div className="dash-stats">
+              <div>
+                <span>成功率</span>
+                <strong>{percent(dash.kpis.task_success_rate.value)}</strong>
+              </div>
+              <div>
+                <span>失败率</span>
+                <strong>
+                  {dash.kpis.task_success_rate.value === null
+                    ? "—"
+                    : `${((1 - dash.kpis.task_success_rate.value) * 100).toFixed(2)}%`}
+                </strong>
+              </div>
+              <div>
+                <span>终态样本</span>
+                <strong>
+                  {(dash.totals.succeeded + dash.totals.failed).toLocaleString()}
+                </strong>
+              </div>
+              <div>
+                <span>成功 / 失败</span>
+                <strong>
+                  {dash.totals.succeeded} / {dash.totals.failed}
+                </strong>
+              </div>
+              <div>
+                <span>请求被拒</span>
+                <strong>{dash.totals.request_error.toLocaleString()}</strong>
+              </div>
+            </div>
+            <MetricLineChart
+              data={dashPoints}
+              series={[
+                { key: "success_rate", label: "成功率", className: "primary" },
+                { key: "fail_rate", label: "失败率", className: "danger" },
+              ]}
+              valueLabel={(value) => `${value.toFixed(1)}%`}
+            />
+          </Panel>
+          <Panel title="生成漏斗 · 调用 → 建任务 → 成片" eyebrow="FUNNEL">
+            <div className="funnel">
+              {[
+                {
+                  label: "API 调用",
+                  value: dash.funnel.calls,
+                  note: "入口请求",
+                },
+                {
+                  label: "生成任务",
+                  value: dash.funnel.tasks,
+                  note: `任务率 ${percent(dash.funnel.task_rate)}`,
+                },
+                {
+                  label: "成功出片",
+                  value: dash.funnel.succeeded,
+                  note: `任务成功率 ${percent(dash.funnel.success_rate)}`,
+                },
+              ].map((step, index, steps) => {
+                const top = Math.max(steps[0].value, 1);
+                return (
+                  <div className="funnel-row" key={step.label}>
+                    <header>
+                      <strong>{step.label}</strong>
+                      <small>
+                        {step.value.toLocaleString()} · {step.note}
+                      </small>
+                    </header>
+                    <div className="funnel-track">
+                      <div
+                        className="funnel-fill"
+                        style={{
+                          width: `${Math.max(2, (step.value / top) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Panel>
+          <Panel title="消耗趋势 · 每日金额" eyebrow="DAILY SPEND">
+            <MetricLineChart
+              data={dashPoints}
+              series={[
+                { key: "spend", label: "消耗（元）", className: "primary" },
+              ]}
+              valueLabel={(value) => `¥${value.toFixed(2)}`}
+            />
+            <p className="panel-note">
+              区间合计 {money(dash.kpis.spend_yuan.value ?? 0)} · 积分{" "}
+              {Math.round(dash.kpis.credits.value ?? 0).toLocaleString()}
+              （按积分汇率折算，只计已扣费的成功单）
+            </p>
+          </Panel>
+          {[
+            { title: "按 API Key", eyebrow: "BY API KEY", rows: dash.by_key },
+            { title: "按模型", eyebrow: "BY MODEL", rows: dash.by_model },
+            { title: "按渠道", eyebrow: "BY CHANNEL", rows: dash.by_channel },
+          ].map((group) => (
+            <Panel key={group.title} title={group.title} eyebrow={group.eyebrow}>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>名称</th>
+                      <th>计费单</th>
+                      <th>成功</th>
+                      <th>失败</th>
+                      <th>成功率</th>
+                      <th>消耗</th>
+                      <th>积分</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!group.rows.length && (
+                      <tr>
+                        <td colSpan={7} className="empty-cell">
+                          所选范围暂无数据
+                        </td>
+                      </tr>
+                    )}
+                    {group.rows.map((row) => (
+                      <tr key={row.name}>
+                        <td>
+                          <strong>{row.name}</strong>
+                        </td>
+                        <td>{row.charges}</td>
+                        <td>{row.succeeded}</td>
+                        <td>{row.failed}</td>
+                        <td>{percent(row.success_rate)}</td>
+                        <td>{money(row.spend_yuan)}</td>
+                        <td>{Math.round(row.credits).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="panel-note">
+                计费口径：按计费单的 job_status 统计，取消不计入失败，消耗只算已扣费。
+              </p>
+            </Panel>
+          ))}
+        </>
+      )}
       <div className="analytics-chart-grid">
         <Panel title="接口调用趋势" eyebrow="HTTP REQUESTS">
           <MetricLineChart

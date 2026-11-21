@@ -294,6 +294,7 @@ def external_job_id(path: str, response: Any | None) -> str | None:
         r"^/v1/color-grade/jobs/([^/]+)",
         r"^/v1/video-upscale/jobs/([^/]+)",
         r"^/v1/video-generations/minimax-h3/jobs/([^/]+)",
+        r"^/v1/text-generations/jobs/([^/]+)",
         r"^/v1/video-generations/jobs/([^/]+)",
         r"^/v1/image-generations/jobs/([^/]+)",
         r"^/v1/audio-generations/jobs/([^/]+)",
@@ -329,14 +330,24 @@ def response_stage(response: Any | None, fallback: str) -> str:
 
 
 def error_code(response: Any | None, status_code: int) -> str | None:
-    if status_code < 400:
-        return None
+    if status_code >= 400:
+        if isinstance(response, dict):
+            for key in ("code", "error_code", "detail", "error"):
+                value = response.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value[:160]
+        return f"http_{status_code}"
+    # 异步任务轮询的常见形状：HTTP 200，失败的结论写在正文里。
+    # 不看这里，失败原因会随 200 一起被丢掉（2026-11 视频任务 88% 的失败没有 error_code）。
     if isinstance(response, dict):
-        for key in ("code", "error_code", "detail"):
-            value = response.get(key)
-            if isinstance(value, str):
-                return value[:160]
-    return f"http_{status_code}"
+        state = str(response.get("status") or response.get("state") or "").lower()
+        if state in TERMINAL_FAILURE:
+            for key in ("error", "message", "detail"):
+                value = response.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value[:160]
+            return state
+    return None
 
 
 def usage_from_payload(service: str, request: Any | None, response: Any | None, headers: dict[str, str]) -> tuple[Decimal, str]:
@@ -397,6 +408,51 @@ class PayloadCipher:
 
     def decrypt(self, nonce: str, ciphertext: str) -> bytes:
         return self._cipher.decrypt(base64.b64decode(nonce), base64.b64decode(ciphertext), None)
+
+
+# 失败口径分类。调用方在「受理前」就被拒（并发超限、参数校验、型号被禁）不是一次作业，
+# 不该混进任务失败率；上游账号没钱/没号是预期内的额度问题，单独计数；其余才算任务失败。
+_REQUEST_MARKERS = (
+    "concurrency limit [key_concurrency]",
+    "billing limit [",
+    "model not allowed",
+    "no enabled, healthy channel supports this model",
+    "api key invalid",
+    "api key quota_exceeded",
+    "authorization must use bearer",
+    "free_model",
+    "media url must use https",
+    "http_422",
+    "error parsing the body",
+    "instrumental music cannot carry lyrics",
+    "suno-sound requires a title",
+)
+_QUOTA_MARKERS = (
+    "积分不足",
+    "没有可用的付费账号",
+    "所有账号均不可用",
+    "账号池繁忙",
+    "rate limit exceeded(rpm)",
+)
+_TIMEOUT_MARKERS = ("仍未完成", "timed out", "timeout")
+_INTERNAL_MARKERS = ("stale:", "unable to enqueue")
+
+
+def failure_class(error: str | None) -> str:
+    """把失败原因归到 request / quota / timeout / internal / upstream / unknown。"""
+    text = (error or "").strip().lower()
+    if not text:
+        return "unknown"
+    for group, name in (
+        (_REQUEST_MARKERS, "request"),
+        (_QUOTA_MARKERS, "quota"),
+        (_TIMEOUT_MARKERS, "timeout"),
+        (_INTERNAL_MARKERS, "internal"),
+    ):
+        if any(marker in text for marker in group):
+            return name
+    return "upstream"
+
 
 
 class ObservabilityStore:
@@ -964,6 +1020,291 @@ class ObservabilityStore:
             },
             "endpoints": endpoints,
             "errors": [{"error_code": key, "count": value} for key, value in sorted(errors.items(), key=lambda item: item[1], reverse=True)[:10]],
+        }
+
+    # ---- 经营看板 ---------------------------------------------------------
+
+    def _dashboard_obs(self, connection: sqlite3.Connection, start: str, end: str) -> dict[str, Any]:
+        """调用与任务按天聚合。按 +8 小时切日，与页面其它统计的东八区口径一致。"""
+        calls = self._rows(connection.execute(
+            """SELECT strftime('%Y-%m-%d', started_at, '+8 hours') AS day,
+                      COUNT(*) AS calls,
+                      COUNT(DISTINCT token_fingerprint) AS keys
+                 FROM api_calls WHERE started_at>=? AND started_at<?
+                GROUP BY day""",
+            (start, end),
+        ).fetchall())
+        reason_expr = "lower(COALESCE(NULLIF(error_code,''), json_extract(result_summary,'$.error'), ''))"
+        req_pred = " OR ".join(f"{reason_expr} LIKE ?" for _ in _REQUEST_MARKERS)
+        req_args = [f"%{marker}%" for marker in _REQUEST_MARKERS]
+        tasks = self._rows(connection.execute(
+            f"""SELECT strftime('%Y-%m-%d', created_at, '+8 hours') AS day,
+                      COUNT(*) AS n,
+                      SUM(CASE WHEN status IN ('succeeded','completed','success','ok') THEN 1 ELSE 0 END) AS okn,
+                      SUM(CASE WHEN status IN ('failed','failure','error','timeout')
+                                AND NOT ({req_pred}) THEN 1 ELSE 0 END) AS failn,
+                      SUM(CASE WHEN status IN ('failed','failure','error','timeout')
+                                AND ({req_pred}) THEN 1 ELSE 0 END) AS reqn,
+                      SUM(CASE WHEN status IN ('cancelled','canceled') THEN 1 ELSE 0 END) AS canceln
+                 FROM tasks WHERE created_at>=? AND created_at<?
+                   AND operation NOT IN ('status','cancel')
+                GROUP BY day""",
+            (*req_args, *req_args, start, end),
+        ).fetchall())
+        return {"calls": calls, "tasks": tasks}
+
+
+    @staticmethod
+    def _dashboard_charges(path: Path | None, start: str, end: str) -> tuple[list[dict[str, Any]], dict[str, str], float, int]:
+        """金额、积分与按 Key/模型/渠道的拆分。
+
+        只用 `state='spent'` 的金额——失败和取消的单会退回，算成消耗会虚高。
+        库以只读方式打开，绝不写。
+        """
+        empty: tuple[list[dict[str, Any]], dict[str, str], float, int] = ([], {}, 62.0, 0)
+        if not path or not Path(path).exists():
+            return empty
+        try:
+            connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=10)
+            connection.row_factory = sqlite3.Row
+        except sqlite3.Error:
+            return empty
+        try:
+            per_yuan = 62.0
+            row = connection.execute("SELECT value FROM billing_settings WHERE key='credits_per_yuan'").fetchone()
+            if row and row[0]:
+                per_yuan = float(row[0])
+            names = {str(r["id"]): str(r["name"]) for r in connection.execute("SELECT id,name FROM api_keys")}
+            new_keys = connection.execute(
+                "SELECT COUNT(*) FROM api_keys WHERE created_at>=? AND created_at<?", (start, end)
+            ).fetchone()
+            rows = [dict(r) for r in connection.execute(
+                """SELECT strftime('%Y-%m-%d', created_at, '+8 hours') AS day,
+                          key_id, service, model, channel,
+                          COUNT(*) AS n,
+                          SUM(CASE WHEN job_status IN ('succeeded','completed','success','ok') THEN 1 ELSE 0 END) AS okn,
+                          SUM(CASE WHEN job_status IN ('failed','failure','error','timeout') THEN 1 ELSE 0 END) AS failn,
+                          SUM(CASE WHEN state='spent' THEN amount_micro ELSE 0 END) AS spent
+                     FROM usage_charges WHERE created_at>=? AND created_at<?
+                    GROUP BY day, key_id, service, model, channel""",
+                (start, end),
+            )]
+            return rows, names, per_yuan, int(new_keys[0] or 0) if new_keys else 0
+        except sqlite3.Error:
+            return empty
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _dashboard_kpi(value: Any, prev: Any, points: bool = False) -> dict[str, Any]:
+        delta = None
+        if value is not None and prev is not None:
+            delta = (value - prev) * 100 if points else ((value - prev) / prev if prev else None)
+        return {"value": value, "prev": prev, "delta": delta}
+
+    @staticmethod
+    def _dashboard_group(rows: list[dict[str, Any]], field: str, names: dict[str, str] | None,
+                         per_yuan: float, limit: int = 10) -> list[dict[str, Any]]:
+        buckets: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            raw = row.get(field)
+            label = names.get(str(raw), str(raw)) if names and raw else (str(raw) if raw else "（服务令牌 / 未标注）")
+            bucket = buckets.setdefault(label, {"name": label, "charges": 0, "succeeded": 0,
+                                                "failed": 0, "spend_yuan": 0.0})
+            bucket["charges"] += int(row["n"] or 0)
+            bucket["succeeded"] += int(row["okn"] or 0)
+            bucket["failed"] += int(row["failn"] or 0)
+            bucket["spend_yuan"] += float(row["spent"] or 0) / 1_000_000
+        out = []
+        for bucket in buckets.values():
+            denom = bucket["succeeded"] + bucket["failed"]
+            bucket["success_rate"] = (bucket["succeeded"] / denom) if denom else None
+            bucket["spend_yuan"] = round(bucket["spend_yuan"], 4)
+            bucket["credits"] = round(bucket["spend_yuan"] * per_yuan, 2)
+            out.append(bucket)
+        out.sort(key=lambda item: (-item["charges"], -item["spend_yuan"]))
+        return out[:limit]
+
+    def analytics_service_health(self, hours: int = 24) -> dict[str, Any]:
+        """每个服务最近 N 小时的终态成败，给侧边栏做健康角标。
+
+        口径分四类，彼此不混：
+          request  请求在受理前被拒（并发超限、参数校验、型号禁用）—— 不是一次作业
+          quota    上游账号没额度/没可用号码 —— 预期内，单独计数
+          其余     真正的任务失败（upstream / timeout / internal / unknown）
+        成功率只按真正的任务失败算，样本少于 5 条不给结论。
+        """
+        hours = max(1, min(int(hours), 24 * 30))
+        end = datetime.now(UTC)
+        start = end - timedelta(hours=hours)
+        marks = ",".join("?" * len(TERMINAL_FAILURE))
+        with self._lock, self._connection() as connection:
+            rows = self._rows(connection.execute(
+                f"""SELECT service, status,
+                           COALESCE(NULLIF(error_code,''), json_extract(result_summary,'$.error'), '') AS err,
+                           COUNT(*) AS n
+                      FROM tasks
+                     WHERE created_at>=? AND created_at<?
+                       AND operation NOT IN ('status','cancel')
+                     GROUP BY service, status, err""",
+                (iso_utc(start), iso_utc(end)),
+            ).fetchall())
+        success_states = {"succeeded", "completed", "success", "ok"}
+        failed_states = set(TERMINAL_FAILURE)
+        acc: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            service = str(row["service"])
+            item = acc.setdefault(service, {
+                "succeeded": 0, "task_failed": 0, "request_error": 0, "excluded_quota": 0,
+                "reasons": {},
+            })
+            n = int(row["n"] or 0)
+            state = str(row["status"] or "").lower()
+            if state in success_states:
+                item["succeeded"] += n
+            elif state in failed_states:
+                kind = failure_class(row["err"])
+                item["reasons"][kind] = item["reasons"].get(kind, 0) + n
+                if kind == "request":
+                    item["request_error"] += n
+                elif kind == "quota":
+                    item["excluded_quota"] += n
+                else:
+                    item["task_failed"] += n
+        services = {}
+        for service, item in acc.items():
+            terminal = item["succeeded"] + item["task_failed"]
+            services[service] = {
+                "succeeded": item["succeeded"],
+                "failed": item["task_failed"],
+                "terminal": terminal,
+                "request_error": item["request_error"],
+                "excluded_quota": item["excluded_quota"],
+                "reasons": item["reasons"],
+                "success_rate": (item["succeeded"] / terminal) if terminal >= 5 else None,
+            }
+        return {
+            "window_hours": hours,
+            "generated_at": iso_utc(end),
+            "services": services,
+        }
+
+
+    def analytics_dashboard(
+        self,
+        from_date: str | None = None,
+        to_date: str | None = None,
+        api_keys_db: Path | None = None,
+    ) -> dict[str, Any]:
+        """经营看板：按天的调用、任务、成功率、消耗，附环比与三个拆分维度。
+
+        调用与任务来自本库；金额与按 Key/模型/渠道的拆分来自 control/api-keys.db。
+        两个库不跨库 JOIN，各自聚合后按天在 Python 里对齐。
+        """
+        start, end = self._window(from_date, to_date, days=30)
+        start_dt = datetime.fromisoformat(start)
+        end_dt = datetime.fromisoformat(end)
+        span = end_dt - start_dt
+        prev_start, prev_end = iso_utc(start_dt - span), start
+
+        charges, names, per_yuan, new_keys = self._dashboard_charges(api_keys_db, start, end)
+        prev_charges, _, prev_per_yuan, prev_new_keys = self._dashboard_charges(api_keys_db, prev_start, prev_end)
+        with self._lock, self._connection() as connection:
+            current = self._dashboard_obs(connection, start, end)
+            previous = self._dashboard_obs(connection, prev_start, prev_end)
+
+        def spent(rows: list[dict[str, Any]]) -> float:
+            return sum(float(row["spent"] or 0) for row in rows) / 1_000_000
+
+        daily: dict[str, dict[str, Any]] = {}
+
+        def bucket(day: str) -> dict[str, Any]:
+            return daily.setdefault(day, {
+                "day": day, "calls": 0, "tasks": 0, "succeeded": 0, "failed": 0,
+                "request_error": 0, "cancelled": 0, "active_keys": 0,
+                "spend_yuan": 0.0, "credits": 0.0,
+            })
+
+        day_keys: dict[str, set[str]] = {}
+        for row in current["calls"]:
+            if row["day"]:
+                bucket(str(row["day"]))["calls"] += int(row["calls"] or 0)
+        for row in current["tasks"]:
+            if row["day"]:
+                target = bucket(str(row["day"]))
+                target["tasks"] += int(row["n"] or 0)
+                target["succeeded"] += int(row["okn"] or 0)
+                target["failed"] += int(row["failn"] or 0)
+                target["request_error"] += int(row["reqn"] or 0)
+                target["cancelled"] += int(row["canceln"] or 0)
+        for row in charges:
+            if row["day"]:
+                bucket(str(row["day"]))["spend_yuan"] += float(row["spent"] or 0) / 1_000_000
+                if row["key_id"]:
+                    day_keys.setdefault(str(row["day"]), set()).add(str(row["key_id"]))
+
+        points = []
+        for day in sorted(daily):
+            item = daily[day]
+            item["spend_yuan"] = round(item["spend_yuan"], 4)
+            item["credits"] = round(item["spend_yuan"] * per_yuan, 2)
+            item["active_keys"] = len(day_keys.get(day, ()))
+            denom = item["succeeded"] + item["failed"]
+            item["success_rate"] = (item["succeeded"] / denom) if denom else None
+            item["fail_rate"] = (item["failed"] / denom) if denom else None
+            points.append(item)
+
+        def totals(observed: dict[str, Any], changed: list[dict[str, Any]]) -> dict[str, Any]:
+            ok = sum(int(row["okn"] or 0) for row in observed["tasks"])
+            bad = sum(int(row["failn"] or 0) for row in observed["tasks"])
+            rejected = sum(int(row["reqn"] or 0) for row in observed["tasks"])
+            return {
+                "active_keys": len({str(row["key_id"]) for row in changed if row["key_id"]}),
+                "calls": sum(int(row["calls"] or 0) for row in observed["calls"]),
+                "tasks": sum(int(row["n"] or 0) for row in observed["tasks"]),
+                "succeeded": ok,
+                "failed": bad,
+                "request_error": rejected,
+                "success_rate": (ok / (ok + bad)) if (ok + bad) else None,
+                "spend_yuan": round(spent(changed), 4),
+            }
+
+        now_total = totals(current, charges)
+        prev_total = totals(previous, prev_charges)
+        now_total["credits"] = round(now_total["spend_yuan"] * per_yuan, 2)
+        prev_total["credits"] = round(prev_total["spend_yuan"] * prev_per_yuan, 2)
+        now_total["new_keys"] = new_keys
+        prev_total["new_keys"] = prev_new_keys
+
+        kpis = {
+            "active_keys": self._dashboard_kpi(now_total["active_keys"], prev_total["active_keys"]),
+            "new_keys": self._dashboard_kpi(new_keys, prev_new_keys),
+            "calls": self._dashboard_kpi(now_total["calls"], prev_total["calls"]),
+            "tasks": self._dashboard_kpi(now_total["tasks"], prev_total["tasks"]),
+            "task_success_rate": self._dashboard_kpi(now_total["success_rate"], prev_total["success_rate"], points=True),
+            "spend_yuan": self._dashboard_kpi(now_total["spend_yuan"], prev_total["spend_yuan"]),
+            "credits": self._dashboard_kpi(now_total["credits"], prev_total["credits"]),
+        }
+
+        funnel = {
+            "calls": now_total["calls"],
+            "tasks": now_total["tasks"],
+            "request_error": now_total["request_error"],
+            "succeeded": now_total["succeeded"],
+            "task_rate": (now_total["tasks"] / now_total["calls"]) if now_total["calls"] else None,
+            "success_rate": now_total["success_rate"],
+        }
+
+        return {
+            "range": {"from": start, "to": end, "timezone": "Asia/Shanghai"},
+            "prev_range": {"from": prev_start, "to": prev_end},
+            "kpis": kpis,
+            "funnel": funnel,
+            "daily": points,
+            "by_key": self._dashboard_group(charges, "key_id", names, per_yuan),
+            "by_model": self._dashboard_group(charges, "model", None, per_yuan),
+            "by_channel": self._dashboard_group(charges, "channel", None, per_yuan),
+            "totals": now_total,
         }
 
     def analytics_timeseries(
