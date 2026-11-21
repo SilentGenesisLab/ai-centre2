@@ -350,8 +350,8 @@ class CapabilityStore:
         db.execute("UPDATE channels SET auth_type='bearer',updated_at=? WHERE code='dashscope' AND auth_type='none' AND credential_tail IS NULL",(stamp,))
         models = [
             ("minimax-h3", "MiniMax H3", "video_generation", ["text","image","video","audio"], "video"),
-            ("seedance-2.0", "Seedance 2.0", "video_generation", ["text","image","video"], "video"),
-            ("seedance-2.5", "Seedance 2.5", "video_generation", ["text","image","video"], "video"),
+            ("seedance-2.0", "Seedance 2.0", "video_generation", ["text","image","video","audio"], "video"),
+            ("seedance-2.5", "Seedance 2.5", "video_generation", ["text","image","video","audio"], "video"),
             ("gpt-image-2", "GPT Image 2", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5", "GPT Image 2.5", "image_generation", ["text","image"], "image"),
             ("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "image_generation", ["text","image"], "image"),
@@ -632,6 +632,11 @@ class CapabilityStore:
             _caps["libtv_sync"] = "2026-11-22"
             db.execute("UPDATE model_channels SET capabilities_json=?,updated_at=? WHERE id=?",
                        (json.dumps(_caps), stamp, _row[0]))
+        # 型号表的「支持哪些输入」也要一致：上面是 INSERT OR IGNORE，老库的 models 行不会跟着改，
+        # 控制台「模型管理」页就一直显示 seedance 不收音频。这一栏只用于展示、不参与闸门判定，
+        # 没有管理端写入口，直接按值覆盖。
+        db.execute("UPDATE models SET input_modalities_json=?,updated_at=? WHERE code IN ('seedance-2.0','seedance-2.5')",
+                   (json.dumps(["text", "image", "video", "audio"]), stamp))
         # 2026-11-04：libtv-api 的型号目录是写死的，ratios / durations 两栏和 CLI 实际的
         # 校验规则对不上（报错里会把可选值列出来）。上面是 INSERT OR IGNORE，已经建好的
         # 绑定不会跟着改，这里按 CLI 实测结果覆盖一次；打了标记就不再动，管理员改过的保留。
